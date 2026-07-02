@@ -41,7 +41,7 @@ async function validateSessionByRefresh() {
   try {
     // 主动探测 refresh 是否仍有效：失效则立刻强制登出
     await authStore.renewLogin()
-  } catch (err) {
+  } catch (_) {
     handleFinalLogout()
   } finally {
     validatingSession = false

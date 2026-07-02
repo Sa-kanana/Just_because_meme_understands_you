@@ -14,6 +14,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+
 @Component
 public class JwtAuthInterceptor implements HandlerInterceptor {
     private static final String ACCESS_BLACKLIST_PREFIX = "auth:blacklist:access:";
@@ -54,7 +55,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             request.setAttribute("userId", claims.getSubject());
             request.setAttribute("role", claims.get("role"));
             return true;
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             writeUnauthorized(response, "无效的令牌，请重新登录");
             return false;
         }

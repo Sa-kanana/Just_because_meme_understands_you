@@ -99,7 +99,7 @@ function dispatchRouteLoading(loading) {
   }
 }
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
   if (to.meta?.guestOnly && authStore.isLoggedIn) {
     next(resolveSafeRedirectPath(to.query.redirect))

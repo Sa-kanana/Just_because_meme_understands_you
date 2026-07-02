@@ -100,3 +100,67 @@ export function getMemeDetail(memeId) {
     throw new Error(msg || '未获取到梗详情数据')
   })
 }
+
+/**
+ * 收藏梗
+ * POST /detail/favorites
+ * @param {number|string} memeId
+ * @param {number} [folderId=0]
+ */
+export function addMemeFavorite(memeId, folderId = 0) {
+  const id = memeId != null ? Number(memeId) : NaN
+  if (!Number.isFinite(id) || id <= 0) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request('/detail/favorites', {
+    method: 'POST',
+    body: JSON.stringify({
+      memeId: id,
+      folderId: Number(folderId) || 0,
+    }),
+  }).then((res) => {
+    if (res && Number(res.code) === 1) {
+      return res.data || {}
+    }
+    throw new Error((res && (res.message || res.msg)) || '收藏失败')
+  })
+}
+
+/**
+ * 取消收藏梗
+ * DELETE /favorites/{memeId}
+ * @param {number|string} memeId
+ */
+export function removeMemeFavorite(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/favorites/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1) {
+      return res.data || {}
+    }
+    throw new Error((res && (res.message || res.msg)) || '取消收藏失败')
+  })
+}
+
+/**
+ * 查询当前用户是否已收藏该梗
+ * GET /favorites/{memeId}/status
+ * @param {number|string} memeId
+ * @returns {Promise<{ favorited: boolean }>}
+ */
+export function getMemeFavoriteStatus(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/favorites/${encodeURIComponent(id)}/status`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      return {
+        favorited: !!res.data.favorited,
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '查询收藏状态失败')
+  })
+}

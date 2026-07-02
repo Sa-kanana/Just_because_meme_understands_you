@@ -321,7 +321,7 @@ export default {
         this.memePage = nextPage
         this.memeNoMore =
           list.length < this.memePageSize || newItems.length === 0
-      } catch (e) {
+      } catch (_) {
         this.memeNoMore = true
       } finally {
         this.memeLoading = false

@@ -20,6 +20,7 @@ import com.sakana.just_because_meme_understands_you.mapper.UserStatsMapper;
 import com.sakana.just_because_meme_understands_you.service.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.service.IUserService;
+import com.sakana.just_because_meme_understands_you.service.UserFavoriteCountService;
 import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
@@ -56,6 +57,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
     private static final String MEMES_CACHE_PREFIX = "user:memes:";
     private static final String FAVORITES_CACHE_PREFIX = "user:favorites:";
     private static final long MAX_AVATAR_SIZE = 5L * 1024 * 1024;
+    private static final int FAVORITE_NOT_DELETED = 0;
 
     @Resource
     private IUserService userService;
@@ -80,6 +82,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private UserFavoriteCountService userFavoriteCountService;
 
     @Value("${oss.bucketName}")
     private String bucketName;
@@ -178,6 +183,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         Page<UserFavorite> favoritePage = new Page<>(pageNo, pageSize);
         LambdaQueryWrapper<UserFavorite> favoriteWrapper = new LambdaQueryWrapper<UserFavorite>()
                 .eq(UserFavorite::getUserId, userId)
+                .eq(UserFavorite::getIsDeleted, FAVORITE_NOT_DELETED)
                 .orderByDesc(UserFavorite::getCreateTime);
         IPage<UserFavorite> result = userFavoriteMapper.selectPage(favoritePage, favoriteWrapper);
         List<UserFavorite> records = result.getRecords();
@@ -227,7 +233,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         String objectKey = "avatar/" + userId + "/" + UUID.randomUUID() + "." + suffix;
         try {
             ossClient.putObject(bucketName, objectKey, file.getInputStream());
-        } catch (IOException e) {
+        } catch (IOException ignored) {
             throw new BizException(Result.CODE_ERROR, "头像上传失败，请稍后重试");
         }
 
@@ -255,7 +261,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         LocalDate birthday;
         try {
             birthday = LocalDate.parse(request.getBirthday());
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             throw new BizException(Result.CODE_BAD_REQUEST, "birthday 格式应为 yyyy-MM-dd");
         }
 
@@ -274,6 +280,11 @@ public class UserProfileServiceImpl implements IUserProfileService {
         clearUserCache(userId);
     }
 
+    @Override
+    public void evictUserCache(Long userId) {
+        clearUserCache(userId);
+    }
+
     private UserProfileStatsVO buildStats(Long userId) {
         UserStats stats = userStatsMapper.selectById(userId);
         UserProfileStatsVO vo = new UserProfileStatsVO();
@@ -282,12 +293,14 @@ public class UserProfileServiceImpl implements IUserProfileService {
             vo.setFansCount(0);
             vo.setMemeCount(0);
             vo.setLikeReceived(0);
+            vo.setFavoriteCount(userFavoriteCountService.getFavoriteCount(userId));
             return vo;
         }
         vo.setFollowCount(defaultInt(stats.getFollowCount()));
         vo.setFansCount(defaultInt(stats.getFansCount()));
         vo.setMemeCount(defaultInt(stats.getMemeCount()));
         vo.setLikeReceived(defaultInt(stats.getLikeReceived()));
+        vo.setFavoriteCount(userFavoriteCountService.getFavoriteCount(userId));
         return vo;
     }
 
@@ -321,6 +334,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
     private List<UserFavoriteItemVO> queryLatestUserFavorites(Long userId, int limit) {
         LambdaQueryWrapper<UserFavorite> wrapper = new LambdaQueryWrapper<UserFavorite>()
                 .eq(UserFavorite::getUserId, userId)
+                .eq(UserFavorite::getIsDeleted, FAVORITE_NOT_DELETED)
                 .orderByDesc(UserFavorite::getCreateTime)
                 .last("LIMIT " + limit);
         List<UserFavorite> favorites = userFavoriteMapper.selectList(wrapper);
@@ -415,7 +429,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 return null;
             }
             return objectMapper.readValue(json, typeReference);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             return null;
         }
     }

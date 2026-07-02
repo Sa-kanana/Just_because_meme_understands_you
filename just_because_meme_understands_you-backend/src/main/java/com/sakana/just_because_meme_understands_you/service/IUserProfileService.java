@@ -22,4 +22,6 @@ public interface IUserProfileService {
     UploadAvatarVO uploadAvatar(Long userId, MultipartFile file);
 
     void updateProfile(Long userId, UserProfileUpdateRequestDTO request);
+
+    void evictUserCache(Long userId);
 }

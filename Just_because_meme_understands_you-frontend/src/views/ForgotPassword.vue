@@ -176,7 +176,7 @@ import {
 export default {
   name: 'ForgotPasswordPage',
   data() {
-    const validateConfirm = (rule, value, callback) => {
+    const validateConfirm = (_rule, value, callback) => {
       if (!value) {
         callback(new Error('请再次输入新密码'))
         return
@@ -254,7 +254,7 @@ export default {
           localStorage.removeItem('meme_forgot_code_limit')
         }
       }
-    } catch (e) {
+    } catch (_) {
       // ignore
     }
   },

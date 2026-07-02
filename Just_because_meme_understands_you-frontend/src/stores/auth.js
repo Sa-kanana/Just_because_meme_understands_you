@@ -176,7 +176,7 @@ export const useAuthStore = defineStore('auth', {
             sessionStorage.getItem(STORAGE_MODE_KEY)
           this.rememberMe = mode !== STORAGE_MODE.SESSION
         }
-      } catch (e) {
+      } catch (_) {
         // ignore
       }
     },

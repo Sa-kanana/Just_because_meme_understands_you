@@ -30,15 +30,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Service
 public class AuthServiceImpl implements IAuthService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Resource
     private IUserAuthService userAuthService;
@@ -141,7 +143,7 @@ public class AuthServiceImpl implements IAuthService {
         io.jsonwebtoken.Claims claims;
         try {
             claims = jwtUtil.parseToken(refreshToken);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已过期，请重新登录");
         }
         if (!TOKEN_TYPE_REFRESH.equals(String.valueOf(claims.get(TOKEN_TYPE_CLAIM)))) {
@@ -156,7 +158,7 @@ public class AuthServiceImpl implements IAuthService {
         Long userId;
         try {
             userId = Long.parseLong(userIdStr);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException ignored) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
         }
 
@@ -283,9 +285,9 @@ public class AuthServiceImpl implements IAuthService {
         }
 
         // 生成 6 位数字验证码
-        String code = String.format("%06d", new Random().nextInt(1000000));
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
 
-        // 写入 Redis：验证码 10 分钟过期
+        // 写入 Redis：验证码过期时间见 REGISTER_CODE_TTL_MINUTES
         String codeKey = REGISTER_CODE_KEY_PREFIX + email;
         ops.set(Objects.requireNonNull(codeKey), Objects.requireNonNull(code), REGISTER_CODE_TTL_MINUTES, TimeUnit.MINUTES);
 
@@ -301,7 +303,7 @@ public class AuthServiceImpl implements IAuthService {
         message.setText("您的验证码为：" + code + "，有效期 " + REGISTER_CODE_TTL_MINUTES + " 分钟，请勿泄露给他人。");
         try {
             mailSender.send(message);
-        } catch (org.springframework.mail.MailException e) {
+        } catch (org.springframework.mail.MailException ignored) {
             // 邮件发送失败时清理验证码与限流键，避免用户无法重试
             stringRedisTemplate.delete(codeKey);
             stringRedisTemplate.delete(rateKey);
@@ -343,7 +345,7 @@ public class AuthServiceImpl implements IAuthService {
             return rateLimitVO;
         }
 
-        String code = String.format("%06d", new Random().nextInt(1000000));
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
         String codeKey = FORGOT_PASSWORD_CODE_PREFIX + email;
         ops.set(Objects.requireNonNull(codeKey), Objects.requireNonNull(code), FORGOT_PASSWORD_CODE_TTL_MINUTES, TimeUnit.MINUTES);
         ops.set(Objects.requireNonNull(rateKey), "1", REGISTER_CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
@@ -355,7 +357,7 @@ public class AuthServiceImpl implements IAuthService {
         message.setText("您的验证码为：" + code + "，有效期 " + FORGOT_PASSWORD_CODE_TTL_MINUTES + " 分钟，请勿泄露。");
         try {
             mailSender.send(message);
-        } catch (org.springframework.mail.MailException e) {
+        } catch (org.springframework.mail.MailException ignored) {
             stringRedisTemplate.delete(codeKey);
             stringRedisTemplate.delete(rateKey);
             throw new BizException(Result.CODE_ERROR, "验证码发送失败，请稍后重试");
@@ -439,7 +441,7 @@ public class AuthServiceImpl implements IAuthService {
         io.jsonwebtoken.Claims claims;
         try {
             claims = jwtUtil.parseToken(accessToken);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "无效的令牌，请重新登录");
         }
         if (!TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(TOKEN_TYPE_CLAIM)))) {

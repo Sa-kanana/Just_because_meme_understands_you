@@ -67,3 +67,7 @@ jwt:
 auth:
   # 刷新接口每秒允许请求次数（按 IP + refresh token 指纹限流）
   refresh-qps-limit: 5
+
+user-favorite:
+  # 收藏总数 Redis -> DB 同步间隔（毫秒）
+  count-sync-interval-ms: 120000

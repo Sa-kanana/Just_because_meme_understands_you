@@ -12,4 +12,6 @@ public class UserProfileStatsVO {
     private Integer memeCount;
 
     private Integer likeReceived;
+
+    private Integer favoriteCount;
 }

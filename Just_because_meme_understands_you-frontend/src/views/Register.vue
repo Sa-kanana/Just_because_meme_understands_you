@@ -113,7 +113,7 @@ import { sendRegisterCode, register } from '@/api/auth'
 export default {
   name: 'RegisterPage',
   data() {
-    const validateConfirmPassword = (rule, value, callback) => {
+    const validateConfirmPassword = (_rule, value, callback) => {
       if (!value) {
         callback(new Error('请再次输入密码'))
         return
@@ -185,7 +185,7 @@ export default {
           localStorage.removeItem('meme_register_code_limit')
         }
       }
-    } catch (e) {
+    } catch (_) {
       // ignore storage error
     }
   },
@@ -211,7 +211,7 @@ export default {
           this.countdownTimer = null
           try {
             localStorage.removeItem('meme_register_code_limit')
-          } catch (e) {
+          } catch (_) {
             // ignore storage error
           }
         } else {
@@ -249,7 +249,7 @@ export default {
               'meme_register_code_limit',
               JSON.stringify({ expireAt })
             )
-          } catch (e) {
+          } catch (_) {
             // ignore storage error
           }
 

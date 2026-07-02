@@ -94,7 +94,7 @@ public class UserProfileController {
         }
         try {
             return Long.parseLong(userId);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException ignored) {
             throw new BizException(Result.CODE_BAD_REQUEST, "userId 格式错误");
         }
     }

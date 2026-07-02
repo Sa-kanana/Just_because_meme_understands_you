@@ -50,6 +50,15 @@
             <div class="detail-meta">
               <div class="detail-title-row">
                 <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
+                <el-button
+                  class="detail-favorite-btn"
+                  :type="isFavorited ? 'warning' : 'default'"
+                  :loading="favoriteLoading"
+                  :disabled="favoriteLoading"
+                  @click="handleFavoriteClick"
+                >
+                  {{ isFavorited ? '已收藏' : '收藏' }}
+                </el-button>
               </div>
               <p v-if="meme.introduction" class="detail-intro">
                 {{ meme.introduction }}
@@ -132,17 +141,23 @@
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
-import { watch, computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { addMemeFavorite, removeMemeFavorite } from '@/api/meme'
+import { watch, computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
 const memeDetailStore = useMemeDetailStore()
+const authStore = useAuthStore()
 
-const { meme, loading, error } = storeToRefs(memeDetailStore)
+const { meme, loading, error, isFavorited } = storeToRefs(memeDetailStore)
 const detailTags = computed(() => memeDetailStore.tags)
 const detailLinks = computed(() => memeDetailStore.links)
 
 const memeId = computed(() => route.params.id || route.query.memeId)
+const favoriteLoading = ref(false)
+let favoriteDebounceTimer = null
 
 watch(
   memeId,
@@ -154,6 +169,51 @@ watch(
 
 function reload() {
   memeDetailStore.fetchDetail(memeId.value)
+}
+
+function handleFavoriteClick() {
+  if (favoriteDebounceTimer) {
+    clearTimeout(favoriteDebounceTimer)
+  }
+  favoriteDebounceTimer = setTimeout(() => {
+    toggleFavorite()
+  }, 300)
+}
+
+async function toggleFavorite() {
+  if (!authStore.isLoggedIn) {
+    router.push({
+      name: 'login',
+      query: { redirect: route.fullPath },
+    })
+    return
+  }
+  const id = memeId.value
+  if (!id || favoriteLoading.value) return
+
+  favoriteLoading.value = true
+  try {
+    if (isFavorited.value) {
+      await removeMemeFavorite(id)
+      memeDetailStore.setFavorited(false)
+      ElMessage.success('已取消收藏')
+    } else {
+      await addMemeFavorite(id, 0)
+      memeDetailStore.setFavorited(true)
+      ElMessage.success('收藏成功')
+    }
+  } catch (e) {
+    if (e && (e.status === 401 || e.code === 401)) {
+      router.push({
+        name: 'login',
+        query: { redirect: route.fullPath },
+      })
+      return
+    }
+    ElMessage.error((e && e.message) || '操作失败，请稍后重试')
+  } finally {
+    favoriteLoading.value = false
+  }
 }
 
 function formatNum(num) {
@@ -294,8 +354,13 @@ function goSearchByTag(tag) {
 .detail-title-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+.detail-favorite-btn {
+  flex-shrink: 0;
 }
 
 .detail-title {

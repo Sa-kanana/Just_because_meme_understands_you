@@ -7,14 +7,17 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
+import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
 import com.sakana.just_because_meme_understands_you.entity.MemeTagRelation;
 import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
+import com.sakana.just_because_meme_understands_you.service.IMemeResourceService;
 import com.sakana.just_because_meme_understands_you.service.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.IMemeTagRelationService;
 import com.sakana.just_because_meme_understands_you.service.IMemeTagService;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.vo.MemeResourceVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeTagVO;
 import com.sakana.just_because_meme_understands_you.vo.SimpleMemeVO;
 import jakarta.annotation.Resource;
@@ -50,6 +53,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
 
     @Resource
     private IMemeTagService memeTagService;
+
+    @Resource
+    private IMemeResourceService memeResourceService;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -206,7 +212,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             return null;
         }
         List<MemeTag> tags = getTagsByMemeId(memeId);
-        MemeDetailVO detailVO = buildDetailVO(meme, tags);
+        List<MemeResource> links = getLinksByMemeId(memeId);
+        MemeDetailVO detailVO = buildDetailVO(meme, tags, links);
 
         // 3. 写入 Redis
         try {
@@ -242,9 +249,21 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     /**
-     * 根据梗实体与标签列表组装详细页 VO（符合接口 Meme）；links 暂无表结构返回空列表。
+     * 根据梗 id 查询关联的相关链接（meme_resource）
      */
-    private MemeDetailVO buildDetailVO(Meme meme, List<MemeTag> tags) {
+    private List<MemeResource> getLinksByMemeId(Integer memeId) {
+        List<MemeResource> resources = memeResourceService.list(
+                new LambdaQueryWrapper<MemeResource>()
+                        .eq(MemeResource::getMemeId, memeId.longValue())
+                        .orderByAsc(MemeResource::getId)
+        );
+        return resources != null ? resources : Collections.emptyList();
+    }
+
+    /**
+     * 根据梗实体、标签与链接列表组装详细页 VO（符合接口 Meme）
+     */
+    private MemeDetailVO buildDetailVO(Meme meme, List<MemeTag> tags, List<MemeResource> links) {
         MemeDetailVO vo = new MemeDetailVO();
         vo.setId(meme.getId());
         vo.setIntroduction(meme.getIntroduction());
@@ -257,7 +276,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         vo.setUpdateTime(meme.getUpdateTime());
         vo.setStatus(meme.getStatus());
         vo.setMemeTag(toMemeTagVOList(tags));
-        vo.setLinks(Collections.emptyList());
+        vo.setLinks(toMemeResourceVOList(links));
         return vo;
     }
 
@@ -311,13 +330,33 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         return list;
     }
 
+    private List<MemeResourceVO> toMemeResourceVOList(List<MemeResource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MemeResourceVO> list = new ArrayList<>(resources.size());
+        for (MemeResource resource : resources) {
+            String url = resource.getResourceUrl();
+            if (url == null || url.isBlank()) {
+                continue;
+            }
+            MemeResourceVO vo = new MemeResourceVO();
+            if (resource.getId() != null) {
+                vo.setId(resource.getId().intValue());
+            }
+            vo.setResourceUrl(Collections.singletonList(url.trim()));
+            list.add(vo);
+        }
+        return list;
+    }
+
     private static Integer parseRelatedQuantity(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
         try {
             return Integer.parseInt(value.trim());
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException ignored) {
             return null;
         }
     }
