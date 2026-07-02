@@ -1,0 +1,69 @@
+server:
+  port: 8080
+
+#应用名
+spring:
+  application:
+    name: just_because_meme_understands_you
+  #邮箱验证配置
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${MAIL_USERNAME} # QQ邮箱
+    password: ${MAIL_PASSWORD}  # qq邮箱16位授权码
+    default-encoding: UTF-8
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          # 关键配置：QQ邮箱必须开启 SSL
+          ssl:
+            enable: true
+          socketFactory:
+            port: 465
+            class: javax.net.ssl.SSLSocketFactory
+            fallback: false
+  #mysql数据库配置
+  datasource:
+    password: 1234
+    username: root
+    url: jdbc:mysql://192.168.100.128:3306/MemeLIst?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    # hikari数据库连接池配置
+    hikari:
+      # 设置为 30 分钟
+      max-lifetime: 1800000
+      # 连接在池中保持空闲的最长时间
+      idle-timeout: 600000
+      # 建议配置，确保连接在取出时是活的
+      connection-test-query: SELECT 1
+  data:
+    redis:
+      host: 192.168.100.128
+      port: 6379
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20 # 针对你提到的“高并发”模式进行扩展
+          max-wait: -1ms
+          max-idle: 10
+# 阿里云OSS配置
+oss:
+  endpoint: oss-cn-beijing.aliyuncs.com
+  accessKeyId: ${OSS_ACCESS_KEY_ID}
+  accessKeySecret: ${OSS_ACCESS_KEY_SECRET}
+  bucketName: ${OSS_BUCKET_NAME}
+
+jwt:
+  # 注意：生产环境请使用更复杂且保密的密钥字符串，长度至少 32 字节
+  secret: "just_because_meme_understands_you_jwt_secret_2026"
+  # access token 过期时间：2 小时
+  expiration: 7200000
+  # refresh token 过期时间：7 天
+  refresh-expiration: 604800000
+  # 本地开发可为 false，生产环境建议 true（需 HTTPS）
+  cookie-secure: false
+
+auth:
+  # 刷新接口每秒允许请求次数（按 IP + refresh token 指纹限流）
+  refresh-qps-limit: 5

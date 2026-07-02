@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sakana.just_because_meme_understands_you.mapper.MemeMapper">
+
+    <!-- 关键字搜索：梗名称、介绍或关联标签名模糊匹配，只展示 status = 1，支持 mostLikes/mostViews/mostComments 排序 -->
+    <select id="searchByKeyword" resultType="com.sakana.just_because_meme_understands_you.entity.Meme">
+        SELECT m.id,
+               m.introduction,
+               m.name,
+               m.image,
+               m.page_views,
+               m.likes,
+               m.comments,
+               m.release_time,
+               m.update_time,
+               m.status
+        FROM meme m
+        WHERE m.status = 1
+          AND (
+              m.name LIKE CONCAT('%', #{keyword}, '%')
+              OR m.introduction LIKE CONCAT('%', #{keyword}, '%')
+              OR EXISTS (
+                  SELECT 1 FROM meme_tag_relation r
+                  INNER JOIN meme_tag t ON r.meme_tag_id = t.id
+                  WHERE r.meme_id = m.id AND t.name LIKE CONCAT('%', #{keyword}, '%')
+              )
+          )
+        ORDER BY
+        <choose>
+            <when test="mostLikes != null and mostLikes != ''">m.likes DESC</when>
+            <when test="mostViews != null and mostViews != ''">m.page_views DESC</when>
+            <when test="mostComments != null and mostComments != ''">m.comments DESC</when>
+            <otherwise>m.likes DESC</otherwise>
+        </choose>
+    </select>
+</mapper>
