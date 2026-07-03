@@ -3,7 +3,7 @@ package com.sakana.just_because_meme_understands_you.controller;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
-import com.sakana.just_because_meme_understands_you.service.IUserProfileService;
+import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;

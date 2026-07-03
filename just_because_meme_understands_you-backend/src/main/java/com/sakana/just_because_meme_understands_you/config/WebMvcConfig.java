@@ -31,6 +31,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/list",
                         "/search",
                         "/detail",
+                        "/detail/*/comments",
+                        "/detail/comments/*/replies",
                         "/",
                         "/image",
                         "/error"

@@ -164,3 +164,72 @@ export function getMemeFavoriteStatus(memeId) {
     throw new Error((res && (res.message || res.msg)) || '查询收藏状态失败')
   })
 }
+
+/**
+ * 分页获取根评论
+ * GET /detail/{memeId}/comments
+ */
+export function getMemeRootComments(memeId, params = {}) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少梗 id'))
+  const { page = 1, size = 10, sortType = 'new' } = params
+  const query = new URLSearchParams({
+    page: String(page),
+    size: String(size),
+    sortType: String(sortType),
+  })
+  return request(`/detail/${encodeURIComponent(id)}/comments?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) {
+      return res.data
+    }
+    throw new Error((res && (res.message || res.msg)) || '加载评论失败')
+  })
+}
+
+/**
+ * 获取子评论
+ * GET /detail/comments/{rootId}/replies
+ */
+export function getMemeCommentReplies(rootId, params = {}) {
+  const id = rootId != null ? String(rootId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少根评论 id'))
+  const { page = 1, size = 10 } = params
+  const query = new URLSearchParams({ page: String(page), size: String(size) })
+  return request(`/detail/comments/${encodeURIComponent(id)}/replies?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && Array.isArray(res.data)) {
+      return res.data
+    }
+    throw new Error((res && (res.message || res.msg)) || '加载回复失败')
+  })
+}
+
+/**
+ * 发表评论（根评论 / 回复子评论）
+ * POST /detail/comments
+ * @param {Object} payload
+ * @param {number|string} payload.memeId
+ * @param {string} [payload.rootId='0']
+ * @param {string} [payload.parentId='0']
+ * @param {string} payload.content
+ * @param {string[]} [payload.imageUrls=[]]
+ */
+export function addMemeComment(payload = {}) {
+  const memeId = payload.memeId != null ? Number(payload.memeId) : NaN
+  if (!Number.isFinite(memeId) || memeId <= 0) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  const body = {
+    memeId,
+    rootId: payload.rootId != null ? String(payload.rootId) : '0',
+    parentId: payload.parentId != null ? String(payload.parentId) : '0',
+    content: String(payload.content || '').trim(),
+    imageUrls: Array.isArray(payload.imageUrls) ? payload.imageUrls : [],
+  }
+  return request('/detail/comments', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '发表评论失败')
+  })
+}

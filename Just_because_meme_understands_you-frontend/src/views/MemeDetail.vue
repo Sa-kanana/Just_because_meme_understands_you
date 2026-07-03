@@ -129,6 +129,173 @@
         </div>
       </el-card>
 
+      <!-- 评论区 -->
+      <el-card class="detail-section-card detail-comment-card" shadow="never">
+        <template #header>
+          <div class="detail-section-header comment-header-row">
+            <div>
+              <h2 class="detail-section-title">评论区</h2>
+              <span class="detail-section-sub">共 {{ formatNum(commentTotal) }} 条评论</span>
+            </div>
+            <el-radio-group v-model="commentSortType" size="small" @change="reloadComments">
+              <el-radio-button label="new">最新</el-radio-button>
+              <el-radio-button label="hot">最热</el-radio-button>
+            </el-radio-group>
+          </div>
+        </template>
+
+        <div v-if="authStore.isLoggedIn" class="comment-editor">
+          <div class="comment-editor-row">
+            <el-avatar
+              :size="40"
+              :src="currentUserAvatar"
+              class="comment-editor-avatar"
+              @click="goCurrentUserProfile"
+            >
+              {{ commentAvatarFallback }}
+            </el-avatar>
+            <div class="comment-editor-input-wrap">
+              <el-input
+                v-model="commentDraft"
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 6 }"
+                maxlength="2000"
+                class="comment-editor-input"
+                placeholder="只是一直在等你而已，才不是想被评论呢～"
+                @focus="commentEditorFocused = true"
+                @blur="onCommentEditorBlur"
+                @keydown.ctrl.enter.prevent="submitRootComment"
+                @keydown.meta.enter.prevent="submitRootComment"
+              />
+            </div>
+          </div>
+          <div
+            v-if="commentEditorFocused || commentDraft.trim()"
+            class="comment-editor-actions"
+          >
+            <el-button
+              type="primary"
+              :loading="commentSubmitting"
+              :disabled="commentSubmitting || !commentDraft.trim()"
+              @click="submitRootComment"
+            >
+              发表评论
+            </el-button>
+          </div>
+        </div>
+        <div v-else class="comment-login-prompt">
+          <span class="comment-login-text">登录后可发表评论</span>
+          <el-button type="primary" @click="goToLogin">登录</el-button>
+        </div>
+
+        <div v-if="commentsLoading" class="comment-loading">
+          <el-skeleton :rows="3" animated />
+        </div>
+        <el-empty v-else-if="!rootComments.length" description="还没有评论，来做第一个吧" />
+        <div v-else class="comment-list">
+          <div v-for="item in rootComments" :key="item.id" class="comment-item">
+            <div class="comment-item-body">
+              <el-avatar
+                :size="36"
+                :src="getCommentAvatar(item)"
+                class="comment-item-avatar"
+                @click="goUserProfile(item.userId)"
+              >
+                {{ getCommentAvatarFallback(item.userName) }}
+              </el-avatar>
+              <div class="comment-item-main">
+                <div class="comment-item-head">
+                  <span class="comment-user">{{ item.userName || '匿名用户' }}</span>
+                  <span class="comment-time">{{ formatDate(item.createTime) }}</span>
+                </div>
+                <p class="comment-content">{{ item.content }}</p>
+                <div v-if="item.images && item.images.length" class="comment-images">
+                  <el-image
+                    v-for="(img, idx) in item.images"
+                    :key="`${item.id}-img-${idx}`"
+                    :src="img"
+                    fit="cover"
+                    class="comment-image"
+                  />
+                </div>
+                <div class="comment-item-footer">
+                  <span v-if="item.likes != null" class="comment-meta">👍 {{ formatNum(item.likes) }}</span>
+              <el-button
+                v-if="item.replyCount > 0"
+                link
+                class="comment-reply-btn"
+                @click="toggleReplies(item)"
+              >
+                {{ expandedRoots.has(String(item.id)) ? '收起' : '展开' }}
+                {{ item.replyCount }} 条回复
+              </el-button>
+                  <el-button link class="comment-reply-btn" @click="startReply(item, item)">回复</el-button>
+                </div>
+
+                <div v-if="expandedRoots.has(String(item.id))" class="reply-list">
+                  <div v-if="repliesLoadingMap[String(item.id)]" class="comment-loading">
+                    <el-skeleton :rows="2" animated />
+                  </div>
+                  <template v-else>
+                    <div
+                      v-for="reply in repliesMap[String(item.id)] || []"
+                      :key="reply.id"
+                      class="reply-item"
+                    >
+                      <el-avatar
+                        :size="28"
+                        :src="getCommentAvatar(reply)"
+                        class="comment-item-avatar reply-item-avatar"
+                        @click="goUserProfile(reply.userId)"
+                      >
+                        {{ getCommentAvatarFallback(reply.userName) }}
+                      </el-avatar>
+                      <div class="reply-item-main">
+                        <div class="reply-item-head">
+                          <span class="comment-user">{{ reply.userName || '匿名用户' }}</span>
+                          <span v-if="reply.replyToUserName" class="reply-target">回复 @{{ reply.replyToUserName }}</span>
+                          <span class="comment-time">{{ formatDate(reply.createTime) }}</span>
+                        </div>
+                        <p class="comment-content">{{ reply.content }}</p>
+                        <div class="reply-item-footer">
+                          <el-button link class="comment-reply-btn" @click="startReply(item, reply)">回复</el-button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <div v-if="replyDraftRootId === String(item.id)" class="reply-editor">
+                  <el-input
+                    v-model="replyDraft"
+                    type="textarea"
+                    :rows="2"
+                    maxlength="2000"
+                    :placeholder="`回复 ${replyToName || 'TA'}…`"
+                  />
+                  <div class="comment-editor-actions">
+                    <el-button size="small" @click="cancelReply">取消</el-button>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      :loading="replySubmitting"
+                      :disabled="replySubmitting || !replyDraft.trim()"
+                      @click="submitReply()"
+                    >
+                      发送回复
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="commentHasMore" class="comment-load-more">
+          <el-button :loading="commentsLoading" @click="loadMoreComments">加载更多</el-button>
+        </div>
+      </el-card>
+
       <!-- 底部提示 -->
       <div class="detail-footer-tip">
         <span>只因“梗”懂你 · 让每一次会心一笑都有出处。</span>
@@ -142,8 +309,8 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite } from '@/api/meme'
-import { watch, computed, ref, onUnmounted } from 'vue'
+import { addMemeFavorite, removeMemeFavorite, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -159,6 +326,35 @@ const memeId = computed(() => route.params.id || route.query.memeId)
 const favoriteLoading = ref(false)
 let favoriteDebounceTimer = null
 
+const commentSortType = ref('new')
+const rootComments = ref([])
+const commentTotal = ref(0)
+const commentHasMore = ref(false)
+const commentPage = ref(1)
+const commentsLoading = ref(false)
+const commentDraft = ref('')
+const commentSubmitting = ref(false)
+const expandedRoots = ref(new Set())
+const repliesMap = reactive({})
+const repliesLoadingMap = reactive({})
+const replyDraftRootId = ref('')
+const replyDraft = ref('')
+const replyParentId = ref(null)
+const replyToName = ref('')
+const replySubmitting = ref(false)
+const commentEditorFocused = ref(false)
+
+const currentUserAvatar = computed(() => {
+  const avatar = authStore.currentUser?.avatar
+  return avatar != null ? String(avatar).trim() : ''
+})
+
+const commentAvatarFallback = computed(() => {
+  const user = authStore.currentUser
+  const name = user?.nickname || user?.username || 'U'
+  return String(name).charAt(0).toUpperCase()
+})
+
 function clearFavoriteDebounceTimer() {
   if (favoriteDebounceTimer) {
     clearTimeout(favoriteDebounceTimer)
@@ -170,7 +366,9 @@ watch(
   memeId,
   (id) => {
     clearFavoriteDebounceTimer()
+    resetCommentState()
     memeDetailStore.fetchDetail(id)
+    loadComments(true)
   },
   { immediate: true }
 )
@@ -181,6 +379,229 @@ onUnmounted(() => {
 
 function reload() {
   memeDetailStore.fetchDetail(memeId.value)
+  loadComments(true)
+}
+
+function resetCommentState() {
+  rootComments.value = []
+  commentTotal.value = 0
+  commentHasMore.value = false
+  commentPage.value = 1
+  commentDraft.value = ''
+  commentEditorFocused.value = false
+  expandedRoots.value = new Set()
+  Object.keys(repliesMap).forEach((key) => delete repliesMap[key])
+  Object.keys(repliesLoadingMap).forEach((key) => delete repliesLoadingMap[key])
+  cancelReply()
+}
+
+async function loadComments(reset = false) {
+  const id = memeId.value
+  if (!id) return
+  if (reset) {
+    commentPage.value = 1
+    rootComments.value = []
+  }
+  commentsLoading.value = true
+  try {
+    const data = await getMemeRootComments(id, {
+      page: commentPage.value,
+      size: 10,
+      sortType: commentSortType.value,
+    })
+    const list = Array.isArray(data.list) ? data.list : []
+    rootComments.value = reset ? list : rootComments.value.concat(list)
+    commentTotal.value = Number(data.total) || rootComments.value.length
+    commentHasMore.value = !!data.hasMore
+  } catch (e) {
+    ElMessage.error(e.message || '加载评论失败')
+  } finally {
+    commentsLoading.value = false
+  }
+}
+
+function reloadComments() {
+  loadComments(true)
+}
+
+function loadMoreComments() {
+  if (commentsLoading.value || !commentHasMore.value) return
+  commentPage.value += 1
+  loadComments(false)
+}
+
+function goToLogin() {
+  router.push({ name: 'login', query: { redirect: route.fullPath } })
+}
+
+function goUserProfile(rawId) {
+  const userId = rawId != null ? String(rawId).trim() : ''
+  if (!userId || !/^\d+$/.test(userId)) return
+  router.push({ name: 'userProfile', params: { userId } })
+}
+
+function goCurrentUserProfile() {
+  const user = authStore.currentUser
+  const rawId = user?.id ?? user?.userId
+  const userId = rawId != null ? String(rawId).trim() : ''
+  if (!userId || !/^\d+$/.test(userId)) {
+    ElMessage.warning('登录态中的用户ID异常，请重新登录后再试')
+    goToLogin()
+    return
+  }
+  goUserProfile(userId)
+}
+
+function getCommentAvatar(comment) {
+  const avatar = comment?.userAvatar ?? comment?.avatar
+  return avatar != null ? String(avatar).trim() : ''
+}
+
+function getCommentAvatarFallback(name) {
+  const label = name || 'U'
+  return String(label).charAt(0).toUpperCase()
+}
+
+function onCommentEditorBlur() {
+  window.setTimeout(() => {
+    if (!commentDraft.value.trim()) {
+      commentEditorFocused.value = false
+    }
+  }, 150)
+}
+
+function requireLoginForComment() {
+  if (authStore.isLoggedIn) return true
+  goToLogin()
+  return false
+}
+
+async function submitRootComment() {
+  if (!requireLoginForComment()) return
+  const content = commentDraft.value.trim()
+  if (!content) return
+  commentSubmitting.value = true
+  try {
+    const data = await addMemeComment({
+      memeId: memeId.value,
+      rootId: '0',
+      parentId: '0',
+      content,
+      imageUrls: [],
+    })
+    commentDraft.value = ''
+    commentEditorFocused.value = false
+    rootComments.value.unshift({
+      id: data.commentId,
+      userId: authStore.currentUser?.id,
+      userName: authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
+      userAvatar: currentUserAvatar.value,
+      content: data.content,
+      images: [],
+      replyCount: 0,
+      likes: 0,
+      createTime: data.createTime,
+    })
+    commentTotal.value += 1
+    if (meme.value) {
+      meme.value.comments = (Number(meme.value.comments) || 0) + 1
+    }
+    ElMessage.success('评论成功')
+  } catch (e) {
+    if (e && (e.status === 401 || e.code === 401)) {
+      goToLogin()
+      return
+    }
+    ElMessage.error(e.message || '发表评论失败')
+  } finally {
+    commentSubmitting.value = false
+  }
+}
+
+function startReply(rootItem, parentItem) {
+  if (!requireLoginForComment()) return
+  replyDraftRootId.value = String(rootItem.id)
+  replyParentId.value = parentItem.id
+  replyToName.value = parentItem.userName || 'TA'
+  replyDraft.value = ''
+}
+
+function cancelReply() {
+  replyDraftRootId.value = ''
+  replyParentId.value = null
+  replyToName.value = ''
+  replyDraft.value = ''
+}
+
+async function submitReply() {
+  if (!requireLoginForComment()) return
+  const content = replyDraft.value.trim()
+  if (!content) return
+  const rootId = replyDraftRootId.value
+  const parentId = replyParentId.value
+  if (!rootId || parentId == null) return
+  replySubmitting.value = true
+  try {
+    const data = await addMemeComment({
+      memeId: memeId.value,
+      rootId,
+      parentId: String(parentId),
+      content,
+      imageUrls: [],
+    })
+    if (!repliesMap[rootId]) {
+      repliesMap[rootId] = []
+    }
+    repliesMap[rootId].push({
+      id: data.commentId,
+      parentId,
+      userId: authStore.currentUser?.id,
+      userName: authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
+      userAvatar: currentUserAvatar.value,
+      content: data.content,
+      images: [],
+      createTime: data.createTime,
+    })
+    const root = rootComments.value.find((c) => String(c.id) === rootId)
+    if (root) {
+      root.replyCount = (Number(root.replyCount) || 0) + 1
+    }
+    expandedRoots.value.add(rootId)
+    cancelReply()
+    if (meme.value) {
+      meme.value.comments = (Number(meme.value.comments) || 0) + 1
+    }
+    ElMessage.success('回复成功')
+  } catch (e) {
+    if (e && (e.status === 401 || e.code === 401)) {
+      goToLogin()
+      return
+    }
+    ElMessage.error(e.message || '发表回复失败')
+  } finally {
+    replySubmitting.value = false
+  }
+}
+
+async function toggleReplies(item) {
+  const key = String(item.id)
+  if (expandedRoots.value.has(key)) {
+    expandedRoots.value.delete(key)
+    return
+  }
+  expandedRoots.value.add(key)
+  if (Array.isArray(repliesMap[key]) && repliesMap[key].length) {
+    return
+  }
+  repliesLoadingMap[key] = true
+  try {
+    repliesMap[key] = await getMemeCommentReplies(item.id, { page: 1, size: 50 })
+  } catch (e) {
+    ElMessage.error(e.message || '加载回复失败')
+    expandedRoots.value.delete(key)
+  } finally {
+    repliesLoadingMap[key] = false
+  }
 }
 
 function handleFavoriteClick() {
@@ -478,6 +899,246 @@ function goSearchByTag(tag) {
   font-size: 12px;
   color: #9ca3af;
   text-align: right;
+}
+
+.comment-header-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.comment-editor {
+  margin-bottom: 16px;
+}
+
+.comment-editor-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.comment-editor-avatar {
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.comment-editor-avatar:hover {
+  opacity: 0.85;
+}
+
+.comment-editor-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-editor-input :deep(.el-textarea__inner) {
+  min-height: 40px;
+  padding: 10px 16px;
+  line-height: 1.5;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  box-shadow: none;
+  resize: none;
+  background: #fff;
+}
+
+.comment-editor-input :deep(.el-textarea__inner::placeholder) {
+  color: #9ca3af;
+}
+
+.comment-editor-input :deep(.el-textarea__inner:focus) {
+  border-color: #c7d2fe;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.comment-editor-actions {
+  margin-top: 8px;
+  padding-left: 52px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.comment-login-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 10px;
+}
+
+.comment-login-text {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.comment-loading {
+  padding: 12px 0;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.comment-item {
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.comment-item:first-child {
+  padding-top: 0;
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.comment-item-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.comment-item-avatar {
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.comment-item-avatar:hover {
+  opacity: 0.85;
+}
+
+.comment-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.comment-user {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.comment-content {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.comment-image {
+  width: 88px;
+  height: 88px;
+  border-radius: 8px;
+}
+
+.comment-item-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.comment-meta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.comment-reply-btn.el-button.is-link {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.comment-reply-btn.el-button.is-link:hover,
+.comment-reply-btn.el-button.is-link:focus {
+  color: #409eff;
+}
+
+.reply-editor {
+  margin-top: 10px;
+  padding: 10px;
+  background: #f9fafb;
+  border-radius: 10px;
+}
+
+.reply-list {
+  margin-top: 10px;
+  padding-left: 0;
+  border-left: none;
+}
+
+.reply-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.reply-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.reply-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.reply-item-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.reply-item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.reply-target {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.reply-item-avatar {
+  margin-top: 2px;
+}
+
+.comment-load-more {
+  margin-top: 12px;
+  text-align: center;
 }
 
 @media (max-width: 768px) {

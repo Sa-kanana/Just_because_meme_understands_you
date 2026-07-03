@@ -71,3 +71,11 @@ auth:
 user-favorite:
   # 收藏总数 Redis -> DB 同步间隔（毫秒）
   count-sync-interval-ms: 120000
+
+meme-comment:
+  # Redis 评论计数 -> meme.comments 批量回写间隔（毫秒）
+  count-sync-interval-ms: 120000
+  async:
+    core-pool-size: 4
+    max-pool-size: 16
+    queue-capacity: 500

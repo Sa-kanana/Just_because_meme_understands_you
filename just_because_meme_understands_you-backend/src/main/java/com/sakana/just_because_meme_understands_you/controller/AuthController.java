@@ -2,7 +2,7 @@ package com.sakana.just_because_meme_understands_you.controller;
 
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.BizException;
-import com.sakana.just_because_meme_understands_you.service.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.dto.ForgotPasswordSendCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;

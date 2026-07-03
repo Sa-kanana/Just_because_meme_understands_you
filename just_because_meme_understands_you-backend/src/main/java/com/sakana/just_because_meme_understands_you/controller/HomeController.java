@@ -1,8 +1,8 @@
 package com.sakana.just_because_meme_understands_you.controller;
 
 import com.sakana.just_because_meme_understands_you.common.Result;
-import com.sakana.just_because_meme_understands_you.service.IHomeImageService;
-import com.sakana.just_because_meme_understands_you.service.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.home.IHomeImageService;
+import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.vo.HomeImageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;

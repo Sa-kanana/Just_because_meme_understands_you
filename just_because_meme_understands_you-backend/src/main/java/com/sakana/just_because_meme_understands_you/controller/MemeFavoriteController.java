@@ -3,7 +3,7 @@ package com.sakana.just_because_meme_understands_you.controller;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.dto.MemeFavoriteRequestDTO;
-import com.sakana.just_because_meme_understands_you.service.IUserFavoriteService;
+import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteService;
 import com.sakana.just_because_meme_understands_you.vo.MemeFavoriteStatusVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeFavoriteVO;
 import jakarta.annotation.Resource;

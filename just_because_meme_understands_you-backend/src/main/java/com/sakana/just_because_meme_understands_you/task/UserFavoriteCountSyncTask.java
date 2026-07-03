@@ -1,6 +1,6 @@
 package com.sakana.just_because_meme_understands_you.task;
 
-import com.sakana.just_because_meme_understands_you.service.UserFavoriteCountService;
+import com.sakana.just_because_meme_understands_you.service.user.UserFavoriteCountService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
