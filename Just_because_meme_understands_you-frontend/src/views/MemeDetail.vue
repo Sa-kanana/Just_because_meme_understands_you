@@ -143,7 +143,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
 import { addMemeFavorite, removeMemeFavorite } from '@/api/meme'
-import { watch, computed, ref } from 'vue'
+import { watch, computed, ref, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -159,23 +159,34 @@ const memeId = computed(() => route.params.id || route.query.memeId)
 const favoriteLoading = ref(false)
 let favoriteDebounceTimer = null
 
+function clearFavoriteDebounceTimer() {
+  if (favoriteDebounceTimer) {
+    clearTimeout(favoriteDebounceTimer)
+    favoriteDebounceTimer = null
+  }
+}
+
 watch(
   memeId,
   (id) => {
+    clearFavoriteDebounceTimer()
     memeDetailStore.fetchDetail(id)
   },
   { immediate: true }
 )
+
+onUnmounted(() => {
+  clearFavoriteDebounceTimer()
+})
 
 function reload() {
   memeDetailStore.fetchDetail(memeId.value)
 }
 
 function handleFavoriteClick() {
-  if (favoriteDebounceTimer) {
-    clearTimeout(favoriteDebounceTimer)
-  }
+  clearFavoriteDebounceTimer()
   favoriteDebounceTimer = setTimeout(() => {
+    favoriteDebounceTimer = null
     toggleFavorite()
   }, 300)
 }
