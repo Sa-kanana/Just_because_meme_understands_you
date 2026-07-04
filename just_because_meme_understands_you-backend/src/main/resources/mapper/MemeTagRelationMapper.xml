@@ -2,4 +2,17 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper">
 
+    <!-- 一次 JOIN 批量取回多个梗的标签，替代 Service 层两次查询 -->
+    <select id="selectTagsByMemeIds" resultType="com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO">
+        SELECT r.meme_id AS memeId,
+               t.id      AS id,
+               t.name    AS name,
+               t.related_quantity AS relatedQuantity
+        FROM meme_tag_relation r
+        INNER JOIN meme_tag t ON r.meme_tag_id = t.id
+        WHERE r.meme_id IN
+        <foreach collection="memeIds" item="memeId" open="(" separator="," close=")">
+            #{memeId}
+        </foreach>
+    </select>
 </mapper>

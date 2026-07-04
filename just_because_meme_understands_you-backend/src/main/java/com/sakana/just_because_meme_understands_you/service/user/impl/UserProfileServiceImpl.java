@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.support.PageParamNormalizer;
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.User;
@@ -394,12 +395,11 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     private int normalizePage(Integer page) {
-        return page == null || page <= 0 ? 1 : page;
+        return PageParamNormalizer.normalizePage(page);
     }
 
     private int normalizeSize(Integer size) {
-        int value = (size == null || size <= 0) ? 10 : size;
-        return Math.min(value, 50);
+        return PageParamNormalizer.normalizeSize(size);
     }
 
     private int defaultInt(Integer value) {

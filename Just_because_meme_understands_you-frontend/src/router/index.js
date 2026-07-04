@@ -27,6 +27,11 @@ const routes = [
     component: () => import('@/views/HelpDocs.vue'),
   },
   {
+    path: '/publish',
+    name: 'publishMeme',
+    component: () => import('@/views/PublishMeme.vue'),
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/Login.vue'),

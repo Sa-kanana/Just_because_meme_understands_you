@@ -170,13 +170,35 @@
             </div>
           </div>
           <div
-            v-if="commentEditorFocused || commentDraft.trim()"
+            v-if="commentEditorFocused || commentDraft.trim() || commentImages.length"
             class="comment-editor-actions"
           >
+            <div class="comment-editor-images">
+              <div
+                v-for="(img, idx) in commentImages"
+                :key="`comment-draft-${idx}`"
+                class="comment-editor-image-item"
+              >
+                <el-image :src="img" fit="cover" class="comment-editor-image-thumb" />
+                <span class="comment-editor-image-remove" @click="removeCommentImage(idx)">×</span>
+              </div>
+              <label v-if="commentImages.length < 3" class="comment-editor-image-add">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  class="comment-image-file-input"
+                  @change="onCommentImageChange"
+                />
+                <span class="comment-editor-image-add-inner">
+                  <span v-if="commentImageUploading">上传中…</span>
+                  <span v-else>＋ 图片</span>
+                </span>
+              </label>
+            </div>
             <el-button
               type="primary"
               :loading="commentSubmitting"
-              :disabled="commentSubmitting || !commentDraft.trim()"
+              :disabled="commentSubmitting || (!commentDraft.trim() && !commentImages.length)"
               @click="submitRootComment"
             >
               发表评论
@@ -310,6 +332,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
 import { addMemeFavorite, removeMemeFavorite, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { uploadToOss } from '@/api/oss'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 
@@ -343,6 +366,8 @@ const replyParentId = ref(null)
 const replyToName = ref('')
 const replySubmitting = ref(false)
 const commentEditorFocused = ref(false)
+const commentImages = ref([])
+const commentImageUploading = ref(false)
 
 const currentUserAvatar = computed(() => {
   const avatar = authStore.currentUser?.avatar
@@ -389,6 +414,7 @@ function resetCommentState() {
   commentPage.value = 1
   commentDraft.value = ''
   commentEditorFocused.value = false
+  commentImages.value = []
   expandedRoots.value = new Set()
   Object.keys(repliesMap).forEach((key) => delete repliesMap[key])
   Object.keys(repliesLoadingMap).forEach((key) => delete repliesLoadingMap[key])
@@ -476,10 +502,41 @@ function requireLoginForComment() {
   return false
 }
 
+async function onCommentImageChange(event) {
+  if (!requireLoginForComment()) {
+    event.target.value = ''
+    return
+  }
+  const file = event.target.files && event.target.files[0]
+  event.target.value = ''
+  if (!file) return
+  if (commentImages.value.length >= 3) {
+    ElMessage.warning('最多上传 3 张图片')
+    return
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('单张图片不能超过 10MB')
+    return
+  }
+  commentImageUploading.value = true
+  try {
+    const url = await uploadToOss(file, 'comment')
+    commentImages.value.push(url)
+  } catch (e) {
+    ElMessage.error(e.message || '图片上传失败')
+  } finally {
+    commentImageUploading.value = false
+  }
+}
+
+function removeCommentImage(idx) {
+  commentImages.value.splice(idx, 1)
+}
+
 async function submitRootComment() {
   if (!requireLoginForComment()) return
   const content = commentDraft.value.trim()
-  if (!content) return
+  if (!content && !commentImages.value.length) return
   commentSubmitting.value = true
   try {
     const data = await addMemeComment({
@@ -487,9 +544,11 @@ async function submitRootComment() {
       rootId: '0',
       parentId: '0',
       content,
-      imageUrls: [],
+      imageUrls: commentImages.value.slice(),
     })
     commentDraft.value = ''
+    const uploadedImages = commentImages.value.slice()
+    commentImages.value = []
     commentEditorFocused.value = false
     rootComments.value.unshift({
       id: data.commentId,
@@ -497,7 +556,7 @@ async function submitRootComment() {
       userName: authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
       userAvatar: currentUserAvatar.value,
       content: data.content,
-      images: [],
+      images: uploadedImages,
       replyCount: 0,
       likes: 0,
       createTime: data.createTime,
@@ -959,6 +1018,72 @@ function goSearchByTag(tag) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.comment-editor-images {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-editor-image-item {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.comment-editor-image-thumb {
+  width: 100%;
+  height: 100%;
+}
+
+.comment-editor-image-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border-bottom-left-radius: 6px;
+}
+
+.comment-editor-image-add {
+  width: 64px;
+  height: 64px;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 12px;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.comment-editor-image-add:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.comment-editor-image-add-inner {
+  pointer-events: none;
+}
+
+.comment-image-file-input {
+  display: none;
 }
 
 .comment-login-prompt {

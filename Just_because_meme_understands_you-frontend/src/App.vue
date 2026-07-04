@@ -60,6 +60,10 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu class="user-dropdown-menu">
+                <el-dropdown-item command="publish">
+                  <i class="ri-add-line user-dropdown-icon"></i>
+                  <span>发布梗</span>
+                </el-dropdown-item>
                 <el-dropdown-item command="profile">
                   <i class="ri-user-3-line user-dropdown-icon"></i>
                   <span>个人主页</span>
@@ -182,6 +186,9 @@ export default {
     },
     handleUserMenuCommand(command) {
       switch (command) {
+        case 'publish':
+          this.goPublish()
+          break
         case 'profile':
           this.goProfile()
           break
@@ -219,6 +226,14 @@ export default {
         return
       }
       this.$router.push({ name: 'userProfile', params: { userId } })
+    },
+    goPublish() {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) {
+        this.$router.push({ name: 'login', query: { redirect: this.$route.fullPath } })
+        return
+      }
+      this.$router.push({ name: 'publishMeme' })
     },
     goFeedback() {
       // 暂时跳到帮助文档页作为反馈入口

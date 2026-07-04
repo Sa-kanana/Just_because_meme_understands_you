@@ -30,4 +30,19 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "memePublishExecutor")
+    public Executor memePublishExecutor(
+            @Value("${meme-publish.async.core-pool-size:2}") int corePoolSize,
+            @Value("${meme-publish.async.max-pool-size:8}") int maxPoolSize,
+            @Value("${meme-publish.async.queue-capacity:300}") int queueCapacity) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix("meme-publish-async-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

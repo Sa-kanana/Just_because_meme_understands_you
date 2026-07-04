@@ -14,8 +14,10 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.service.comment.IMemeCommentService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentAsyncHandler;
 import com.sakana.just_because_meme_understands_you.service.comment.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.common.support.PageParamNormalizer;
 import com.sakana.just_because_meme_understands_you.service.comment.support.MemeCommentSupport;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.meme.MemeBloomFilterService;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentPageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
@@ -52,6 +54,9 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
     private MemeCommentAsyncHandler memeCommentAsyncHandler;
 
     @Resource
+    private MemeBloomFilterService memeBloomFilterService;
+
+    @Resource
     private MemeCommentSupport commentSupport;
 
     @Override
@@ -64,8 +69,8 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可查看评论");
         }
 
-        int pageNo = commentSupport.normalizePage(page);
-        int pageSize = commentSupport.normalizeSize(size);
+        int pageNo = PageParamNormalizer.normalizePage(page);
+        int pageSize = PageParamNormalizer.normalizeSize(size);
         Page<MemeComment> mpPage = new Page<>(pageNo, pageSize);
         LambdaQueryWrapper<MemeComment> wrapper = new LambdaQueryWrapper<MemeComment>()
                 .eq(MemeComment::getMemeId, memeId)
@@ -107,8 +112,8 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             throw new BizException(Result.CODE_NOT_FOUND, "根评论不存在");
         }
 
-        int pageNo = commentSupport.normalizePage(page);
-        int pageSize = commentSupport.normalizeSize(size);
+        int pageNo = PageParamNormalizer.normalizePage(page);
+        int pageSize = PageParamNormalizer.normalizeSize(size);
         Page<MemeComment> mpPage = new Page<>(pageNo, pageSize);
         LambdaQueryWrapper<MemeComment> wrapper = new LambdaQueryWrapper<MemeComment>()
                 .eq(MemeComment::getRootId, rootId)
@@ -141,6 +146,10 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         Long memeId = request.getMemeId();
         if (memeId == null || memeId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
+        }
+        // 布隆过滤器快速预判：false 表示梗一定不存在，直接拦截，避免穿透 DB
+        if (!memeBloomFilterService.mightContain(memeId.intValue())) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
         }
         Meme meme = memeService.getById(memeId);
         if (meme == null || meme.getStatus() == null || meme.getStatus() != 1) {

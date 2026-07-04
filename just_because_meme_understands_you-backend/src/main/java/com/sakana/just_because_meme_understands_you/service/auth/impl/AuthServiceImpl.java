@@ -1,31 +1,31 @@
 package com.sakana.just_because_meme_understands_you.service.auth.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
 import com.sakana.just_because_meme_understands_you.config.JwtUtil;
 import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserAuth;
+import com.sakana.just_because_meme_understands_you.mapper.UserAuthMapper;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
-import com.sakana.just_because_meme_understands_you.service.user.IUserAuthService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.util.EmailValidatorUtil;
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.AuthTokenBundleVO;
 import com.sakana.just_because_meme_understands_you.vo.LoginUserVO;
-import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.RegisterResponseVO;
-import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.SendCodeResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.VerifyCodeResponseVO;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,13 +37,19 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 认证服务实现：登录、注册、忘记密码、退出登录。
+ *
+ * @author sakana
+ */
+@Slf4j
 @Service
 public class AuthServiceImpl implements IAuthService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Resource
-    private IUserAuthService userAuthService;
+    private UserAuthMapper userAuthMapper;
 
     @Resource
     private IUserService userService;
@@ -57,33 +63,10 @@ public class AuthServiceImpl implements IAuthService {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
-    private static final String REGISTER_CODE_KEY_PREFIX = "register:code:";
-    private static final String REGISTER_CODE_RATE_LIMIT_PREFIX = "register:code:rate:";
-    private static final long REGISTER_CODE_TTL_MINUTES = 5L;
-    private static final long REGISTER_CODE_RATE_LIMIT_SECONDS = 60L;
-
-    /** 忘记密码：验证码 Redis key 前缀，key: forgot_password:email, value: code, expire: 5min */
-    private static final String FORGOT_PASSWORD_CODE_PREFIX = "forgot_password:";
-    private static final long FORGOT_PASSWORD_CODE_TTL_MINUTES = 5L;
-    private static final String FORGOT_PASSWORD_RATE_PREFIX = "forgot_password:rate:";
-    /** 重置令牌 Redis key 前缀，key: reset_token:{token}, value: userId, expire: 10min */
-    private static final String RESET_TOKEN_PREFIX = "reset_token:";
-    private static final long RESET_TOKEN_TTL_MINUTES = 10L;
-    private static final String REFRESH_TOKEN_PREFIX = "auth:refresh:";
-    private static final String ACCESS_BLACKLIST_PREFIX = "auth:blacklist:access:";
-    private static final String TOKEN_TYPE_CLAIM = "tokenType";
-    private static final String LOGIN_TYPE_CLAIM = "loginType";
-    private static final String ROLE_CLAIM = "role";
-    private static final String TOKEN_TYPE_ACCESS = "access";
-    private static final String TOKEN_TYPE_REFRESH = "refresh";
-    private static final long BLACKLIST_MIN_TTL_MILLIS = 1000L;
-
     @Resource
     private JavaMailSender mailSender;
 
-    /**
-     * 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错
-     */
+    /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
     @Value("${spring.mail.username}")
     private String mailFrom;
 
@@ -92,6 +75,8 @@ public class AuthServiceImpl implements IAuthService {
 
     @Value("${jwt.refresh-expiration}")
     private long refreshTokenExpirationMillis;
+
+    // ==================== 登录 / 续航 ====================
 
     @Transactional
     @Override
@@ -104,16 +89,8 @@ public class AuthServiceImpl implements IAuthService {
             throw new BizException(Result.CODE_ERROR, "请求参数不完整");
         }
 
-        LambdaQueryWrapper<UserAuth> wrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getIdentityType, loginType)
-                .eq(UserAuth::getIdentifier, email)
-                .last("LIMIT 1");
-        UserAuth userAuth = userAuthService.getOne(wrapper, false);
-        if (userAuth == null) {
-            throw new BizException(Result.CODE_ERROR, "账号或密码错误");
-        }
-
-        if (!passwordEncoder.matches(rawPassword, userAuth.getCredential())) {
+        UserAuth userAuth = userAuthMapper.selectByIdentity(loginType, email);
+        if (userAuth == null || !passwordEncoder.matches(rawPassword, userAuth.getCredential())) {
             throw new BizException(Result.CODE_ERROR, "账号或密码错误");
         }
 
@@ -121,11 +98,7 @@ public class AuthServiceImpl implements IAuthService {
         if (user == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
-
-        // 状态为 0 视为禁用；避免类型不匹配导致失效，这里统一以字符串比较
-        if ("0".equals(String.valueOf(user.getStatus()))) {
-            throw new BizException(Result.CODE_ERROR, "账号已被禁用");
-        }
+        ensureUserActive(user);
 
         String userId = String.valueOf(user.getId());
         String accessToken = generateAccessToken(user, loginType);
@@ -146,7 +119,7 @@ public class AuthServiceImpl implements IAuthService {
         } catch (Exception ignored) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已过期，请重新登录");
         }
-        if (!TOKEN_TYPE_REFRESH.equals(String.valueOf(claims.get(TOKEN_TYPE_CLAIM)))) {
+        if (!AuthConstants.TOKEN_TYPE_REFRESH.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
         }
 
@@ -162,7 +135,7 @@ public class AuthServiceImpl implements IAuthService {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
         }
 
-        String refreshKey = REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
+        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
         String cachedUserId = stringRedisTemplate.opsForValue().getAndDelete(refreshKey);
         if (!StringUtils.hasText(cachedUserId) || !userIdStr.equals(cachedUserId)) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已失效，请重新登录");
@@ -172,13 +145,11 @@ public class AuthServiceImpl implements IAuthService {
         if (user == null) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "用户不存在或会话已失效，请重新登录");
         }
-        if ("0".equals(String.valueOf(user.getStatus()))) {
-            throw new BizException(Result.CODE_ERROR, "账号已被禁用");
-        }
+        ensureUserActive(user);
 
-        String loginType = String.valueOf(claims.get(LOGIN_TYPE_CLAIM));
+        String loginType = String.valueOf(claims.get(AuthConstants.CLAIM_LOGIN_TYPE));
         if (!StringUtils.hasText(loginType) || "null".equals(loginType)) {
-            loginType = "email";
+            loginType = AuthConstants.LOGIN_TYPE_EMAIL;
         }
 
         String newAccessToken = generateAccessToken(user, loginType);
@@ -186,6 +157,8 @@ public class AuthServiceImpl implements IAuthService {
         storeRefreshToken(newRefreshToken, userIdStr);
         return buildTokenBundle(newAccessToken, newRefreshToken, user);
     }
+
+    // ==================== 注册 ====================
 
     @Transactional
     @Override
@@ -203,23 +176,17 @@ public class AuthServiceImpl implements IAuthService {
                 || !StringUtils.hasText(nickname)) {
             throw new BizException(Result.CODE_ERROR, "请求参数不完整");
         }
-
         if (!password.equals(confirmPassword)) {
             throw new BizException(Result.CODE_ERROR, "两次密码输入不一致");
         }
 
-        // 校验邮箱是否已经注册
-        LambdaQueryWrapper<UserAuth> existWrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getIdentityType, "email")
-                .eq(UserAuth::getIdentifier, email)
-                .last("LIMIT 1");
-        UserAuth existed = userAuthService.getOne(existWrapper, false);
-        if (existed != null) {
+        // 校验邮箱是否已注册
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {
             throw new BizException(Result.CODE_ERROR, "该邮箱已被注册");
         }
 
         // 校验验证码
-        String redisKey = REGISTER_CODE_KEY_PREFIX + email;
+        String redisKey = AuthConstants.REGISTER_CODE_PREFIX + email;
         String cachedCode = stringRedisTemplate.opsForValue().get(redisKey);
         if (!StringUtils.hasText(cachedCode) || !verificationCode.equals(cachedCode)) {
             throw new BizException(Result.CODE_ERROR, "验证码错误或已过期");
@@ -233,13 +200,13 @@ public class AuthServiceImpl implements IAuthService {
         userService.save(user);
         long userId = user.getId();
 
-        // 创建用户认证信息（主键由 MyBatis-Plus 雪花算法自动填充）
+        // 创建用户认证信息
         UserAuth userAuth = new UserAuth();
         userAuth.setUserId(userId);
-        userAuth.setIdentityType("email");
+        userAuth.setIdentityType(AuthConstants.LOGIN_TYPE_EMAIL);
         userAuth.setIdentifier(email);
         userAuth.setCredential(passwordEncoder.encode(password));
-        userAuthService.save(userAuth);
+        userAuthMapper.insert(userAuth);
 
         // 注册成功后删除验证码
         stringRedisTemplate.delete(redisKey);
@@ -254,118 +221,36 @@ public class AuthServiceImpl implements IAuthService {
 
     @Override
     public SendCodeResponseVO sendRegisterCode(String email) {
-        if (!StringUtils.hasText(email)) {
-            throw new BizException(Result.CODE_ERROR, "邮箱不能为空");
-        }
-
-        // 宽松但规范的邮箱格式校验，避免误伤合法邮箱
-        if (!EmailValidatorUtil.isValidEmail(email)) {
-            throw new BizException(Result.CODE_ERROR, "邮箱格式不正确");
-        }
-
+        validateEmailFormat(email);
         // 已注册用户不允许重复发送注册验证码
-        LambdaQueryWrapper<UserAuth> existWrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getIdentityType, "email")
-                .eq(UserAuth::getIdentifier, email)
-                .last("LIMIT 1");
-        UserAuth existed = userAuthService.getOne(existWrapper, false);
-        if (existed != null) {
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {
             throw new BizException(Result.CODE_ERROR, "该邮箱已被注册");
         }
-
-        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
-
-        // 频率限制：同一个邮箱 60 秒内只允许发送一次
-        String rateKey = REGISTER_CODE_RATE_LIMIT_PREFIX + email;
-        Long expireSeconds = stringRedisTemplate.getExpire(rateKey, TimeUnit.SECONDS);
-        if (expireSeconds != null && expireSeconds > 0) {
-            SendCodeResponseVO rateLimitVO = new SendCodeResponseVO();
-            rateLimitVO.setRetryAfter(expireSeconds);
-            return rateLimitVO;
-        }
-
-        // 生成 6 位数字验证码
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
-
-        // 写入 Redis：验证码过期时间见 REGISTER_CODE_TTL_MINUTES
-        String codeKey = REGISTER_CODE_KEY_PREFIX + email;
-        ops.set(Objects.requireNonNull(codeKey), Objects.requireNonNull(code), REGISTER_CODE_TTL_MINUTES, TimeUnit.MINUTES);
-
-        // 写入 Redis：发送频率限制 60 秒
-        ops.set(Objects.requireNonNull(rateKey), "1", REGISTER_CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
-
-        // 发送邮件
-        SimpleMailMessage message = new SimpleMailMessage();
-        // 根据配置文件显式设置发件人，需与 spring.mail.username 相同
-        message.setFrom(mailFrom);
-        message.setTo(email);
-        message.setSubject("【Just Because Meme Understands You】注册验证码");
-        message.setText("您的验证码为：" + code + "，有效期 " + REGISTER_CODE_TTL_MINUTES + " 分钟，请勿泄露给他人。");
-        try {
-            mailSender.send(message);
-        } catch (org.springframework.mail.MailException ignored) {
-            // 邮件发送失败时清理验证码与限流键，避免用户无法重试
-            stringRedisTemplate.delete(codeKey);
-            stringRedisTemplate.delete(rateKey);
-            throw new BizException(Result.CODE_ERROR, "验证码发送失败，请稍后重试");
-        }
-
-        SendCodeResponseVO responseVO = new SendCodeResponseVO();
-        responseVO.setRetryAfter(REGISTER_CODE_RATE_LIMIT_SECONDS);
-        return responseVO;
+        return sendVerificationCode(
+                email,
+                AuthConstants.REGISTER_CODE_PREFIX,
+                AuthConstants.REGISTER_CODE_RATE_PREFIX,
+                AuthConstants.REGISTER_CODE_TTL_MINUTES,
+                "【Just Because Meme Understands You】注册验证码"
+        );
     }
 
-    // ---------- 忘记密码 ----------
+    // ==================== 忘记密码 ====================
 
     @Override
     public SendCodeResponseVO sendForgotPasswordCode(String email) {
-        if (!StringUtils.hasText(email)) {
-            throw new BizException(Result.CODE_ERROR, "邮箱不能为空");
-        }
-        if (!EmailValidatorUtil.isValidEmail(email)) {
-            throw new BizException(Result.CODE_ERROR, "邮箱格式不正确");
-        }
-
+        validateEmailFormat(email);
         // 必须已注册才允许找回密码
-        LambdaQueryWrapper<UserAuth> wrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getIdentityType, "email")
-                .eq(UserAuth::getIdentifier, email)
-                .last("LIMIT 1");
-        UserAuth userAuth = userAuthService.getOne(wrapper, false);
-        if (userAuth == null) {
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) == null) {
             throw new BizException(Result.CODE_ERROR, "该邮箱未注册");
         }
-
-        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
-        String rateKey = FORGOT_PASSWORD_RATE_PREFIX + email;
-        Long expireSeconds = stringRedisTemplate.getExpire(rateKey, TimeUnit.SECONDS);
-        if (expireSeconds != null && expireSeconds > 0) {
-            SendCodeResponseVO rateLimitVO = new SendCodeResponseVO();
-            rateLimitVO.setRetryAfter(expireSeconds);
-            return rateLimitVO;
-        }
-
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
-        String codeKey = FORGOT_PASSWORD_CODE_PREFIX + email;
-        ops.set(Objects.requireNonNull(codeKey), Objects.requireNonNull(code), FORGOT_PASSWORD_CODE_TTL_MINUTES, TimeUnit.MINUTES);
-        ops.set(Objects.requireNonNull(rateKey), "1", REGISTER_CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(mailFrom);
-        message.setTo(email);
-        message.setSubject("【Just Because Meme Understands You】重置密码验证码");
-        message.setText("您的验证码为：" + code + "，有效期 " + FORGOT_PASSWORD_CODE_TTL_MINUTES + " 分钟，请勿泄露。");
-        try {
-            mailSender.send(message);
-        } catch (org.springframework.mail.MailException ignored) {
-            stringRedisTemplate.delete(codeKey);
-            stringRedisTemplate.delete(rateKey);
-            throw new BizException(Result.CODE_ERROR, "验证码发送失败，请稍后重试");
-        }
-
-        SendCodeResponseVO responseVO = new SendCodeResponseVO();
-        responseVO.setRetryAfter(REGISTER_CODE_RATE_LIMIT_SECONDS);
-        return responseVO;
+        return sendVerificationCode(
+                email,
+                AuthConstants.FORGOT_PASSWORD_CODE_PREFIX,
+                AuthConstants.FORGOT_PASSWORD_RATE_PREFIX,
+                AuthConstants.FORGOT_PASSWORD_CODE_TTL_MINUTES,
+                "【Just Because Meme Understands You】重置密码验证码"
+        );
     }
 
     @Override
@@ -374,25 +259,26 @@ public class AuthServiceImpl implements IAuthService {
             throw new BizException(Result.CODE_ERROR, "邮箱和验证码不能为空");
         }
 
-        String codeKey = FORGOT_PASSWORD_CODE_PREFIX + email;
+        String codeKey = AuthConstants.FORGOT_PASSWORD_CODE_PREFIX + email;
         String cachedCode = stringRedisTemplate.opsForValue().get(codeKey);
         if (!StringUtils.hasText(cachedCode) || !code.trim().equals(cachedCode)) {
             throw new BizException(Result.CODE_ERROR, "验证码错误或已过期");
         }
 
-        LambdaQueryWrapper<UserAuth> wrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getIdentityType, "email")
-                .eq(UserAuth::getIdentifier, email)
-                .last("LIMIT 1");
-        UserAuth userAuth = userAuthService.getOne(wrapper, false);
+        UserAuth userAuth = userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email);
         if (userAuth == null) {
             stringRedisTemplate.delete(codeKey);
             throw new BizException(Result.CODE_ERROR, "用户不存在");
         }
 
         String resetToken = UUID.randomUUID().toString();
-        String resetKey = RESET_TOKEN_PREFIX + resetToken;
-        stringRedisTemplate.opsForValue().set(Objects.requireNonNull(resetKey), Objects.requireNonNull(String.valueOf(userAuth.getUserId())), RESET_TOKEN_TTL_MINUTES, TimeUnit.MINUTES);
+        String resetKey = AuthConstants.RESET_TOKEN_PREFIX + resetToken;
+        stringRedisTemplate.opsForValue().set(
+                Objects.requireNonNull(resetKey),
+                Objects.requireNonNull(String.valueOf(userAuth.getUserId())),
+                AuthConstants.RESET_TOKEN_TTL_MINUTES,
+                TimeUnit.MINUTES
+        );
         stringRedisTemplate.delete(codeKey);
 
         VerifyCodeResponseVO vo = new VerifyCodeResponseVO();
@@ -409,29 +295,25 @@ public class AuthServiceImpl implements IAuthService {
             throw new BizException(Result.CODE_ERROR, "token 和新密码不能为空");
         }
 
-        String resetKey = RESET_TOKEN_PREFIX + token;
+        String resetKey = AuthConstants.RESET_TOKEN_PREFIX + token;
         String userIdStr = stringRedisTemplate.opsForValue().get(resetKey);
         if (!StringUtils.hasText(userIdStr)) {
             throw new BizException(Result.CODE_ERROR, "重置链接已过期，请重新获取验证码");
         }
 
         long userId = Long.parseLong(userIdStr);
-        LambdaQueryWrapper<UserAuth> wrapper = new LambdaQueryWrapper<UserAuth>()
-                .eq(UserAuth::getUserId, userId)
-                .eq(UserAuth::getIdentityType, "email")
-                .last("LIMIT 1");
-        UserAuth userAuth = userAuthService.getOne(wrapper, false);
+        UserAuth userAuth = userAuthMapper.selectByUserIdAndType(userId, AuthConstants.LOGIN_TYPE_EMAIL);
         if (userAuth == null) {
             stringRedisTemplate.delete(resetKey);
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
 
         userAuth.setCredential(passwordEncoder.encode(newPassword));
-        userAuthService.updateById(userAuth);
-
+        userAuthMapper.updateById(userAuth);
         stringRedisTemplate.delete(resetKey);
-
     }
+
+    // ==================== 退出登录 ====================
 
     @Override
     public void logout(String accessToken, String refreshToken) {
@@ -444,14 +326,14 @@ public class AuthServiceImpl implements IAuthService {
         } catch (Exception ignored) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "无效的令牌，请重新登录");
         }
-        if (!TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(TOKEN_TYPE_CLAIM)))) {
+        if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "无效的访问令牌");
         }
 
-        String blacklistKey = ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(accessToken);
+        String blacklistKey = AuthConstants.ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(accessToken);
         long ttlMillis = claims.getExpiration().getTime() - System.currentTimeMillis();
-        if (ttlMillis < BLACKLIST_MIN_TTL_MILLIS) {
-            ttlMillis = BLACKLIST_MIN_TTL_MILLIS;
+        if (ttlMillis < AuthConstants.BLACKLIST_MIN_TTL_MILLIS) {
+            ttlMillis = AuthConstants.BLACKLIST_MIN_TTL_MILLIS;
         }
         stringRedisTemplate.opsForValue().set(
                 Objects.requireNonNull(blacklistKey),
@@ -461,32 +343,100 @@ public class AuthServiceImpl implements IAuthService {
         );
 
         if (StringUtils.hasText(refreshToken)) {
-            String refreshKey = REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
+            String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
             stringRedisTemplate.delete(refreshKey);
         }
     }
 
+    // ==================== 私有辅助 ====================
+
+    /**
+     * 校验用户状态，status 为 0 视为禁用。
+     */
+    private void ensureUserActive(User user) {
+        if ("0".equals(String.valueOf(user.getStatus()))) {
+            throw new BizException(Result.CODE_ERROR, "账号已被禁用");
+        }
+    }
+
+    /**
+     * 校验邮箱非空且格式合法。
+     */
+    private void validateEmailFormat(String email) {
+        if (!StringUtils.hasText(email)) {
+            throw new BizException(Result.CODE_ERROR, "邮箱不能为空");
+        }
+        if (!EmailValidatorUtil.isValidEmail(email)) {
+            throw new BizException(Result.CODE_ERROR, "邮箱格式不正确");
+        }
+    }
+
+    /**
+     * 通用发送验证码流程：频率限制 -> 生成 -> 写 Redis -> 发邮件，失败回滚 Redis。
+     * 合并注册验证码与忘记密码验证码的重复逻辑。
+     *
+     * @param email           邮箱
+     * @param codePrefix      验证码 Redis key 前缀
+     * @param ratePrefix      频率限制 Redis key 前缀
+     * @param ttlMinutes      验证码有效期（分钟）
+     * @param mailSubject     邮件主题
+     * @return 发送结果，含下次可发送的倒计时
+     */
+    private SendCodeResponseVO sendVerificationCode(String email, String codePrefix, String ratePrefix,
+                                                    long ttlMinutes, String mailSubject) {
+        String rateKey = ratePrefix + email;
+        Long expireSeconds = stringRedisTemplate.getExpire(rateKey, TimeUnit.SECONDS);
+        if (expireSeconds != null && expireSeconds > 0) {
+            SendCodeResponseVO rateLimitVO = new SendCodeResponseVO();
+            rateLimitVO.setRetryAfter(expireSeconds);
+            return rateLimitVO;
+        }
+
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
+        String codeKey = codePrefix + email;
+        stringRedisTemplate.opsForValue().set(codeKey, code, ttlMinutes, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(rateKey, "1", AuthConstants.CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo(email);
+        message.setSubject(mailSubject);
+        message.setText("您的验证码为：" + code + "，有效期 " + ttlMinutes + " 分钟，请勿泄露给他人。");
+        try {
+            mailSender.send(message);
+        } catch (org.springframework.mail.MailException mailEx) {
+            log.warn("验证码邮件发送失败, email={}", email, mailEx);
+            stringRedisTemplate.delete(codeKey);
+            stringRedisTemplate.delete(rateKey);
+            throw new BizException(Result.CODE_ERROR, "验证码发送失败，请稍后重试");
+        }
+
+        SendCodeResponseVO responseVO = new SendCodeResponseVO();
+        responseVO.setRetryAfter(AuthConstants.CODE_RATE_LIMIT_SECONDS);
+        return responseVO;
+    }
+
     private String generateAccessToken(User user, String loginType) {
         Map<String, Object> claims = new HashMap<>(4);
-        claims.put(TOKEN_TYPE_CLAIM, TOKEN_TYPE_ACCESS);
-        claims.put(ROLE_CLAIM, user.getRole());
-        claims.put(LOGIN_TYPE_CLAIM, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS);
+        claims.put(AuthConstants.CLAIM_ROLE, user.getRole());
+        claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
         return jwtUtil.generateToken(String.valueOf(user.getId()), claims, accessTokenExpirationMillis);
     }
 
     private String generateRefreshToken(String userId, String loginType) {
         Map<String, Object> claims = new HashMap<>(4);
-        claims.put(TOKEN_TYPE_CLAIM, TOKEN_TYPE_REFRESH);
-        claims.put(LOGIN_TYPE_CLAIM, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH);
+        claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
         claims.put("tokenId", UUID.randomUUID().toString());
         return jwtUtil.generateToken(userId, claims, refreshTokenExpirationMillis);
     }
 
     private void storeRefreshToken(String refreshToken, String userId) {
-        String refreshKey = REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
+        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
         stringRedisTemplate.opsForValue().set(
-                Objects.requireNonNull(refreshKey),
-                Objects.requireNonNull(userId),
+                refreshKey,
+                userId,
                 refreshTokenExpirationMillis,
                 TimeUnit.MILLISECONDS
         );
@@ -508,4 +458,3 @@ public class AuthServiceImpl implements IAuthService {
         return bundleVO;
     }
 }
-

@@ -78,15 +78,6 @@ public class MemeCommentSupport {
         return Objects.equals(parent.getRootId(), rootId);
     }
 
-    public int normalizePage(Integer page) {
-        return page == null || page <= 0 ? 1 : page;
-    }
-
-    public int normalizeSize(Integer size) {
-        int value = size == null || size <= 0 ? 10 : size;
-        return Math.min(value, 50);
-    }
-
     public MemeCommentCreateResponseVO toCreateResponseVO(MemeComment comment) {
         MemeCommentCreateResponseVO vo = new MemeCommentCreateResponseVO();
         vo.setCommentId(comment.getId());

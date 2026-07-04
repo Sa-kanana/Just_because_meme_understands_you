@@ -6,15 +6,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
-import com.sakana.just_because_meme_understands_you.entity.MemeTagRelation;
 import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
+import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeResourceService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
-import com.sakana.just_because_meme_understands_you.service.meme.IMemeTagRelationService;
-import com.sakana.just_because_meme_understands_you.service.meme.IMemeTagService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentCountService;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
@@ -31,7 +30,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -50,10 +48,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     private static final long DETAIL_CACHE_MINUTES = 10;
 
     @Resource
-    private IMemeTagRelationService memeTagRelationService;
-
-    @Resource
-    private IMemeTagService memeTagService;
+    private MemeTagRelationMapper memeTagRelationMapper;
 
     @Resource
     private IMemeResourceService memeResourceService;
@@ -232,24 +227,11 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     /**
-     * 根据梗 id 查询关联的标签列表（通过 meme_tag_relation + meme_tag）
+     * 根据梗 id 查询关联的标签列表（一次 JOIN 查询）
      */
     private List<MemeTag> getTagsByMemeId(Integer memeId) {
-        List<MemeTagRelation> relations = memeTagRelationService.list(
-                new LambdaQueryWrapper<MemeTagRelation>()
-                        .eq(MemeTagRelation::getMemeId, memeId)
-        );
-        if (relations == null || relations.isEmpty()) {
-            return Collections.emptyList();
-        }
-        Set<Integer> tagIds = relations.stream()
-                .map(MemeTagRelation::getMemeTagId)
-                .collect(Collectors.toSet());
-        if (tagIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<MemeTag> tags = memeTagService.listByIds(tagIds);
-        return tags != null ? tags : Collections.emptyList();
+        return buildMemeIdToTags(java.util.Collections.singletonList(memeId))
+                .getOrDefault(memeId, java.util.Collections.emptyList());
     }
 
     /**
@@ -288,37 +270,25 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         return vo;
     }
 
+    /**
+     * 一次 JOIN 查询批量取回多个梗的标签，按梗 id 分组。
+     * 替代原先「查关系表 + 批量查标签表」两次查询。
+     */
     private Map<Integer, List<MemeTag>> buildMemeIdToTags(List<Integer> memeIds) {
         if (memeIds == null || memeIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<MemeTagRelation> relations = memeTagRelationService.list(
-                new LambdaQueryWrapper<MemeTagRelation>()
-                        .in(MemeTagRelation::getMemeId, memeIds)
-        );
+        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
         Map<Integer, List<MemeTag>> memeIdToTags = new HashMap<>();
-        if (relations == null || relations.isEmpty()) {
-            return memeIdToTags;
-        }
-        Set<Integer> tagIds = relations.stream()
-                .map(MemeTagRelation::getMemeTagId)
-                .collect(Collectors.toSet());
-        if (tagIds.isEmpty()) {
-            return memeIdToTags;
-        }
-        List<MemeTag> tags = memeTagService.listByIds(tagIds);
-        Map<Integer, MemeTag> tagMap = tags.stream()
-                .collect(Collectors.toMap(MemeTag::getId, t -> t));
-        for (MemeTagRelation relation : relations) {
-            Integer memeId = relation.getMemeId();
-            Integer tagId = relation.getMemeTagId();
-            MemeTag tag = tagMap.get(tagId);
-            if (tag == null) {
-                continue;
-            }
-            memeIdToTags
-                    .computeIfAbsent(memeId, k -> new ArrayList<>())
-                    .add(tag);
+        for (MemeTagBindDTO row : rows) {
+            MemeTag tag = new MemeTag();
+            tag.setId(row.getId());
+            tag.setName(row.getName());
+            tag.setRelatedQuantity(row.getRelatedQuantity());
+            memeIdToTags.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(tag);
         }
         return memeIdToTags;
     }

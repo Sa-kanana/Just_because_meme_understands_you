@@ -9,6 +9,7 @@ import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.UserFavorite;
 import com.sakana.just_because_meme_understands_you.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.meme.MemeBloomFilterService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.service.user.UserFavoriteCountService;
@@ -35,6 +36,9 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
     private IMemeService memeService;
 
     @Resource
+    private MemeBloomFilterService memeBloomFilterService;
+
+    @Resource
     private UserFavoriteCountService userFavoriteCountService;
 
     @Resource
@@ -55,6 +59,10 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
             throw new BizException(Result.CODE_BAD_REQUEST, "folderId 不合法");
         }
 
+        // 布隆过滤器快速预判梗存在性，false 则一定不存在
+        if (!memeBloomFilterService.mightContain((int) memeId)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可收藏");
+        }
         Meme meme = memeService.getById(memeId);
         if (meme == null || meme.getStatus() == null || meme.getStatus() != 1) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可收藏");

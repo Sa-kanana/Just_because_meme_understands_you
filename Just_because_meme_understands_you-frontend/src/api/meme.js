@@ -233,3 +233,36 @@ export function addMemeComment(payload = {}) {
     throw new Error((res && (res.message || res.msg)) || '发表评论失败')
   })
 }
+
+/**
+ * 获取所有可用标签
+ * GET /memes/tags
+ */
+export function getMemeTags() {
+  return request('/memes/tags', { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && Array.isArray(res.data)) return res.data
+    throw new Error((res && (res.message || res.msg)) || '加载标签失败')
+  })
+}
+
+/**
+ * 发布梗
+ * POST /memes
+ * @param {Object} payload { name, introduction, image, tagIds:number[], resourceUrls:string[] }
+ */
+export function publishMeme(payload = {}) {
+  const body = {
+    name: String(payload.name || '').trim(),
+    introduction: String(payload.introduction || '').trim(),
+    image: String(payload.image || '').trim(),
+    tagIds: Array.isArray(payload.tagIds) ? payload.tagIds : [],
+    resourceUrls: Array.isArray(payload.resourceUrls) ? payload.resourceUrls : [],
+  }
+  return request('/memes', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '发布失败')
+  })
+}

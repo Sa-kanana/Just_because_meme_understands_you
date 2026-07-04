@@ -310,7 +310,8 @@
 <script>
 import { Cropper } from 'vue-advanced-cropper'
 import { ElImageViewer, ElMessage } from 'element-plus'
-import { getEditProfileEcho, getUserProfile, updateUserProfile, uploadUserAvatar } from '@/api/user'
+import { getEditProfileEcho, getUserProfile, updateUserProfile } from '@/api/user'
+import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
 
 export default {
@@ -546,7 +547,7 @@ export default {
           )
         })
         const uploadFile = new File([blob], `avatar_${Date.now()}.jpg`, { type: 'image/jpeg' })
-        const { url } = await uploadUserAvatar(uploadFile, this.authToken)
+        const url = await uploadToOss(uploadFile, 'avatar', `avatar_${Date.now()}.jpg`)
         this.editForm.avatar = url
         this.cropperDialogVisible = false
         ElMessage.success('头像上传成功')

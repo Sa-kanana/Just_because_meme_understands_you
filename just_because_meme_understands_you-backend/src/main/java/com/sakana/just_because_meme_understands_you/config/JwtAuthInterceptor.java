@@ -2,6 +2,8 @@ package com.sakana.just_because_meme_understands_you.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
+import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,9 +19,6 @@ import java.nio.charset.StandardCharsets;
 
 @Component
 public class JwtAuthInterceptor implements HandlerInterceptor {
-    private static final String ACCESS_BLACKLIST_PREFIX = "auth:blacklist:access:";
-    private static final String TOKEN_TYPE_CLAIM = "tokenType";
-    private static final String TOKEN_TYPE_ACCESS = "access";
 
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate stringRedisTemplate;
@@ -41,19 +40,19 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
         String token = authHeader.substring(7);
-        String blacklistKey = ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(token);
+        String blacklistKey = AuthConstants.ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(token);
         if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(blacklistKey))) {
             writeUnauthorized(response, "登录已失效，请重新登录");
             return false;
         }
         try {
             Claims claims = jwtUtil.parseToken(token);
-            if (!TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(TOKEN_TYPE_CLAIM)))) {
+            if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
                 writeUnauthorized(response, "无效的访问令牌");
                 return false;
             }
-            request.setAttribute("userId", claims.getSubject());
-            request.setAttribute("role", claims.get("role"));
+            request.setAttribute(AuthContext.ATTR_USER_ID, claims.getSubject());
+            request.setAttribute(AuthConstants.CLAIM_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
             return true;
         } catch (Exception ignored) {
             writeUnauthorized(response, "无效的令牌，请重新登录");
