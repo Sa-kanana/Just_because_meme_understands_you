@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
 import com.sakana.just_because_meme_understands_you.vo.UserFavoriteItemVO;
+import com.sakana.just_because_meme_understands_you.vo.UserMemePageVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemeItemVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileVO;
 import jakarta.annotation.Resource;
@@ -37,11 +38,13 @@ public class UserProfileController {
     }
 
     @GetMapping("/{userId}/memes")
-    public Result<PageVO<UserMemeItemVO>> pageUserMemes(@PathVariable("userId") String userId,
-                                                         @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
-                                                         @RequestParam(value = "size", required = false, defaultValue = "10") Integer size) {
+    public Result<UserMemePageVO> pageUserMemes(@PathVariable("userId") String userId,
+                                                 HttpServletRequest request,
+                                                 @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+                                                 @RequestParam(value = "size", required = false, defaultValue = "10") Integer size) {
         Long targetUserId = AuthContext.parseUserId(userId);
-        return Result.success(userProfileService.pageUserMemes(targetUserId, page, size));
+        Long currentUserId = AuthContext.currentUserId(request);
+        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size));
     }
 
     @GetMapping("/{userId}/favorites")

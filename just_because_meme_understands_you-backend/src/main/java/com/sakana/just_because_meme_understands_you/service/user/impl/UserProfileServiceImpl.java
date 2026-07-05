@@ -9,12 +9,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.support.PageParamNormalizer;
+import com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO;
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserFavorite;
 import com.sakana.just_because_meme_understands_you.entity.UserRelation;
 import com.sakana.just_because_meme_understands_you.entity.UserStats;
+import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserStatsMapper;
@@ -27,8 +29,11 @@ import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
 import com.sakana.just_because_meme_understands_you.vo.UserFavoriteItemVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemeItemVO;
+import com.sakana.just_because_meme_understands_you.vo.UserMemePageVO;
+import com.sakana.just_because_meme_understands_you.vo.UserMemeTagVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileStatsVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileVO;
+import com.sakana.just_because_meme_understands_you.vo.UserPublishedMemeVO;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -65,6 +70,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
     @Resource
     private IMemeService memeService;
+
+    @Resource
+    private MemeTagRelationMapper memeTagRelationMapper;
 
     @Resource
     private UserStatsMapper userStatsMapper;
@@ -144,31 +152,120 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public PageVO<UserMemeItemVO> pageUserMemes(Long userId, Integer page, Integer size) {
-        int pageNo = normalizePage(page);
-        int pageSize = normalizeSize(size);
-        String cacheKey = MEMES_CACHE_PREFIX + userId + ":" + pageNo + ":" + pageSize;
-        PageVO<UserMemeItemVO> cached = readCache(cacheKey, new TypeReference<>() {});
-        if (cached != null) {
-            return cached;
+    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size) {
+        if (targetUserId == null || targetUserId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
         }
+        int pageNo = PageParamNormalizer.normalizePage(page);
+        int pageSize = PageParamNormalizer.normalizeSize(size);
+
+        // 状态隔离：本人看所有状态，他人只看 status=1
+        boolean isOwner = currentUserId != null && currentUserId.equals(targetUserId);
 
         Page<Meme> mpPage = new Page<>(pageNo, pageSize);
         LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .eq(Meme::getStatus, 1)
-                .orderByDesc(Meme::getReleaseTime);
+                .eq(Meme::getUserId, targetUserId)
+                .orderByDesc(Meme::getReleaseTime)
+                .orderByDesc(Meme::getId);
+        if (!isOwner) {
+            wrapper.eq(Meme::getStatus, 1);
+        }
         IPage<Meme> result = memeService.page(mpPage, wrapper);
 
-        List<UserMemeItemVO> list = result.getRecords().stream().map(this::toUserMemeItem).toList();
-        PageVO<UserMemeItemVO> pageVO = new PageVO<>();
-        pageVO.setList(list);
-        pageVO.setPage(pageNo);
-        pageVO.setSize(pageSize);
-        pageVO.setTotal(result.getTotal());
+        List<Meme> records = result.getRecords();
+        List<UserPublishedMemeVO> list = records.isEmpty()
+                ? Collections.emptyList()
+                : buildPublishedMemeVOList(records);
 
-        writeCache(cacheKey, pageVO);
+        UserMemePageVO pageVO = new UserMemePageVO();
+        pageVO.setList(list);
+        pageVO.setTotal(result.getTotal());
+        pageVO.setOwner(isOwner);
         return pageVO;
+    }
+
+    /**
+     * 批量组装发布梗 VO：标签通过一次 JOIN 查询按 meme_id 分组，内存组装，避免 N+1 与笛卡尔积。
+     */
+    private List<UserPublishedMemeVO> buildPublishedMemeVOList(List<Meme> memes) {
+        List<Integer> memeIds = memes.stream().map(Meme::getId).toList();
+        Map<Integer, List<MemeTagBindDTO>> tagMap = loadTagsByMemeIds(memeIds);
+
+        List<UserPublishedMemeVO> list = new ArrayList<>(memes.size());
+        for (Meme meme : memes) {
+            UserPublishedMemeVO vo = new UserPublishedMemeVO();
+            vo.setMemeId(meme.getId());
+            vo.setName(meme.getName());
+            vo.setIntroduction(meme.getIntroduction());
+            vo.setImage(meme.getImage());
+            vo.setPageViews(meme.getPageViews());
+            vo.setLikes(meme.getLikes());
+            vo.setComments(meme.getComments());
+            vo.setStatus(meme.getStatus());
+            vo.setStatusDesc(statusDesc(meme.getStatus()));
+            vo.setTags(toUserMemeTagVOList(tagMap.get(meme.getId())));
+            vo.setCreateTime(meme.getReleaseTime());
+            list.add(vo);
+        }
+        return list;
+    }
+
+    private Map<Integer, List<MemeTagBindDTO>> loadTagsByMemeIds(List<Integer> memeIds) {
+        if (memeIds == null || memeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, List<MemeTagBindDTO>> map = new HashMap<>();
+        for (MemeTagBindDTO row : rows) {
+            map.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(row);
+        }
+        return map;
+    }
+
+    private List<UserMemeTagVO> toUserMemeTagVOList(List<MemeTagBindDTO> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<UserMemeTagVO> list = new ArrayList<>(tags.size());
+        for (MemeTagBindDTO t : tags) {
+            UserMemeTagVO vo = new UserMemeTagVO();
+            vo.setTagId(t.getId());
+            vo.setName(t.getName());
+            list.add(vo);
+        }
+        return list;
+    }
+
+    private String statusDesc(Integer status) {
+        if (status == null) {
+            return "未知";
+        }
+        return switch (status) {
+            case 1 -> "正常";
+            case 2 -> "审核中";
+            case 3 -> "已下架";
+            default -> "未知";
+        };
+    }
+
+    @Override
+    public void evictUserMemesCache(Long userId) {
+        if (userId == null || userId <= 0) {
+            return;
+        }
+        try {
+            // 清理发布列表分页缓存与 ZSet 索引，保证下次查询拿到最新数据
+            Set<String> keys = stringRedisTemplate.keys(MEMES_CACHE_PREFIX + userId + ":*");
+            if (keys != null && !keys.isEmpty()) {
+                stringRedisTemplate.delete(keys);
+            }
+            stringRedisTemplate.delete("user:memes:zset:" + userId);
+        } catch (Exception ignored) {
+            // 缓存清理失败不影响主流程
+        }
     }
 
     @Override

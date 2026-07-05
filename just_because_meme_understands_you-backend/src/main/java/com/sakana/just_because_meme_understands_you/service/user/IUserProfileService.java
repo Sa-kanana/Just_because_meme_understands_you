@@ -6,6 +6,7 @@ import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
 import com.sakana.just_because_meme_understands_you.vo.UserFavoriteItemVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemeItemVO;
+import com.sakana.just_because_meme_understands_you.vo.UserMemePageVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileVO;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,7 +16,11 @@ public interface IUserProfileService {
 
     EditProfileEchoVO getEditProfileEcho(Long userId);
 
-    PageVO<UserMemeItemVO> pageUserMemes(Long userId, Integer page, Integer size);
+    /**
+     * 分页获取用户发布的梗。
+     * 状态隔离：currentUserId 与 targetUserId 一致返回所有状态，否则只返回 status=1。
+     */
+    UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size);
 
     PageVO<UserFavoriteItemVO> pageUserFavorites(Long userId, Integer page, Integer size);
 
@@ -24,4 +29,9 @@ public interface IUserProfileService {
     void updateProfile(Long userId, UserProfileUpdateRequestDTO request);
 
     void evictUserCache(Long userId);
+
+    /**
+     * 清理指定用户发布列表的 Redis ZSet 缓存，发布/下架后调用。
+     */
+    void evictUserMemesCache(Long userId);
 }

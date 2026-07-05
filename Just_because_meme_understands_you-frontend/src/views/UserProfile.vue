@@ -86,8 +86,11 @@
 
         <el-card class="content-card" shadow="never">
           <el-tabs v-model="activeTab">
-            <el-tab-pane :label="`发布梗图 (${publishedList.length})`" name="published">
-              <div v-if="publishedList.length" class="meme-grid">
+            <el-tab-pane :label="`发布梗图 (${publishedPage.total})`" name="published">
+              <div v-if="publishedLoading && !publishedList.length" class="published-skeleton">
+                <el-skeleton :rows="3" animated />
+              </div>
+              <div v-else-if="publishedList.length" class="meme-grid">
                 <div
                   v-for="item in publishedList"
                   :key="`published-${item.id}`"
@@ -99,6 +102,11 @@
                       <div class="meme-cover-error">图片加载失败</div>
                     </template>
                   </el-image>
+                  <span
+                    v-if="publishedPage.isOwner && item.status != null && item.status !== 1"
+                    class="meme-status-tag"
+                    :class="`meme-status-${item.status}`"
+                  >{{ item.statusDesc || statusText(item.status) }}</span>
                   <div class="meme-info">
                     <div class="meme-title" :title="item.name">{{ item.name || '未命名梗图' }}</div>
                     <div class="meme-meta">
@@ -110,6 +118,9 @@
                 </div>
               </div>
               <el-empty v-else description="这个用户还没有发布梗图" />
+              <div v-if="publishedHasMore" class="published-load-more">
+                <el-button :loading="publishedLoading" @click="loadMorePublished">加载更多</el-button>
+              </div>
             </el-tab-pane>
 
             <el-tab-pane :label="`收藏梗图 (${favoriteList.length})`" name="favorite">
@@ -311,6 +322,7 @@
 import { Cropper } from 'vue-advanced-cropper'
 import { ElImageViewer, ElMessage } from 'element-plus'
 import { getEditProfileEcho, getUserProfile, updateUserProfile } from '@/api/user'
+import { pageUserMemes } from '@/api/user'
 import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
 
@@ -364,6 +376,14 @@ export default {
           fansCount: 0,
         },
       },
+      publishedPage: {
+        list: [],
+        total: 0,
+        isOwner: false,
+      },
+      publishedPageNo: 1,
+      publishedPageSize: 16,
+      publishedLoading: false,
     }
   },
   computed: {
@@ -403,7 +423,10 @@ export default {
       return this.profile.avatar ? [this.profile.avatar] : []
     },
     publishedList() {
-      return Array.isArray(this.profile.memes) ? this.profile.memes : []
+      return Array.isArray(this.publishedPage.list) ? this.publishedPage.list : []
+    },
+    publishedHasMore() {
+      return this.publishedPage.list.length < this.publishedPage.total
     },
     favoriteList() {
       return Array.isArray(this.profile.favorites) ? this.profile.favorites : []
@@ -454,6 +477,8 @@ export default {
             ...(data.stats || {}),
           },
         }
+        this.publishedPageNo = 1
+        this.loadPublishedMemes()
       } catch (error) {
         this.errorMessage = error && error.message ? error.message : '个人主页加载失败'
       } finally {
@@ -467,6 +492,47 @@ export default {
     goMemeDetail(id) {
       if (id == null || id === '') return
       this.$router.push({ name: 'memeDetail', params: { id } })
+    },
+    async loadPublishedMemes() {
+      if (!this.requestUserId || !/^\d+$/.test(this.requestUserId)) return
+      this.publishedLoading = true
+      try {
+        const data = await pageUserMemes(this.requestUserId, {
+          page: this.publishedPageNo,
+          size: this.publishedPageSize,
+        })
+        const list = Array.isArray(data.list) ? data.list : []
+        // 新接口字段为 memeId，统一映射到组件内部用的 id
+        const normalized = list.map((it) => ({ ...it, id: it.memeId }))
+        if (this.publishedPageNo === 1) {
+          this.publishedPage = {
+            list: normalized,
+            total: Number(data.total) || 0,
+            isOwner: !!data.isOwner,
+          }
+        } else {
+          this.publishedPage = {
+            ...this.publishedPage,
+            list: this.publishedPage.list.concat(normalized),
+            total: Number(data.total) || this.publishedPage.total,
+            isOwner: !!data.isOwner,
+          }
+        }
+      } catch (e) {
+        this.$message && this.$message.error && this.$message.error(e.message || '发布列表加载失败')
+      } finally {
+        this.publishedLoading = false
+      }
+    },
+    loadMorePublished() {
+      if (this.publishedLoading || !this.publishedHasMore) return
+      this.publishedPageNo += 1
+      this.loadPublishedMemes()
+    },
+    statusText(status) {
+      if (status === 2) return '审核中'
+      if (status === 3) return '已下架'
+      return ''
     },
     async handleEditProfile() {
       this.editDialogVisible = true
@@ -803,6 +869,7 @@ export default {
 }
 
 .meme-card-item {
+  position: relative;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   overflow: hidden;
@@ -829,7 +896,36 @@ export default {
   align-items: center;
   justify-content: center;
   color: #9ca3af;
+  font-size: 13px;
+}
+
+.meme-status-tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.meme-status-tag.meme-status-2 {
+  background: rgba(245, 158, 11, 0.9);
+}
+
+.meme-status-tag.meme-status-3 {
+  background: rgba(239, 68, 68, 0.9);
+}
+
+.published-load-more {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.published-skeleton {
+  padding: 16px 0;
 }
 
 .meme-info {

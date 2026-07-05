@@ -11,6 +11,7 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
+import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.vo.MemeCreateResponseVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +58,9 @@ public class MemePublishService {
     @Resource
     private MemePublishAsyncHandler memePublishAsyncHandler;
 
+    @Resource
+    private IUserProfileService userProfileService;
+
     /**
      * 发布梗。
      *
@@ -97,8 +101,8 @@ public class MemePublishService {
         // 3. 写入 meme_tag_relation 关联表
         saveTagRelations(memeId, tagIds);
 
-        // 4. 非核心：标签计数 + 布隆热加载，事务提交后异步执行
-        scheduleAfterPublishCommitted(memeId, tagIds);
+        // 4. 非核心：标签计数 + 布隆热加载 + 缓存清理，事务提交后异步执行
+        scheduleAfterPublishCommitted(userId, memeId, tagIds);
 
         MemeCreateResponseVO vo = new MemeCreateResponseVO();
         vo.setMemeId(memeId);
@@ -188,20 +192,20 @@ public class MemePublishService {
     /**
      * 事务提交后再触发异步链路，避免主事务回滚却已累加计数 / 加入布隆。
      */
-    private void scheduleAfterPublishCommitted(Integer memeId, List<Integer> tagIds) {
+    private void scheduleAfterPublishCommitted(Long userId, Integer memeId, List<Integer> tagIds) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    runAfterPublish(memeId, tagIds);
+                    runAfterPublish(userId, memeId, tagIds);
                 }
             });
         } else {
-            runAfterPublish(memeId, tagIds);
+            runAfterPublish(userId, memeId, tagIds);
         }
     }
 
-    private void runAfterPublish(Integer memeId, List<Integer> tagIds) {
+    private void runAfterPublish(Long userId, Integer memeId, List<Integer> tagIds) {
         // 布隆过滤器热加载：同步追加，保证后续评论/收藏不被误拦
         try {
             memeBloomFilterService.add(memeId);
@@ -213,6 +217,12 @@ public class MemePublishService {
             memePublishAsyncHandler.incrementTagRelatedQuantity(tagIds);
         } catch (Exception e) {
             log.warn("标签计数异步任务派发失败, memeId={}", memeId, e);
+        }
+        // 清理该用户发布列表缓存，保证前端刷新看到最新数据
+        try {
+            userProfileService.evictUserMemesCache(userId);
+        } catch (Exception e) {
+            log.warn("清理用户发布列表缓存失败, userId={}", userId, e);
         }
     }
 

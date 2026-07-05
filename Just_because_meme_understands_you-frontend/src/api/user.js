@@ -68,6 +68,24 @@ export function getUserProfile(userId, token) {
   })
 }
 
+/**
+ * 分页获取用户发布的梗
+ * GET /user/{userId}/memes?page=&size=
+ * 返回 { list, total, isOwner }，list 项含 status/statusDesc/tags
+ */
+export function pageUserMemes(userId, params = {}) {
+  const id = userId != null ? String(userId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少用户ID'))
+  }
+  const { page = 1, size = 10 } = params
+  const query = new URLSearchParams({ page: String(page), size: String(size) })
+  return request(`/user/${encodeURIComponent(id)}/memes?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '获取发布列表失败')
+  })
+}
+
 export function getEditProfileEcho(token) {
   if (!token) {
     return Promise.reject(new Error('未登录，无法获取编辑资料回显'))

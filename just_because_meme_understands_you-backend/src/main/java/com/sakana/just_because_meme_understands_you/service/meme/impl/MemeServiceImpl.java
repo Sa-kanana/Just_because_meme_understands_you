@@ -73,7 +73,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         Page<Meme> mpPage = new Page<>(page, pageSize);
         LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
                 .eq(Meme::getStatus, 1)
-                .orderByDesc(Meme::getLikes);
+                .orderByDesc(Meme::getLikes)
+                .orderByDesc(Meme::getId);
 
         Page<Meme> resultPage = this.page(mpPage, wrapper);
         List<Meme> memeList = resultPage.getRecords();

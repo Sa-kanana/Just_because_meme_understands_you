@@ -138,6 +138,8 @@ public class OssUploadPolicyService {
      * conditions：
      * - content-length-range 限制文件大小
      * - starts-with $key 限制 object key 必须以 dir 开头
+     * - starts-with $Content-Type image/ 强制只能上传图片，防恶意 HTML/脚本被当作网页渲染
+     * - eq $x-oss-object-acl public-read 强制上传的 object 公共可读，便于前端直接访问 URL
      */
     private String buildPolicyJson(Date expiration, String dir) {
         String expirationIso = toIso8601Utc(expiration);
@@ -145,7 +147,9 @@ public class OssUploadPolicyService {
         return "{\"expiration\":\"" + expirationIso + "\","
                 + "\"conditions\":["
                 + "[\"content-length-range\",0," + MAX_FILE_SIZE + "],"
-                + "[\"starts-with\",\"$key\",\"" + dir + "\"]"
+                + "[\"starts-with\",\"$key\",\"" + dir + "\"],"
+                + "[\"starts-with\",\"$Content-Type\",\"image/\"],"
+                + "[\"eq\",\"$x-oss-object-acl\",\"public-read\"]"
                 + "]}";
     }
 

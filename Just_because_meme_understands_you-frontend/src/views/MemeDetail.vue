@@ -114,17 +114,35 @@
             :key="link.id"
             class="detail-link-group"
           >
-            <el-link
+            <div
               v-for="(url, idx) in safeUrls(link.resourceUrl)"
               :key="`${link.id}-${idx}-${url}`"
-              :href="url"
-              target="_blank"
-              type="primary"
-              class="detail-link-item"
+              class="detail-link-slot"
             >
-              <span class="detail-link-icon">🔗</span>
-              <span class="detail-link-text">{{ url }}</span>
-            </el-link>
+              <div v-if="isImageUrl(url)" class="detail-link-image-item">
+                <el-image
+                  :src="url"
+                  fit="cover"
+                  class="detail-link-image"
+                  :preview-src-list="[url]"
+                  preview-teleported
+                >
+                  <template #error>
+                    <div class="detail-link-image-error">图片加载失败</div>
+                  </template>
+                </el-image>
+              </div>
+              <el-link
+                v-else
+                :href="url"
+                target="_blank"
+                type="primary"
+                class="detail-link-item"
+              >
+                <span class="detail-link-icon">🔗</span>
+                <span class="detail-link-text">{{ url }}</span>
+              </el-link>
+            </div>
           </div>
         </div>
       </el-card>
@@ -730,6 +748,13 @@ function safeUrls(resourceUrl) {
     .filter(Boolean)
 }
 
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp|svg)(\?.*)?$/i
+
+function isImageUrl(url) {
+  if (!url) return false
+  return IMAGE_EXT_RE.test(String(url))
+}
+
 function goSearchByTag(tag) {
   if (!tag || !tag.name) return
   router.push({
@@ -936,8 +961,37 @@ function goSearchByTag(tag) {
   gap: 8px;
 }
 
+.detail-link-slot {
+  display: inline-flex;
+  align-items: flex-start;
+}
+
 .detail-link-item {
   max-width: 100%;
+}
+
+.detail-link-image-item {
+  display: inline-block;
+}
+
+.detail-link-image {
+  width: 160px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  cursor: zoom-in;
+}
+
+.detail-link-image-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 12px;
+  background: #f3f4f6;
 }
 
 .detail-link-icon {

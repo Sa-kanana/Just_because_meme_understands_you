@@ -4,7 +4,6 @@
       <template #header>
         <div class="publish-header">
           <h2 class="publish-title">发布梗</h2>
-          <span class="publish-sub">图片请先上传到 OSS，再提交表单</span>
         </div>
       </template>
 

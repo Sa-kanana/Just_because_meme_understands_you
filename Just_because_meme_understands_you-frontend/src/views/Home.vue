@@ -113,6 +113,7 @@
                 <!-- 图片区（比例 2）：圆角、叠字 浏览量/评论/点赞 -->
                 <div class="meme-img-wrap">
                   <el-image
+                    v-if="item.image"
                     :src="item.image"
                     :alt="item.name"
                     fit="cover"
@@ -121,10 +122,13 @@
                   >
                     <template #error>
                       <div class="meme-img-error">
-                        <span>加载失败</span>
+                        <span>图片加载失败</span>
                       </div>
                     </template>
                   </el-image>
+                  <div v-else class="meme-img-error">
+                    <span>暂无封面</span>
+                  </div>
                   <div class="meme-img-overlay">
                     <div class="meme-overlay-left">
                       <span class="meme-overlay-item" title="浏览量">👁 {{ formatNum(item.pageViews) }}</span>
@@ -214,13 +218,10 @@ export default {
         { id: 3, title: '梗图总数', value: 89 },
         { id: 5, title: '评论总数', value: 342 },
       ],
-      // 梗分页列表（无限滚动）
+      // 梗分页列表（每次加载 16 条 = 4 列 × 4 行）
       memeList: [],
       memePage: 1,
-      // 每页 8 条 = 两排（每排 4 个，lg 断点）
       memePageSize: 16,
-      /** 若后端一次返回了全部数据，存于此；前端按每页 8 条切分展示 */
-      memeFullList: null,
       memeLoading: false,
       memeNoMore: false,
       memeLoadError: '',
@@ -279,19 +280,13 @@ export default {
       if (this.memeLoading) return
       this.memeLoading = true
       this.memeLoadError = ''
-      this.memeFullList = null
+      this.memePage = 1
+      this.memeList = []
       try {
-        const list = await getMemeList({ page: 1 })
-        this.memePage = 1
-        // 若后端一次返回超过 8 条，按约定只展示每页 8 条，其余由“加载更多”分批展示
-        if (list.length > this.memePageSize) {
-          this.memeFullList = list
-          this.memeList = list.slice(0, this.memePageSize)
-          this.memeNoMore = this.memePageSize >= list.length
-        } else {
-          this.memeList = list
-          this.memeNoMore = list.length < this.memePageSize
-        }
+        const list = await getMemeList({ page: this.memePage })
+        this.memeList = list
+        // 不足一页（16 条）说明没有更多了
+        this.memeNoMore = list.length < this.memePageSize
       } catch (e) {
         this.memeLoadError = e.message || '加载梗图列表失败'
         this.memeList = []
@@ -301,16 +296,6 @@ export default {
     },
     async loadMoreMeme() {
       if (this.memeLoading || this.memeNoMore || this.memeLoadError) return
-      // 若首屏拿到的是一次性全量数据，则从内存中再取下一页 8 条，不再请求接口
-      if (this.memeFullList) {
-        this.memePage += 1
-        this.memeList = this.memeFullList.slice(
-          0,
-          this.memePage * this.memePageSize
-        )
-        this.memeNoMore = this.memeList.length >= this.memeFullList.length
-        return
-      }
       this.memeLoading = true
       try {
         const nextPage = this.memePage + 1
@@ -319,8 +304,8 @@ export default {
         const newItems = list.filter((item) => !existingIds.has(item.id))
         this.memeList = this.memeList.concat(newItems)
         this.memePage = nextPage
-        this.memeNoMore =
-          list.length < this.memePageSize || newItems.length === 0
+        // 本次返回不足 16 条，或没有新增项，说明到底了
+        this.memeNoMore = list.length < this.memePageSize || newItems.length === 0
       } catch (_) {
         this.memeNoMore = true
       } finally {

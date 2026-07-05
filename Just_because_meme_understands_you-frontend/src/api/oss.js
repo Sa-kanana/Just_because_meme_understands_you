@@ -37,6 +37,8 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
     throw new Error('上传凭证缺少 host')
   }
   const dir = String(policy.dir || '')
+  // 强制图片 Content-Type，与后端 policy 的 starts-with $Content-Type image/ 对应
+  const contentType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg'
   const suffix = pickSuffix(fileName || (file.name || ''), file.type)
   const objectName = `${dir}${Date.now()}_${randomToken()}${suffix}`
   const objectKey = objectName
@@ -45,28 +47,50 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
   formData.append('key', objectKey)
   formData.append('policy', policy.policy)
   formData.append('OSSAccessKeyId', policy.accessKeyId)
-  formData.append('signature', policy.signature)
+  // OSS PostObject 规范字段名为 Signature（首字母大写），小写会导致签名校验失败
+  formData.append('Signature', policy.signature)
   formData.append('success_action_status', '200')
+  // object Content-Type 固定为图片，防止上传 HTML/SVG 被当作网页渲染导致 XSS
+  formData.append('Content-Type', contentType)
+  // 与后端 policy condition 对应，上传的 object 设为公共读，URL 可直接访问
+  formData.append('x-oss-object-acl', 'public-read')
   formData.append('file', file, fileName || objectName)
 
-  await axios.post(host, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
-  })
+  try {
+    await axios.post(host, formData, {
+      // 不显式设 Content-Type，交由浏览器自动带 boundary，避免 boundary 缺失
+      timeout: 60000,
+      withCredentials: false,
+    })
+  } catch (err) {
+    // 调试信息：便于在浏览器控制台定位 OSS 返回的真实错误
+    console.error('[OSS upload] host=', host, 'objectKey=', objectKey, 'err=', err)
+    // 浏览器跨域/CORS 拦截或网络不通时 axios 抛 Network Error
+    const isNetwork = !err.response && (err.message === 'Network Error' || err.code === 'ERR_NETWORK')
+    if (isNetwork) {
+      throw new Error('图片直传 OSS 失败：可能是 OSS 未配置 CORS，或 host 不可达。请检查 OSS Bucket 跨域规则。')
+    }
+    const ossMsg = err.response && err.response.data
+      ? (typeof err.response.data === 'string' ? err.response.data : (err.response.data.Message || err.response.data.error || ''))
+      : ''
+    throw new Error(ossMsg || err.message || '图片上传到 OSS 失败')
+  }
 
   return `${host}/${objectKey}`
 }
 
 function pickSuffix(name, mime) {
-  const fromName = name && name.includes('.') ? name.slice(name.lastIndexOf('.')) : ''
-  if (fromName) return fromName.toLowerCase()
+  // 扩展名白名单，非图片扩展名一律回退为 .jpg，防止上传 .html/.svg 等可执行内容
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+  const fromName = name && name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
+  if (allowed.includes(fromName)) return fromName
   const map = {
     'image/jpeg': '.jpg',
     'image/png': '.png',
     'image/webp': '.webp',
     'image/gif': '.gif',
   }
-  return map[mime] || ''
+  return map[mime] || '.jpg'
 }
 
 function randomToken() {
