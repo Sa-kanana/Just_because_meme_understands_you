@@ -4,8 +4,10 @@ import App from './App.vue'
 import router from './router'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { setupRequestAuthLifecycle } from '@/api/request'
+import { createSessionExpiredHandler } from '@/utils/authSession'
 import 'element-plus/dist/index.css'
 import 'vue-advanced-cropper/dist/style.css'
 
@@ -16,24 +18,12 @@ app.use(pinia)
 const authStore = useAuthStore(pinia)
 authStore.initFromStorage()
 let validatingSession = false
-const POST_LOGIN_REDIRECT_KEY = 'post_login_redirect'
 
-function handleFinalLogout() {
-  const currentFullPath = router.currentRoute.value.fullPath || '/'
-  try {
-    sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentFullPath)
-  } catch (_) {
-    // ignore
-  }
-  authStore.clearAuthState()
-  router.replace({
-    path: '/',
-    query: {
-      redirect: currentFullPath,
-      reason: 'session_expired',
-    },
-  })
-}
+const forceSessionExpiredLogout = createSessionExpiredHandler({
+  authStore,
+  router,
+  notify: (msg) => ElMessage.warning(msg),
+})
 
 async function validateSessionByRefresh() {
   if (!authStore.token || validatingSession) return
@@ -42,7 +32,7 @@ async function validateSessionByRefresh() {
     // 主动探测 refresh 是否仍有效：失效则立刻强制登出
     await authStore.renewLogin()
   } catch (_) {
-    handleFinalLogout()
+    forceSessionExpiredLogout(null)
   } finally {
     validatingSession = false
   }
@@ -51,7 +41,7 @@ async function validateSessionByRefresh() {
 setupRequestAuthLifecycle({
   getAccessToken: () => authStore.token,
   refreshAccessToken: () => authStore.renewLogin(),
-  handleFinalLogout,
+  handleFinalLogout: forceSessionExpiredLogout,
 })
 
 app.use(router)

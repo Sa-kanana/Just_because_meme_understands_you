@@ -80,19 +80,7 @@
 import { ElMessage } from 'element-plus'
 import { login } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-
-const POST_LOGIN_REDIRECT_KEY = 'post_login_redirect'
-
-function resolveSafeRedirectPath(rawPath) {
-  const path = rawPath != null ? String(rawPath).trim() : ''
-  if (!path) return '/'
-  if (!path.startsWith('/')) return '/'
-  if (path.startsWith('//')) return '/'
-  if (path === '/login' || path === '/register' || path === '/forgot-password') {
-    return '/'
-  }
-  return path
-}
+import { POST_LOGIN_REDIRECT_KEY, resolveSafeRedirectPath } from '@/utils/authSession'
 
 export default {
   name: 'LoginPage',
@@ -126,9 +114,6 @@ export default {
     const emailFromQuery = this.$route.query.email
     if (emailFromQuery) {
       this.form.email = String(emailFromQuery)
-    }
-    if (this.$route.query.reason === 'session_expired') {
-      ElMessage.warning('登录已过期，请重新登录')
     }
   },
   methods: {

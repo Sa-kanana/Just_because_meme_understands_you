@@ -53,6 +53,12 @@ oss:
   accessKeyId: ${OSS_ACCESS_KEY_ID}
   accessKeySecret: ${OSS_ACCESS_KEY_SECRET}
   bucketName: ${OSS_BUCKET_NAME}
+  # 上传直连接口（PostObject），不配置则默认为 https://{bucketName}.{endpoint}
+  uploadHost: ${OSS_UPLOAD_HOST:}
+  # 读图访问域名：开发用 OSS 域名，生产改为 CDN 域名（如 https://img.example.com）
+  publicBaseUrl: ${OSS_PUBLIC_BASE_URL:}
+  # 上传凭证 /oss/policy 限流：每用户每 IP 每分钟最多次数
+  policy-rate-limit-per-minute: 10
 
 jwt:
   # 注意：生产环境请使用更复杂且保密的密钥字符串，长度至少 32 字节

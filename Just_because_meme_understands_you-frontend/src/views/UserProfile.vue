@@ -123,28 +123,218 @@
               </div>
             </el-tab-pane>
 
-            <el-tab-pane :label="`收藏梗图 (${favoriteList.length})`" name="favorite">
-              <div v-if="favoriteList.length" class="meme-grid">
-                <div
-                  v-for="item in favoriteList"
-                  :key="`favorite-${item.id}`"
-                  class="meme-card-item"
-                  @click="goMemeDetail(item.id)"
-                >
-                  <el-image :src="item.image" fit="cover" class="meme-cover">
-                    <template #error>
-                      <div class="meme-cover-error">图片加载失败</div>
-                    </template>
-                  </el-image>
-                  <div class="meme-info">
-                    <div class="meme-title" :title="item.name">{{ item.name || '未命名梗图' }}</div>
-                    <div class="meme-meta">
-                      <span>👁 {{ formatNum(item.pageViews) }}</span>
-                    </div>
+            <el-tab-pane :label="`收藏梗图 (${favoriteTotal})`" name="favorite">
+              <div class="favorite-panel">
+                <!-- 收藏夹卡片列表 -->
+                <template v-if="favoriteViewMode === 'folders'">
+                  <div class="favorite-panel-header">
+                    <h3 class="favorite-panel-title">收藏夹</h3>
+                    <button
+                      v-if="isOwnProfile"
+                      type="button"
+                      class="favorite-create-btn"
+                      @click="openCreateFolderDialog"
+                    >
+                      <span class="favorite-create-btn-icon">+</span>
+                      创建新收藏夹
+                    </button>
                   </div>
-                </div>
+
+                  <div v-loading="folderLoading" class="folder-card-grid">
+                    <div
+                      v-for="f in folderList"
+                      :key="`folder-card-${f.id}`"
+                      class="folder-card"
+                      @click="openFolderDetail(f)"
+                    >
+                      <div class="folder-card-top">
+                        <svg class="folder-card-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9.2l1.8 2H19.5A1.5 1.5 0 0 1 21 9.5v9A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5v-11Z"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                        <span class="folder-card-name" :title="f.name">{{ f.name }}</span>
+                        <el-dropdown
+                          v-if="isOwnProfile"
+                          trigger="click"
+                          @click.stop
+                          @command="(cmd) => handleFolderCommand(cmd, f)"
+                        >
+                          <button type="button" class="folder-card-more" @click.stop>⋯</button>
+                          <template #dropdown>
+                            <el-dropdown-menu>
+                              <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                              <el-dropdown-item v-if="!f.isDefault" command="delete" divided>删除</el-dropdown-item>
+                            </el-dropdown-menu>
+                          </template>
+                        </el-dropdown>
+                      </div>
+                      <div class="folder-card-bottom">
+                        <span class="folder-card-count">{{ f.memeCount || 0 }} 个梗图</span>
+                        <span
+                          v-if="f.isDefault"
+                          class="folder-card-status folder-card-status-default"
+                        >默认</span>
+                        <span
+                          v-else-if="Number(f.isPublic) === 0"
+                          class="folder-card-status folder-card-status-private"
+                        >私密</span>
+                        <span
+                          v-else
+                          class="folder-card-status folder-card-status-public"
+                        >公开</span>
+                      </div>
+                    </div>
+
+                    <el-empty
+                      v-if="!folderLoading && !folderList.length"
+                      :image-size="72"
+                      description="还没有收藏夹"
+                      class="folder-card-empty"
+                    >
+                      <el-button v-if="isOwnProfile" type="primary" @click="openCreateFolderDialog">
+                        创建新收藏夹
+                      </el-button>
+                    </el-empty>
+                  </div>
+                </template>
+
+                <!-- 夹内梗图详情 -->
+                <template v-else>
+                  <div class="folder-detail-header">
+                    <button type="button" class="folder-back-btn" @click="backToFolderGrid">
+                      <span aria-hidden="true">←</span>
+                      返回收藏夹
+                    </button>
+                    <h3 class="folder-detail-title">{{ selectedFolderName }}</h3>
+                  </div>
+
+                  <div
+                    class="folder-content"
+                    :class="{ 'folder-content--batch-active': isOwnProfile && selectedMemeIds.length > 0 }"
+                  >
+                    <div v-if="folderContentLoading && !folderContentList.length" class="published-skeleton">
+                      <el-skeleton :rows="3" animated />
+                    </div>
+                    <template v-else>
+                      <div
+                        v-if="isOwnProfile && folderContentList.length"
+                        class="folder-batch-bar"
+                        :class="{ 'is-active': selectedMemeIds.length > 0 }"
+                      >
+                        <el-checkbox
+                          v-model="folderSelectAll"
+                          class="folder-batch-check"
+                          @change="onSelectAllFolderItems"
+                        >
+                          全选
+                        </el-checkbox>
+                        <span v-if="selectedMemeIds.length" class="folder-batch-count">
+                          已选 {{ selectedMemeIds.length }} 项
+                        </span>
+                        <span v-else class="folder-batch-hint">勾选后可批量管理</span>
+                      </div>
+                      <div v-if="folderContentList.length" class="meme-grid folder-meme-grid">
+                        <div
+                          v-for="item in folderContentList"
+                          :key="`fav-${item.favoriteId || item.id}`"
+                          class="meme-card-item meme-card-item--favorite"
+                          :class="{ 'meme-card-item--selected': isMemeSelected(item.id) }"
+                          @click="goMemeDetail(item.id)"
+                        >
+                          <div class="meme-cover-wrap">
+                            <el-image :src="item.image" fit="cover" class="meme-cover">
+                              <template #error>
+                                <div class="meme-cover-error">图片加载失败</div>
+                              </template>
+                            </el-image>
+                            <div class="meme-cover-shade" aria-hidden="true" />
+                            <button
+                              v-if="isOwnProfile"
+                              type="button"
+                              class="meme-select-toggle"
+                              :class="{ 'is-checked': isMemeSelected(item.id) }"
+                              aria-label="选择梗图"
+                              @click.stop="toggleMemeSelect(item.id, !isMemeSelected(item.id))"
+                            />
+                            <div class="meme-cover-stats">
+                              <span class="meme-cover-stat">👁 {{ formatNum(item.pageViews) }}</span>
+                            </div>
+                          </div>
+                          <div class="meme-info">
+                            <div class="meme-info-head">
+                              <div class="meme-title" :title="item.name">{{ item.name || '未命名梗图' }}</div>
+                              <el-dropdown
+                                v-if="isOwnProfile"
+                                trigger="click"
+                                popper-class="meme-action-popper"
+                                @click.stop
+                                @command="(cmd) => handleFavoriteMemeCommand(cmd, item)"
+                              >
+                                <button
+                                  type="button"
+                                  class="meme-more-btn"
+                                  aria-label="更多操作"
+                                  @click.stop
+                                >
+                                  ⋮
+                                </button>
+                                <template #dropdown>
+                                  <el-dropdown-menu>
+                                    <el-dropdown-item command="move">移动至</el-dropdown-item>
+                                    <el-dropdown-item command="remove">取消收藏</el-dropdown-item>
+                                  </el-dropdown-menu>
+                                </template>
+                              </el-dropdown>
+                            </div>
+                            <div v-if="isOwnProfile" class="meme-meta">
+                              <span class="meme-meta-time">{{ formatFavoriteTime(item.favoriteTime) }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <el-empty v-else description="这个收藏夹还没有梗图" />
+                      <div v-if="folderContentHasMore" class="published-load-more">
+                        <el-button :loading="folderContentLoading" @click="loadMoreFolderContent">加载更多</el-button>
+                      </div>
+                      <Transition name="folder-batch-dock">
+                        <div
+                          v-if="isOwnProfile && selectedMemeIds.length > 0"
+                          class="folder-batch-dock"
+                        >
+                          <div class="folder-batch-dock-inner">
+                            <div class="folder-batch-dock-left">
+                              <span class="folder-batch-dock-count">已选 {{ selectedMemeIds.length }} 项</span>
+                              <button type="button" class="folder-batch-dock-clear" @click="clearMemeSelection">
+                                取消选择
+                              </button>
+                            </div>
+                            <div class="folder-batch-dock-actions">
+                              <button
+                                type="button"
+                                class="folder-batch-dock-btn folder-batch-dock-btn-move"
+                                @click="openBatchMoveDialog"
+                              >
+                                移动至
+                              </button>
+                              <button
+                                type="button"
+                                class="folder-batch-dock-btn folder-batch-dock-btn-remove"
+                                @click="confirmBatchRemoveFavorites"
+                              >
+                                取消收藏
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </Transition>
+                    </template>
+                  </div>
+                </template>
               </div>
-              <el-empty v-else description="这个用户还没有收藏梗图" />
             </el-tab-pane>
           </el-tabs>
         </el-card>
@@ -315,15 +505,84 @@
       :infinite="false"
       @close="avatarViewerVisible = false"
     />
+
+    <!-- 收藏夹新建/编辑弹窗 -->
+    <el-dialog
+      v-model="folderDialogVisible"
+      :title="folderEditingId == null ? '新建收藏夹' : '编辑收藏夹'"
+      width="440px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <el-form :model="folderForm" label-width="80px" @submit.prevent>
+        <el-form-item label="名称">
+          <el-input v-model="folderForm.name" maxlength="64" show-word-limit placeholder="收藏夹名称" />
+        </el-form-item>
+        <el-form-item label="简介">
+          <el-input v-model="folderForm.description" type="textarea" :rows="2" maxlength="255" show-word-limit placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="可见性">
+          <el-radio-group v-model="folderForm.isPublic">
+            <el-radio :label="1">公开</el-radio>
+            <el-radio :label="0">私密</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="folderDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="folderSubmitting" @click="submitFolderDialog">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 移动至收藏夹弹窗 -->
+    <el-dialog
+      v-model="batchMoveDialogVisible"
+      :title="moveDialogTitle"
+      width="420px"
+      append-to-body
+      @closed="onMoveDialogClosed"
+    >
+      <div class="favorite-folder-picker">
+        <div
+          v-for="f in folderList"
+          :key="`move-folder-${f.id}`"
+          class="favorite-folder-item"
+          :class="{ active: sameFolderId(batchMoveTargetId, f.id) }"
+          @click="batchMoveTargetId = normalizeFolderId(f.id)"
+        >
+          <div class="favorite-folder-icon">{{ f.isDefault ? '☆' : '📁' }}</div>
+          <div class="folder-meta">
+            <div class="folder-name">{{ f.name }}</div>
+            <div class="folder-count">{{ f.memeCount || 0 }} 个梗图</div>
+          </div>
+          <span v-if="sameFolderId(batchMoveTargetId, f.id)" class="favorite-folder-check">✓</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="batchMoveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchMoveSubmitting" @click="confirmBatchMove">移动</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { Cropper } from 'vue-advanced-cropper'
-import { ElImageViewer, ElMessage } from 'element-plus'
+import { ElImageViewer, ElMessage, ElMessageBox } from 'element-plus'
 import { getEditProfileEcho, getUserProfile, updateUserProfile } from '@/api/user'
 import { pageUserMemes } from '@/api/user'
 import { uploadToOss } from '@/api/oss'
+import {
+  getMyFavoriteFolders,
+  getUserFavoriteFolders,
+  createFavoriteFolder,
+  updateFavoriteFolder,
+  deleteFavoriteFolder,
+  pageUserFavorites,
+  normalizeFolderId,
+  sameFolderId,
+} from '@/api/favoriteFolder'
+import { batchMoveFavorites, removeMemeFavorite } from '@/api/meme'
 import { useAuthStore } from '@/stores/auth'
 
 export default {
@@ -384,6 +643,27 @@ export default {
       publishedPageNo: 1,
       publishedPageSize: 16,
       publishedLoading: false,
+      // 收藏夹
+      folderList: [],
+      folderLoading: false,
+      selectedFolderId: '0',
+      folderContentPage: { list: [], total: 0 },
+      folderContentPageNo: 1,
+      folderContentPageSize: 12,
+      folderContentLoading: false,
+      folderSelectAll: false,
+      selectedMemeIds: [],
+      // 收藏夹 CRUD 弹窗
+      folderDialogVisible: false,
+      folderEditingId: null,
+      folderSubmitting: false,
+      folderForm: { name: '', description: '', isPublic: 1 },
+      // 批量移动
+      batchMoveDialogVisible: false,
+      batchMoveTargetId: '0',
+      batchMoveSubmitting: false,
+      singleMoveMemeId: null,
+      favoriteViewMode: 'folders',
     }
   },
   computed: {
@@ -406,14 +686,23 @@ export default {
       return ''
     },
     requestUserId() {
-      return this.currentUserId
+      if (this.routeUserId && /^\d+$/.test(this.routeUserId)) {
+        return this.routeUserId
+      }
+      if (this.currentUserId && /^\d+$/.test(this.currentUserId)) {
+        return this.currentUserId
+      }
+      return ''
     },
     isRequestUserIdValid() {
       return /^\d+$/.test(this.requestUserId)
     },
-    showEditButton() {
+    isOwnProfile() {
       if (this.profile.isSelf) return true
       return !!this.currentUserId && this.currentUserId === String(this.profile.userId)
+    },
+    showEditButton() {
+      return this.isOwnProfile
     },
     avatarFallback() {
       const nickname = this.profile.nickname || ''
@@ -431,12 +720,31 @@ export default {
     favoriteList() {
       return Array.isArray(this.profile.favorites) ? this.profile.favorites : []
     },
+    favoriteTotal() {
+      return this.folderList.reduce((sum, f) => sum + (Number(f.memeCount) || 0), 0)
+    },
+    folderContentList() {
+      return Array.isArray(this.folderContentPage.list) ? this.folderContentPage.list : []
+    },
+    folderContentHasMore() {
+      return this.folderContentPage.list.length < Number(this.folderContentPage.total) || 0
+    },
+    selectedFolderName() {
+      const folder = this.folderList.find((f) => sameFolderId(f.id, this.selectedFolderId))
+      return folder ? folder.name : '收藏夹'
+    },
+    moveDialogTitle() {
+      if (this.singleMoveMemeId != null) return '移动至'
+      if (this.selectedMemeIds.length > 1) return `移动 ${this.selectedMemeIds.length} 项到收藏夹`
+      return '移动到收藏夹'
+    },
   },
   watch: {
     '$route.params.userId': {
       immediate: true,
       handler() {
         this.syncRouteUserId()
+        this.resetFavoriteViewState()
         this.loadProfile()
       },
     },
@@ -444,25 +752,43 @@ export default {
       this.syncRouteUserId()
       this.loadProfile()
     },
+    activeTab(val) {
+      if (val === 'favorite') {
+        this.loadFolders()
+      } else {
+        this.favoriteViewMode = 'folders'
+      }
+    },
   },
   methods: {
+    normalizeFolderId,
+    sameFolderId,
     syncRouteUserId() {
-      if (!this.currentUserId || !/^\d+$/.test(this.currentUserId)) return
-      if (this.routeUserId === this.currentUserId) return
       if (this.$route.name !== 'userProfile') return
+      // 仅当 URL 未带合法 userId 时，回退到当前登录用户主页
+      if (this.routeUserId && /^\d+$/.test(this.routeUserId)) return
+      if (!this.currentUserId || !/^\d+$/.test(this.currentUserId)) return
       this.$router.replace({
         name: 'userProfile',
         params: { userId: this.currentUserId },
         query: this.$route.query,
       })
     },
+    resetFavoriteViewState() {
+      this.favoriteViewMode = 'folders'
+      this.folderList = []
+      this.selectedFolderId = '0'
+      this.folderContentPage = { list: [], total: 0 }
+      this.selectedMemeIds = []
+      this.folderSelectAll = false
+    },
     async loadProfile() {
       if (!this.requestUserId) {
-        this.errorMessage = '未获取到当前用户ID，请先登录后重试'
+        this.errorMessage = '无效的用户ID'
         return
       }
       if (!this.isRequestUserIdValid) {
-        this.errorMessage = '当前用户ID格式错误，请重新登录后重试'
+        this.errorMessage = '用户ID格式错误'
         return
       }
       this.loading = true
@@ -479,6 +805,9 @@ export default {
         }
         this.publishedPageNo = 1
         this.loadPublishedMemes()
+        if (this.activeTab === 'favorite') {
+          this.loadFolders()
+        }
       } catch (error) {
         this.errorMessage = error && error.message ? error.message : '个人主页加载失败'
       } finally {
@@ -706,6 +1035,310 @@ export default {
       if (n >= 1e8) return `${(n / 1e8).toFixed(1)}亿`
       if (n >= 1e4) return `${(n / 1e4).toFixed(1)}万`
       return String(Math.floor(n))
+    },
+    formatFavoriteTime(t) {
+      if (!t) return ''
+      const m = String(t).match(/(\d{4}-\d{2}-\d{2})/)
+      return m ? m[1] : ''
+    },
+    // ==================== 收藏夹 ====================
+    async loadFolders() {
+      const userId = String(this.profile.userId || this.requestUserId || '').trim()
+      if (!/^\d+$/.test(userId)) return
+      this.folderLoading = true
+      try {
+        const api = this.isOwnProfile ? getMyFavoriteFolders : getUserFavoriteFolders
+        const { folders } = await api(this.isOwnProfile ? undefined : userId)
+        this.folderList = folders || []
+        if (!this.folderList.length) {
+          this.selectedFolderId = '0'
+          this.folderContentPage = { list: [], total: 0 }
+          return
+        }
+        const exists = this.folderList.some((f) => sameFolderId(f.id, this.selectedFolderId))
+        if (!exists) {
+          this.selectedFolderId = normalizeFolderId(this.folderList[0].id)
+        }
+        this.folderContentPageNo = 1
+        this.selectedMemeIds = []
+        this.folderSelectAll = false
+        if (this.favoriteViewMode === 'folder-detail') {
+          await this.loadFolderContent()
+        }
+      } catch (e) {
+        this.$message && this.$message.error && this.$message.error((e && e.message) || '收藏夹加载失败')
+      } finally {
+        this.folderLoading = false
+      }
+    },
+    selectFolder(folderId) {
+      if (sameFolderId(this.selectedFolderId, folderId)) return
+      this.selectedFolderId = normalizeFolderId(folderId)
+      this.folderContentPageNo = 1
+      this.selectedMemeIds = []
+      this.folderSelectAll = false
+      this.loadFolderContent()
+    },
+    openFolderDetail(folder) {
+      if (!folder) return
+      if (!sameFolderId(this.selectedFolderId, folder.id)) {
+        this.selectFolder(folder.id)
+      } else if (!this.folderContentLoading && !this.folderContentList.length) {
+        this.loadFolderContent()
+      }
+      this.favoriteViewMode = 'folder-detail'
+    },
+    backToFolderGrid() {
+      this.favoriteViewMode = 'folders'
+      this.selectedMemeIds = []
+      this.folderSelectAll = false
+    },
+    async loadFolderContent() {
+      const userId = String(this.profile.userId || this.requestUserId || '').trim()
+      if (!/^\d+$/.test(userId)) return
+      this.folderContentLoading = true
+      try {
+        const data = await pageUserFavorites(userId, {
+          folderId: this.selectedFolderId,
+          page: this.folderContentPageNo,
+          size: this.folderContentPageSize,
+        })
+        const list = Array.isArray(data.list) ? data.list : []
+        if (this.folderContentPageNo === 1) {
+          this.folderContentPage = { list, total: Number(data.total) || 0 }
+        } else {
+          this.folderContentPage = {
+            list: this.folderContentPage.list.concat(list),
+            total: Number(data.total) || this.folderContentPage.total,
+          }
+        }
+        this.refreshFolderSelectAll()
+      } catch (e) {
+        this.$message && this.$message.error && this.$message.error((e && e.message) || '收藏列表加载失败')
+      } finally {
+        this.folderContentLoading = false
+      }
+    },
+    loadMoreFolderContent() {
+      if (this.folderContentLoading || !this.folderContentHasMore) return
+      this.folderContentPageNo += 1
+      this.loadFolderContent()
+    },
+    handleFolderCommand(cmd, folder) {
+      if (cmd === 'edit') this.openEditFolderDialog(folder)
+      else if (cmd === 'delete') this.confirmDeleteFolder(folder)
+    },
+    openCreateFolderDialog() {
+      this.folderEditingId = null
+      this.folderForm = { name: '', description: '', isPublic: 1 }
+      this.folderDialogVisible = true
+    },
+    openEditFolderDialog(folder) {
+      this.folderEditingId = normalizeFolderId(folder.id)
+      this.folderForm = {
+        name: folder.name || '',
+        description: folder.description || '',
+        isPublic: Number(folder.isPublic) || 1,
+      }
+      this.folderDialogVisible = true
+    },
+    async submitFolderDialog() {
+      const name = (this.folderForm.name || '').trim()
+      if (!name) {
+        this.$message && this.$message.warning && this.$message.warning('请输入收藏夹名称')
+        return
+      }
+      this.folderSubmitting = true
+      try {
+        if (this.folderEditingId == null) {
+          await createFavoriteFolder({
+            name,
+            description: this.folderForm.description,
+            isPublic: this.folderForm.isPublic,
+          })
+          this.$message && this.$message.success && this.$message.success('收藏夹已创建')
+        } else {
+          await updateFavoriteFolder(this.folderEditingId, {
+            name,
+            description: this.folderForm.description,
+            isPublic: this.folderForm.isPublic,
+          })
+          this.$message && this.$message.success && this.$message.success('收藏夹已更新')
+        }
+        this.folderDialogVisible = false
+        await this.loadFolders()
+      } catch (e) {
+        this.$message && this.$message.error && this.$message.error((e && e.message) || '保存失败')
+      } finally {
+        this.folderSubmitting = false
+      }
+    },
+    confirmDeleteFolder(folder) {
+      if (folder && folder.isDefault) {
+        this.$message && this.$message.warning && this.$message.warning('默认收藏夹不可删除')
+        return
+      }
+      this.$confirm
+        ? this.$confirm(`删除「${folder.name}」？夹内梗图将移入默认收藏夹，且不会取消收藏。`, '提示', {
+            type: 'warning',
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+          }).then(() => this.doDeleteFolder(folder))
+        : this.doDeleteFolder(folder)
+    },
+    async doDeleteFolder(folder) {
+      try {
+        await deleteFavoriteFolder(folder.id)
+        this.$message && this.$message.success && this.$message.success('收藏夹已删除')
+        if (sameFolderId(this.selectedFolderId, folder.id)) {
+          this.selectedFolderId = '0'
+          this.favoriteViewMode = 'folders'
+        }
+        await this.loadFolders()
+      } catch (e) {
+        this.$message && this.$message.error && this.$message.error((e && e.message) || '删除失败')
+      }
+    },
+    normalizeMemeId(memeId) {
+      return memeId != null ? String(memeId).trim() : ''
+    },
+    isMemeSelected(memeId) {
+      const id = this.normalizeMemeId(memeId)
+      return this.selectedMemeIds.some((x) => this.normalizeMemeId(x) === id)
+    },
+    toggleMemeSelect(memeId, val) {
+      const id = this.normalizeMemeId(memeId)
+      if (!id) return
+      if (val) {
+        if (!this.isMemeSelected(id)) this.selectedMemeIds.push(id)
+      } else {
+        this.selectedMemeIds = this.selectedMemeIds.filter(
+          (x) => this.normalizeMemeId(x) !== id
+        )
+      }
+      this.refreshFolderSelectAll()
+    },
+    onSelectAllFolderItems(val) {
+      if (val) {
+        this.selectedMemeIds = this.folderContentList.map((item) => this.normalizeMemeId(item.id))
+      } else {
+        this.selectedMemeIds = []
+      }
+    },
+    refreshFolderSelectAll() {
+      const all = this.folderContentList.map((item) => this.normalizeMemeId(item.id))
+      this.folderSelectAll =
+        all.length > 0 && all.every((id) => this.selectedMemeIds.some((x) => this.normalizeMemeId(x) === id))
+    },
+    handleFavoriteMemeCommand(command, item) {
+      if (command === 'move') {
+        this.openMoveDialog(item.id)
+        return
+      }
+      if (command === 'remove') {
+        this.confirmRemoveFavorite(item)
+      }
+    },
+    openMoveDialog(memeId) {
+      this.singleMoveMemeId = memeId != null ? this.normalizeMemeId(memeId) : null
+      this.batchMoveTargetId = '0'
+      this.batchMoveDialogVisible = true
+    },
+    openBatchMoveDialog() {
+      if (!this.selectedMemeIds.length) return
+      this.singleMoveMemeId = null
+      this.batchMoveTargetId = '0'
+      this.batchMoveDialogVisible = true
+    },
+    clearMemeSelection() {
+      this.selectedMemeIds = []
+      this.folderSelectAll = false
+    },
+    onMoveDialogClosed() {
+      this.singleMoveMemeId = null
+    },
+    async confirmBatchMove() {
+      const ids =
+        this.singleMoveMemeId != null
+          ? [this.singleMoveMemeId]
+          : this.selectedMemeIds.slice()
+      if (!ids.length) return
+      if (sameFolderId(this.batchMoveTargetId, this.selectedFolderId)) {
+        ElMessage.warning('已在当前收藏夹中')
+        return
+      }
+      this.batchMoveSubmitting = true
+      try {
+        await batchMoveFavorites(this.batchMoveTargetId, ids)
+        ElMessage.success(ids.length > 1 ? `已移动 ${ids.length} 项` : '已移动')
+        this.batchMoveDialogVisible = false
+        this.selectedMemeIds = []
+        this.folderSelectAll = false
+        this.folderContentPageNo = 1
+        await this.loadFolderContent()
+        await this.loadFolders()
+      } catch (e) {
+        ElMessage.error((e && e.message) || '移动失败')
+      } finally {
+        this.batchMoveSubmitting = false
+      }
+    },
+    confirmRemoveFavorite(item) {
+      const name = (item && item.name) || '未命名梗图'
+      ElMessageBox.confirm(`确定取消收藏「${name}」？`, '取消收藏', {
+        type: 'warning',
+        confirmButtonText: '取消收藏',
+        cancelButtonText: '返回',
+        confirmButtonClass: 'el-button--danger',
+      })
+        .then(() => this.doRemoveFavorite(item.id))
+        .catch(() => {})
+    },
+    confirmBatchRemoveFavorites() {
+      const count = this.selectedMemeIds.length
+      if (!count) return
+      const tip =
+        count > 1 ? `确定取消收藏已选的 ${count} 个梗图？` : '确定取消收藏已选的梗图？'
+      ElMessageBox.confirm(tip, '批量取消收藏', {
+        type: 'warning',
+        confirmButtonText: '取消收藏',
+        cancelButtonText: '返回',
+        confirmButtonClass: 'el-button--danger',
+      })
+        .then(() => this.doBatchRemoveFavorites())
+        .catch(() => {})
+    },
+    async doBatchRemoveFavorites() {
+      const ids = this.selectedMemeIds.slice()
+      if (!ids.length) return
+      try {
+        await Promise.all(ids.map((id) => removeMemeFavorite(id)))
+        ElMessage.success(ids.length > 1 ? `已取消收藏 ${ids.length} 项` : '已取消收藏')
+        this.selectedMemeIds = []
+        this.folderSelectAll = false
+        this.folderContentPageNo = 1
+        await this.loadFolderContent()
+        await this.loadFolders()
+      } catch (e) {
+        ElMessage.error((e && e.message) || '取消收藏失败')
+      }
+    },
+    async doRemoveFavorite(memeId) {
+      const id = this.normalizeMemeId(memeId)
+      if (!id) return
+      try {
+        await removeMemeFavorite(id)
+        ElMessage.success('已取消收藏')
+        this.selectedMemeIds = this.selectedMemeIds.filter(
+          (x) => this.normalizeMemeId(x) !== id
+        )
+        this.refreshFolderSelectAll()
+        this.folderContentPageNo = 1
+        await this.loadFolderContent()
+        await this.loadFolders()
+      } catch (e) {
+        ElMessage.error((e && e.message) || '取消收藏失败')
+      }
     },
   },
 }
@@ -1223,5 +1856,522 @@ export default {
   .cropper-preview-wrap {
     grid-template-columns: 1fr;
   }
+}
+
+/* 收藏夹：卡片网格布局 */
+.favorite-panel {
+  min-height: 320px;
+}
+.favorite-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.favorite-panel-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  letter-spacing: 0.02em;
+}
+.favorite-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #d6e8ff;
+  color: #1677ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 1px 2px rgba(22, 119, 255, 0.08);
+}
+.favorite-create-btn:hover {
+  background: #c4ddff;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.14);
+}
+.favorite-create-btn-icon {
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 700;
+}
+.folder-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  min-height: 120px;
+}
+.folder-card {
+  background: #fff;
+  border: 1px solid #e8eaed;
+  border-radius: 14px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 108px;
+}
+.folder-card:hover {
+  border-color: #c8d8f0;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+.folder-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.folder-card-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: #4b5563;
+}
+.folder-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-card-more {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.folder-card-more:hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.folder-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.folder-card-count {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.folder-card-status {
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.folder-card-status-private {
+  color: #e91e8c;
+}
+.folder-card-status-public {
+  color: #6b7280;
+}
+.folder-card-status-default {
+  color: #6b7280;
+}
+.folder-card-empty {
+  grid-column: 1 / -1;
+  padding: 24px 0;
+}
+.folder-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.folder-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.folder-back-btn:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.folder-detail-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+.folder-content {
+  min-width: 0;
+}
+.folder-content--batch-active {
+  padding-bottom: 88px;
+}
+.folder-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: #fafbfd;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.folder-batch-bar.is-active {
+  border-color: #c8daf8;
+  box-shadow: 0 2px 10px rgba(22, 119, 255, 0.06);
+}
+.folder-batch-check :deep(.el-checkbox__label) {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.folder-batch-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--el-color-primary-light-9);
+}
+.folder-batch-hint {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.folder-batch-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 200;
+  width: min(560px, calc(100vw - 48px));
+  pointer-events: none;
+}
+.folder-batch-dock-inner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+.folder-batch-dock-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.folder-batch-dock-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.folder-batch-dock-clear {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.folder-batch-dock-clear:hover {
+  color: var(--el-color-primary);
+}
+.folder-batch-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.folder-batch-dock-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+}
+.folder-batch-dock-btn-move {
+  background: #eef4ff;
+  color: #1677ff;
+  border-color: #d6e4ff;
+}
+.folder-batch-dock-btn-move:hover {
+  background: #dbeafe;
+  border-color: #b9d0ff;
+}
+.folder-batch-dock-btn-remove {
+  background: #fff5f5;
+  color: #e11d48;
+  border-color: #fecdd3;
+}
+.folder-batch-dock-btn-remove:hover {
+  background: #ffe4e6;
+  border-color: #fda4af;
+}
+.folder-batch-dock-enter-active,
+.folder-batch-dock-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.folder-batch-dock-enter-from,
+.folder-batch-dock-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+}
+
+/* 收藏夹内梗图卡片 */
+.folder-meme-grid .meme-card-item--favorite {
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  overflow: visible;
+}
+.folder-meme-grid .meme-card-item--favorite:hover {
+  transform: none;
+  box-shadow: none;
+}
+.folder-meme-grid .meme-card-item--favorite.meme-card-item--selected .meme-cover-wrap {
+  box-shadow: 0 0 0 2px var(--el-color-primary);
+}
+.meme-cover-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+.folder-meme-grid .meme-cover {
+  height: 118px;
+  display: block;
+}
+.meme-cover-shade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+.meme-select-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.meme-select-toggle:hover {
+  border-color: #fff;
+  transform: scale(1.05);
+}
+.meme-select-toggle.is-checked {
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+.meme-select-toggle.is-checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(45deg);
+}
+.meme-cover-stats {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+.meme-cover-stat {
+  font-size: 12px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.folder-meme-grid .meme-info {
+  padding: 8px 2px 0;
+}
+.meme-info-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.meme-info-head .meme-title {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.meme-more-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9499a0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.meme-more-btn:hover {
+  background: #f1f2f3;
+  color: #61666d;
+}
+.folder-meme-grid .meme-meta {
+  font-size: 12px;
+  color: #9499a0;
+}
+.meme-meta-time {
+  color: #9499a0;
+  font-size: 12px;
+}
+
+/* 复用 MemeDetail 弹窗样式 */
+.favorite-folder-picker {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.favorite-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.favorite-folder-item:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.favorite-folder-item.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+.favorite-folder-picker .folder-meta {
+  flex: 1;
+  min-width: 0;
+}
+.favorite-folder-picker .folder-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.favorite-folder-picker .folder-count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+.favorite-folder-check {
+  color: var(--el-color-primary);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  .favorite-panel-header {
+    flex-wrap: wrap;
+  }
+  .favorite-panel-title {
+    font-size: 20px;
+  }
+  .folder-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .folder-batch-dock {
+    width: calc(100vw - 32px);
+    bottom: 16px;
+  }
+  .folder-batch-dock-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .folder-batch-dock-actions {
+    width: 100%;
+  }
+  .folder-batch-dock-btn {
+    flex: 1;
+  }
+}
+</style>
+
+<style>
+/* 收藏梗图卡片操作菜单（挂载在 body） */
+.meme-action-popper.el-popper {
+  border-radius: 12px !important;
+  border: none !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12) !important;
+  padding: 6px 0 !important;
+  min-width: 120px;
+}
+.meme-action-popper .el-dropdown-menu__item {
+  padding: 10px 20px;
+  font-size: 14px;
+  color: #61666d;
+  line-height: 1.2;
+}
+.meme-action-popper .el-dropdown-menu__item:not(.is-disabled):hover {
+  background: #f6f7f8;
+  color: #18191c;
 }
 </style>

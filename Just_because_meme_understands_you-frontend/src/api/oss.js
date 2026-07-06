@@ -5,7 +5,7 @@ import { request } from './request'
  * 获取 OSS 前端直传凭证
  * GET /oss/policy?fileType=avatar|meme|comment|home
  * @param {string} fileType 文件类型，决定 OSS 存放目录
- * @returns {Promise<{accessKeyId, policy, signature, dir, host, expire}>}
+ * @returns {Promise<{accessKeyId, policy, signature, dir, host, publicBaseUrl, expire}>}
  */
 export function getOssPolicy(fileType = '') {
   const query = new URLSearchParams()
@@ -32,8 +32,9 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
     throw new Error('请选择要上传的文件')
   }
   const policy = await getOssPolicy(fileType)
-  const host = String(policy.host || '').replace(/\/$/, '')
-  if (!host) {
+  const uploadHost = String(policy.host || '').replace(/\/$/, '')
+  const publicBaseUrl = String(policy.publicBaseUrl || policy.host || '').replace(/\/$/, '')
+  if (!uploadHost) {
     throw new Error('上传凭证缺少 host')
   }
   const dir = String(policy.dir || '')
@@ -52,19 +53,18 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
   formData.append('success_action_status', '200')
   // object Content-Type 固定为图片，防止上传 HTML/SVG 被当作网页渲染导致 XSS
   formData.append('Content-Type', contentType)
-  // 与后端 policy condition 对应，上传的 object 设为公共读，URL 可直接访问
-  formData.append('x-oss-object-acl', 'public-read')
+  // 不设置 x-oss-object-acl，object 继承 Bucket 权限，由 Bucket ACL 统一控制访问
   formData.append('file', file, fileName || objectName)
 
   try {
-    await axios.post(host, formData, {
+    await axios.post(uploadHost, formData, {
       // 不显式设 Content-Type，交由浏览器自动带 boundary，避免 boundary 缺失
       timeout: 60000,
       withCredentials: false,
     })
   } catch (err) {
     // 调试信息：便于在浏览器控制台定位 OSS 返回的真实错误
-    console.error('[OSS upload] host=', host, 'objectKey=', objectKey, 'err=', err)
+    console.error('[OSS upload] uploadHost=', uploadHost, 'objectKey=', objectKey, 'err=', err)
     // 浏览器跨域/CORS 拦截或网络不通时 axios 抛 Network Error
     const isNetwork = !err.response && (err.message === 'Network Error' || err.code === 'ERR_NETWORK')
     if (isNetwork) {
@@ -76,7 +76,7 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
     throw new Error(ossMsg || err.message || '图片上传到 OSS 失败')
   }
 
-  return `${host}/${objectKey}`
+  return `${publicBaseUrl}/${objectKey}`
 }
 
 function pickSuffix(name, mime) {

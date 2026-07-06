@@ -12,6 +12,7 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.vo.MemeCreateResponseVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +62,9 @@ public class MemePublishService {
     @Resource
     private IUserProfileService userProfileService;
 
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
     /**
      * 发布梗。
      *
@@ -77,11 +81,14 @@ public class MemePublishService {
 
         LocalDateTime now = LocalDateTime.now();
 
+        String imageKey = ossUrlHelper.normalizeForStorage(request.getImage());
+        ossUrlHelper.assertOwnedImageKey(imageKey, "memes/");
+
         // 1. 写入 meme 主表
         Meme meme = new Meme();
         meme.setName(request.getName().trim());
         meme.setIntroduction(request.getIntroduction().trim());
-        meme.setImage(request.getImage().trim());
+        meme.setImage(imageKey);
         meme.setPageViews(0);
         meme.setLikes(0);
         meme.setComments(0);
@@ -173,9 +180,13 @@ public class MemePublishService {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
+            String normalized = ossUrlHelper.normalizeForStorage(url);
+            if (!normalized.toLowerCase().startsWith("http")) {
+                ossUrlHelper.assertOwnedImageKey(normalized, "memes/", "home/", "common/");
+            }
             MemeResource resource = new MemeResource();
             resource.setMemeId(memeId.longValue());
-            resource.setResourceUrl(url.trim());
+            resource.setResourceUrl(normalized);
             memeResourceMapper.insert(resource);
         }
     }

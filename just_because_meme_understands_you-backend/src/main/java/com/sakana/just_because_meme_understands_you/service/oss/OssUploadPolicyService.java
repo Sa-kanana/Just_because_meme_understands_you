@@ -61,9 +61,6 @@ public class OssUploadPolicyService {
     /** fileType 兜底目录 */
     private static final String DEFAULT_DIR = "common";
 
-    @Value("${oss.endpoint}")
-    private String endpoint;
-
     @Value("${oss.accessKeyId}")
     private String accessKeyId;
 
@@ -72,6 +69,9 @@ public class OssUploadPolicyService {
 
     @Value("${oss.bucketName}")
     private String bucketName;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
 
     @Resource
     private HttpServletRequest httpServletRequest;
@@ -99,7 +99,8 @@ public class OssUploadPolicyService {
         vo.setPolicy(policyBase64);
         vo.setSignature(signature);
         vo.setDir(dirPrefix);
-        vo.setHost("https://" + bucketName + "." + endpoint);
+        vo.setHost(ossUrlHelper.getUploadHost());
+        vo.setPublicBaseUrl(ossUrlHelper.getPublicBaseUrl());
         vo.setExpire(expiration.getTime() / 1000);
         return vo;
     }
@@ -139,7 +140,9 @@ public class OssUploadPolicyService {
      * - content-length-range 限制文件大小
      * - starts-with $key 限制 object key 必须以 dir 开头
      * - starts-with $Content-Type image/ 强制只能上传图片，防恶意 HTML/脚本被当作网页渲染
-     * - eq $x-oss-object-acl public-read 强制上传的 object 公共可读，便于前端直接访问 URL
+     * <p>
+     * 不再强制 x-oss-object-acl=public-read，上传的 object 继承 Bucket 权限，
+     * 由 Bucket ACL 统一控制访问权限，便于运维侧统一调整。
      */
     private String buildPolicyJson(Date expiration, String dir) {
         String expirationIso = toIso8601Utc(expiration);
@@ -148,8 +151,7 @@ public class OssUploadPolicyService {
                 + "\"conditions\":["
                 + "[\"content-length-range\",0," + MAX_FILE_SIZE + "],"
                 + "[\"starts-with\",\"$key\",\"" + dir + "\"],"
-                + "[\"starts-with\",\"$Content-Type\",\"image/\"],"
-                + "[\"eq\",\"$x-oss-object-acl\",\"public-read\"]"
+                + "[\"starts-with\",\"$Content-Type\",\"image/\"]"
                 + "]}";
     }
 

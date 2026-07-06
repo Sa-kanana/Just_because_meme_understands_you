@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserAuth;
 import com.sakana.just_because_meme_understands_you.mapper.UserAuthMapper;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.util.EmailValidatorUtil;
@@ -65,6 +66,9 @@ public class AuthServiceImpl implements IAuthService {
 
     @Resource
     private JavaMailSender mailSender;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
 
     /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
     @Value("${spring.mail.username}")
@@ -446,7 +450,7 @@ public class AuthServiceImpl implements IAuthService {
         LoginUserVO userVO = new LoginUserVO();
         userVO.setId(user.getId());
         userVO.setNickname(user.getNickname());
-        userVO.setAvatar(user.getAvatar());
+        userVO.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
         userVO.setSignature(user.getSignature());
         userVO.setRole(user.getRole());
         userVO.setStatus(user.getStatus());

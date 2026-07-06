@@ -21,6 +21,9 @@ public class UserFavorite {
 
     private Long folderId;
 
+    @TableField("sort_order")
+    private Integer sortOrder;
+
     @TableField("is_deleted")
     private Integer isDeleted;
 

@@ -10,6 +10,10 @@ public class MemeFavoriteVO {
 
     private Long favoriteId;
 
+    private Long folderId;
+
+    private Integer sortOrder;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 

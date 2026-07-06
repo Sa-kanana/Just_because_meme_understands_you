@@ -49,10 +49,13 @@ public class UserProfileController {
 
     @GetMapping("/{userId}/favorites")
     public Result<PageVO<UserFavoriteItemVO>> pageUserFavorites(@PathVariable("userId") String userId,
+                                                                 HttpServletRequest request,
+                                                                 @RequestParam(value = "folderId", required = false) Long folderId,
                                                                  @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
                                                                  @RequestParam(value = "size", required = false, defaultValue = "10") Integer size) {
         Long targetUserId = AuthContext.parseUserId(userId);
-        return Result.success(userProfileService.pageUserFavorites(targetUserId, page, size));
+        Long currentUserId = AuthContext.currentUserId(request);
+        return Result.success(userProfileService.pageUserFavorites(targetUserId, currentUserId, folderId, page, size));
     }
 
     @GetMapping("/me/profile")

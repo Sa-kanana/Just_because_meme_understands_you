@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.entity.HomeImage;
 import com.sakana.just_because_meme_understands_you.mapper.HomeImageMapper;
 import com.sakana.just_because_meme_understands_you.service.home.IHomeImageService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.vo.HomeImageVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -34,13 +35,20 @@ public class HomeImageServiceImpl extends ServiceImpl<HomeImageMapper, HomeImage
     @Resource
     private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
     @Override
     public List<HomeImageVO> listCarousel() {
         try {
             String json = stringRedisTemplate.opsForValue().get(CACHE_KEY);
             if (json != null && !json.isEmpty()) {
                 List<HomeImageVO> cached = objectMapper.readValue(json, new TypeReference<>() {});
-                return cached != null ? cached : Collections.emptyList();
+                if (cached != null) {
+                    ossUrlHelper.refreshHomeImageUrls(cached);
+                    return cached;
+                }
+                return Collections.emptyList();
             }
         } catch (Exception e) {
             log.warn("读取轮播图缓存失败, key={}", CACHE_KEY, e);
@@ -68,7 +76,7 @@ public class HomeImageServiceImpl extends ServiceImpl<HomeImageMapper, HomeImage
     private HomeImageVO toVO(HomeImage e) {
         HomeImageVO vo = new HomeImageVO();
         vo.setTitle(e.getTitle());
-        vo.setImgUrl(e.getImgUrl());
+        vo.setImgUrl(ossUrlHelper.toPublicUrl(e.getImgUrl()));
         vo.setTargetType(e.getTargetType());
         vo.setTargetValue(e.getTargetValue());
         vo.setSortOrder(e.getSortOrder());

@@ -15,6 +15,7 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeResourceService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentCountService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeResourceVO;
@@ -62,6 +63,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     @Resource
     private ObjectMapper objectMapper;
 
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
     @Override
     public List<MemeListItemVO> pageMemeList(int page) {
         if (page <= 0) {
@@ -95,7 +99,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             MemeListItemVO vo = new MemeListItemVO();
             vo.setId(meme.getId());
             vo.setName(meme.getName());
-            vo.setImage(meme.getImage());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             vo.setPageViews(meme.getPageViews());
             vo.setLikes(meme.getLikes());
             vo.setComments(meme.getComments());
@@ -136,7 +140,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             MemeListItemVO vo = new MemeListItemVO();
             vo.setId(meme.getId());
             vo.setName(meme.getName());
-            vo.setImage(meme.getImage());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             vo.setPageViews(meme.getPageViews());
             vo.setLikes(meme.getLikes());
             vo.setComments(meme.getComments());
@@ -172,7 +176,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             SimpleMemeVO vo = new SimpleMemeVO();
             vo.setId(meme.getId());
             vo.setName(meme.getName());
-            vo.setImage(meme.getImage());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             vo.setPageViews(meme.getPageViews());
             vo.setLikes(meme.getLikes());
             vo.setComments(meme.getComments());
@@ -199,6 +203,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             if (json != null && !json.isEmpty()) {
                 MemeDetailVO cached = objectMapper.readValue(json, new TypeReference<>() {});
                 if (cached != null) {
+                    ossUrlHelper.refreshMemeDetailUrls(cached);
                     return cached;
                 }
             }
@@ -255,7 +260,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         vo.setId(meme.getId());
         vo.setIntroduction(meme.getIntroduction());
         vo.setName(meme.getName());
-        vo.setImage(meme.getImage());
+        vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
         vo.setPageViews(meme.getPageViews());
         vo.setLikes(meme.getLikes());
         if (meme.getId() != null) {
@@ -323,7 +328,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             if (resource.getId() != null) {
                 vo.setId(resource.getId().intValue());
             }
-            vo.setResourceUrl(Collections.singletonList(url.trim()));
+            vo.setResourceUrl(Collections.singletonList(ossUrlHelper.toPublicUrl(url.trim())));
             list.add(vo);
         }
         return list;

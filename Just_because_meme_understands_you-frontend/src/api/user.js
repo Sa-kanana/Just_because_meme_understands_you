@@ -53,7 +53,7 @@ export function getUserProfile(userId, token) {
     const favorites = Array.isArray(data.favorites) ? data.favorites : []
 
     return {
-      userId: data.userId ?? data.id ?? id,
+      userId: String(data.userId ?? data.id ?? id),
       nickname: data.nickname || '梗友',
       avatar: data.avatar || '',
       signature: data.signature || '这个人很懒，什么都没留下~',

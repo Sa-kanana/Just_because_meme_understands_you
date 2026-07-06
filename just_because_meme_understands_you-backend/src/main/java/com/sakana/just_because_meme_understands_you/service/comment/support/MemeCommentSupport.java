@@ -10,6 +10,7 @@ import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.mapper.MemeCommentImageMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeRootCommentVO;
@@ -37,6 +38,9 @@ public class MemeCommentSupport {
 
     @Resource
     private IUserService userService;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
 
     public void validateUser(Long userId) {
         if (userId == null || userId <= 0) {
@@ -92,9 +96,9 @@ public class MemeCommentSupport {
         vo.setUserId(comment.getUserId());
         User user = userMap.get(comment.getUserId());
         vo.setUserName(user == null ? "匿名用户" : user.getNickname());
-        vo.setUserAvatar(user == null ? null : user.getAvatar());
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(user == null ? null : user.getAvatar()));
         vo.setContent(comment.getContent());
-        vo.setImages(imageMap.getOrDefault(comment.getId(), Collections.emptyList()));
+        vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
         vo.setReplyCount(defaultInt(comment.getReplyCount()));
         vo.setLikes(defaultInt(comment.getLikes()));
         vo.setCreateTime(comment.getCreateTime());
@@ -111,7 +115,7 @@ public class MemeCommentSupport {
         vo.setUserId(comment.getUserId());
         User author = userMap.get(comment.getUserId());
         vo.setUserName(author == null ? "匿名用户" : author.getNickname());
-        vo.setUserAvatar(author == null ? null : author.getAvatar());
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(author == null ? null : author.getAvatar()));
         MemeComment parent = parentMap.get(comment.getParentId());
         if (parent != null) {
             vo.setReplyToUserId(parent.getUserId());
@@ -125,7 +129,7 @@ public class MemeCommentSupport {
             vo.setReplyToUserName(replyToUser == null ? "匿名用户" : replyToUser.getNickname());
         }
         vo.setContent(comment.getContent());
-        vo.setImages(imageMap.getOrDefault(comment.getId(), Collections.emptyList()));
+        vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
         vo.setCreateTime(comment.getCreateTime());
         return vo;
     }
@@ -202,9 +206,11 @@ public class MemeCommentSupport {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
+            String key = ossUrlHelper.normalizeForStorage(url);
+            ossUrlHelper.assertOwnedImageKey(key, "comments/");
             MemeCommentImage image = new MemeCommentImage();
             image.setMemeCommentId(commentId);
-            image.setUrl(url.trim());
+            image.setUrl(key);
             image.setSortOrder(sort++);
             memeCommentImageMapper.insert(image);
         }

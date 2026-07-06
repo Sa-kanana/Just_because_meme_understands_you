@@ -109,6 +109,7 @@ import { ElMessage } from 'element-plus'
 import { getMemeTags, publishMeme } from '@/api/meme'
 import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
+import { isAuthErrorHandled } from '@/utils/authSession'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -205,10 +206,7 @@ async function handleSubmit() {
     ElMessage.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
     router.push('/')
   } catch (e) {
-    if (e && (e.status === 401 || e.code === 401)) {
-      router.replace({ name: 'login', query: { redirect: '/publish' } })
-      return
-    }
+    if (isAuthErrorHandled(e)) return
     ElMessage.error(e.message || '发布失败')
   } finally {
     submitting.value = false

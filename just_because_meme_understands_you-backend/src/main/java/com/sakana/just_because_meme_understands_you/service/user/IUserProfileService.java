@@ -22,7 +22,11 @@ public interface IUserProfileService {
      */
     UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size);
 
-    PageVO<UserFavoriteItemVO> pageUserFavorites(Long userId, Integer page, Integer size);
+    /**
+     * 分页获取用户收藏的梗。
+     * 权限：本人可查任意 folderId（含默认夹 0）；他人仅可查 targetUser 的公开自定义夹，folderId=0 拒绝。
+     */
+    PageVO<UserFavoriteItemVO> pageUserFavorites(Long targetUserId, Long currentUserId, Long folderId, Integer page, Integer size);
 
     UploadAvatarVO uploadAvatar(Long userId, MultipartFile file);
 

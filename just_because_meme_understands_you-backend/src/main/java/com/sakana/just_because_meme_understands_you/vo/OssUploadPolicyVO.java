@@ -22,8 +22,11 @@ public class OssUploadPolicyVO {
     /** 允许上传的目录前缀，前端拼接文件名作为 object key */
     private String dir;
 
-    /** OSS Bucket 访问域名 */
+    /** PostObject 上传域名（始终直连 OSS） */
     private String host;
+
+    /** 读图访问域名（开发 OSS / 生产 CDN），前端上传成功后用此域名拼接 objectKey */
+    private String publicBaseUrl;
 
     /** 凭证过期时间戳（秒） */
     private long expire;

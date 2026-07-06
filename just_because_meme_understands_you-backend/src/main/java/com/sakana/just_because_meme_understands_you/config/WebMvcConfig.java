@@ -9,13 +9,23 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final JwtAuthInterceptor jwtAuthInterceptor;
+    private final OptionalJwtAuthInterceptor optionalJwtAuthInterceptor;
 
-    public WebMvcConfig(JwtAuthInterceptor jwtAuthInterceptor) {
+    public WebMvcConfig(JwtAuthInterceptor jwtAuthInterceptor,
+                        OptionalJwtAuthInterceptor optionalJwtAuthInterceptor) {
         this.jwtAuthInterceptor = jwtAuthInterceptor;
+        this.optionalJwtAuthInterceptor = optionalJwtAuthInterceptor;
     }
 
     @Override
     public void addInterceptors(@NonNull InterceptorRegistry registry) {
+        registry.addInterceptor(optionalJwtAuthInterceptor)
+                .addPathPatterns(
+                        "/user/*/profile",
+                        "/user/*/memes",
+                        "/user/*/favorites",
+                        "/user/*/favorite-folders"
+                );
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns(
@@ -28,6 +38,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/user/*/profile",
                         "/user/*/memes",
                         "/user/*/favorites",
+                        "/user/*/favorite-folders",
                         "/list",
                         "/search",
                         "/detail",
@@ -37,9 +48,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/image",
                         "/error"
                 );
-        // /user/*/profile 已对外放行用于他人主页查询，这里单独拦截 /user/me/profile 保障“编辑资料回显”必须登录
+        // /user/*/profile 已对外放行用于他人主页查询，这里单独拦截 /user/me/* 需登录的操作
         registry.addInterceptor(jwtAuthInterceptor)
-                .addPathPatterns("/user/me/profile");
+                .addPathPatterns(
+                        "/user/me/profile",
+                        "/user/me/favorite-folders",
+                        "/user/me/favorite-folders/**",
+                        "/user/me/favorites/**"
+                );
     }
 
 }

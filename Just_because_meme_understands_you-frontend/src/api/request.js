@@ -1,4 +1,9 @@
 import axios from 'axios'
+import {
+  isAuthExpiredError,
+  markAuthErrorHandled,
+  isAuthErrorHandled,
+} from '@/utils/authSession'
 
 const BASE_URL = process.env.VUE_APP_API_BASE_URL || '/api'
 const DEFAULT_TIMEOUT = Number(process.env.VUE_APP_API_TIMEOUT || 15000)
@@ -32,6 +37,43 @@ function parseRequestBody(body) {
   } catch {
     return body
   }
+}
+
+function shouldAttemptTokenRefresh(originalConfig, response) {
+  if (!response || response.status !== 401) return false
+  const cfg = originalConfig || {}
+  if (cfg.__skipAuthRefresh === true) return false
+  if (cfg.__isRetryAfterRefresh === true) return false
+  return typeof authLifecycle.refreshAccessToken === 'function'
+}
+
+function shouldForceLogoutOn401(originalConfig, response) {
+  if (!response || response.status !== 401) return false
+  const cfg = originalConfig || {}
+  if (cfg.__isRetryAfterRefresh === true) return true
+  if (cfg.__skipAuthRefresh === true) {
+    const hasAccessToken =
+      typeof authLifecycle.getAccessToken === 'function' &&
+      !!authLifecycle.getAccessToken()
+    return hasAccessToken
+  }
+  return false
+}
+
+function rejectBusinessError(response, payload) {
+  const resData = payload != null && typeof payload === 'object' ? payload : {}
+  const message = resData.message || resData.msg || `请求失败: ${response.status}`
+  const err = new Error(message)
+  err.code = resData.code != null ? Number(resData.code) : undefined
+  err.data = resData
+  err.status = response.status
+  if (
+    isAuthExpiredError(err) &&
+    typeof authLifecycle.handleFinalLogout === 'function'
+  ) {
+    authLifecycle.handleFinalLogout(err)
+  }
+  return Promise.reject(markAuthErrorHandled(err))
 }
 
 function normalizeResponse(response) {
@@ -78,14 +120,7 @@ http.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const shouldSkipRefresh =
-      originalConfig.__skipAuthRefresh === true ||
-      originalConfig.__isRetryAfterRefresh === true
-
-    const canRefresh =
-      response.status === 401 &&
-      !shouldSkipRefresh &&
-      typeof authLifecycle.refreshAccessToken === 'function'
+    const canRefresh = shouldAttemptTokenRefresh(originalConfig, response)
 
     if (canRefresh) {
       if (isRefreshing) {
@@ -126,10 +161,24 @@ http.interceptors.response.use(
         if (typeof authLifecycle.handleFinalLogout === 'function') {
           authLifecycle.handleFinalLogout(refreshError)
         }
-        return Promise.reject(refreshError)
+        return Promise.reject(markAuthErrorHandled(refreshError))
       } finally {
         isRefreshing = false
       }
+    }
+
+    if (shouldForceLogoutOn401(originalConfig, response)) {
+      if (typeof authLifecycle.handleFinalLogout === 'function') {
+        authLifecycle.handleFinalLogout(error)
+      }
+      const data = response.data
+      const message =
+        (data && (data.message || data.msg)) || '登录已过期，请重新登录'
+      const e = new Error(message)
+      e.code = data && data.code
+      e.data = data
+      e.status = response.status
+      return Promise.reject(markAuthErrorHandled(e))
     }
 
     return Promise.reject(error)
@@ -172,16 +221,36 @@ export async function request(url, options = {}) {
           : true,
       __skipAuthRefresh: options.skipAuthRefresh === true,
     })
-    return normalizeResponse(response)
+    const payload = normalizeResponse(response)
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      payload.code != null &&
+      Number(payload.code) !== 1
+    ) {
+      return rejectBusinessError(response, payload)
+    }
+    return payload
   } catch (err) {
+    if (isAuthErrorHandled(err)) {
+      throw err
+    }
     if (err && err.response) {
       const data = err.response.data
       const message =
         (data && (data.message || data.msg)) || `请求失败: ${err.response.status}`
       const e = new Error(message)
-      e.code = data && data.code
+      e.code = data && data.code != null ? Number(data.code) : undefined
       e.data = data
       e.status = err.response.status
+      if (
+        isAuthExpiredError(e) &&
+        typeof authLifecycle.handleFinalLogout === 'function' &&
+        shouldForceLogoutOn401(err.config, err.response)
+      ) {
+        authLifecycle.handleFinalLogout(e)
+        throw markAuthErrorHandled(e)
+      }
       throw e
     }
     throw err

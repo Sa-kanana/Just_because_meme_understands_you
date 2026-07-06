@@ -341,6 +341,77 @@
         <span>只因“梗”懂你 · 让每一次会心一笑都有出处。</span>
       </div>
     </div>
+
+    <!-- 收藏夹选择弹窗 -->
+    <el-dialog
+      v-model="favoriteDialogVisible"
+      :title="isFavorited ? '管理收藏' : '收藏到收藏夹'"
+      width="440px"
+      append-to-body
+      class="favorite-folder-dialog"
+    >
+      <div v-loading="favoriteFoldersLoading" class="favorite-folder-picker">
+        <div
+          v-for="f in favoriteFolders"
+          :key="f.id"
+          class="favorite-folder-item"
+          :class="{ active: sameFolderId(selectedFolderId, f.id) }"
+          @click="selectedFolderId = normalizeFolderId(f.id)"
+        >
+          <div class="favorite-folder-icon">{{ f.isDefault ? '☆' : '📁' }}</div>
+          <div class="favorite-folder-meta">
+            <div class="favorite-folder-name">
+              {{ f.name }}
+              <el-tag v-if="f.isDefault" size="small" type="info" effect="plain">默认</el-tag>
+              <el-tag v-else-if="Number(f.isPublic) === 0" size="small" type="warning" effect="plain">私密</el-tag>
+            </div>
+            <div class="favorite-folder-count">{{ f.memeCount || 0 }} 个梗图</div>
+          </div>
+          <span v-if="sameFolderId(selectedFolderId, f.id)" class="favorite-folder-check">✓</span>
+        </div>
+        <div class="favorite-folder-item favorite-folder-create" @click="openCreateFolderDialog">
+          <div class="favorite-folder-icon favorite-folder-icon-create">＋</div>
+          <div class="favorite-folder-meta">
+            <div class="favorite-folder-name">新建收藏夹</div>
+            <div class="favorite-folder-count">创建自定义分类</div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button v-if="isFavorited" @click="removeFavoriteFromDialog" :loading="favoriteLoading">
+          取消收藏
+        </el-button>
+        <el-button @click="favoriteDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="favoriteLoading" @click="confirmFavorite">
+          {{ isFavorited && Number(selectedFolderId) === Number(currentFavoriteFolderId) ? '确定' : (isFavorited ? '移动到此夹' : '收藏到此夹') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建收藏夹弹窗 -->
+    <el-dialog
+      v-model="createFolderDialogVisible"
+      title="新建收藏夹"
+      width="400px"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="72px" @submit.prevent>
+        <el-form-item label="名称">
+          <el-input v-model="createFolderForm.name" maxlength="64" show-word-limit placeholder="收藏夹名称" />
+        </el-form-item>
+        <el-form-item label="可见性">
+          <el-radio-group v-model="createFolderForm.isPublic">
+            <el-radio :label="1">公开</el-radio>
+            <el-radio :label="0">私密</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createFolderDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="createFolderSubmitting" @click="submitCreateFolder">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -349,8 +420,10 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
+import { isAuthErrorHandled } from '@/utils/authSession'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 
@@ -366,6 +439,17 @@ const detailLinks = computed(() => memeDetailStore.links)
 const memeId = computed(() => route.params.id || route.query.memeId)
 const favoriteLoading = ref(false)
 let favoriteDebounceTimer = null
+
+// 收藏夹选择弹窗
+const favoriteDialogVisible = ref(false)
+const favoriteFolders = ref([])
+const favoriteFoldersLoading = ref(false)
+const selectedFolderId = ref('0')
+const currentFavoriteFolderId = ref(null)
+
+const createFolderDialogVisible = ref(false)
+const createFolderSubmitting = ref(false)
+const createFolderForm = ref({ name: '', isPublic: 1 })
 
 const commentSortType = ref('new')
 const rootComments = ref([])
@@ -585,10 +669,7 @@ async function submitRootComment() {
     }
     ElMessage.success('评论成功')
   } catch (e) {
-    if (e && (e.status === 401 || e.code === 401)) {
-      goToLogin()
-      return
-    }
+    if (isAuthErrorHandled(e)) return
     ElMessage.error(e.message || '发表评论失败')
   } finally {
     commentSubmitting.value = false
@@ -650,10 +731,7 @@ async function submitReply() {
     }
     ElMessage.success('回复成功')
   } catch (e) {
-    if (e && (e.status === 401 || e.code === 401)) {
-      goToLogin()
-      return
-    }
+    if (isAuthErrorHandled(e)) return
     ElMessage.error(e.message || '发表回复失败')
   } finally {
     replySubmitting.value = false
@@ -685,41 +763,124 @@ function handleFavoriteClick() {
   clearFavoriteDebounceTimer()
   favoriteDebounceTimer = setTimeout(() => {
     favoriteDebounceTimer = null
-    toggleFavorite()
+    openFavoriteDialog()
   }, 300)
 }
 
-async function toggleFavorite() {
+async function openFavoriteDialog() {
   if (!authStore.isLoggedIn) {
-    router.push({
-      name: 'login',
-      query: { redirect: route.fullPath },
-    })
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
     return
   }
   const id = memeId.value
-  if (!id || favoriteLoading.value) return
+  if (!id) return
+  favoriteDialogVisible.value = true
+  favoriteFoldersLoading.value = true
+  selectedFolderId.value = '0'
+  currentFavoriteFolderId.value = isFavorited.value ? '0' : null
+  try {
+    const { folders } = await getMyFavoriteFolders()
+    favoriteFolders.value = folders || []
+    if (isFavorited.value) {
+      // 已收藏：默认选中当前夹
+      try {
+        const status = await getMemeFavoriteStatus(id)
+        if (status && status.favorited && status.folderId != null) {
+          currentFavoriteFolderId.value = status.folderId
+          selectedFolderId.value = status.folderId
+        }
+      } catch (ignored) {
+        // 状态查询失败不影响选夹
+      }
+    }
+  } catch (e) {
+    ElMessage.error((e && e.message) || '加载收藏夹失败')
+    favoriteDialogVisible.value = false
+  } finally {
+    favoriteFoldersLoading.value = false
+  }
+}
 
+async function confirmFavorite() {
+  const id = memeId.value
+  if (!id || favoriteLoading.value) return
+  const folderId = normalizeFolderId(selectedFolderId.value)
   favoriteLoading.value = true
   try {
     if (isFavorited.value) {
-      await removeMemeFavorite(id)
-      memeDetailStore.setFavorited(false)
-      ElMessage.success('已取消收藏')
+      const current = currentFavoriteFolderId.value
+      if (current != null && sameFolderId(current, folderId)) {
+        await removeMemeFavorite(id)
+        memeDetailStore.setFavorited(false)
+        ElMessage.success('已取消收藏')
+      } else {
+        await moveMemeFavorite(id, folderId)
+        currentFavoriteFolderId.value = folderId
+        ElMessage.success('已移动到「' + folderName(folderId) + '」')
+      }
     } else {
-      await addMemeFavorite(id, 0)
+      await addMemeFavorite(id, folderId)
       memeDetailStore.setFavorited(true)
-      ElMessage.success('收藏成功')
+      currentFavoriteFolderId.value = folderId
+      ElMessage.success('已收藏到「' + folderName(folderId) + '」')
     }
+    favoriteDialogVisible.value = false
   } catch (e) {
-    if (e && (e.status === 401 || e.code === 401)) {
-      router.push({
-        name: 'login',
-        query: { redirect: route.fullPath },
-      })
-      return
-    }
+    if (isAuthErrorHandled(e)) return
     ElMessage.error((e && e.message) || '操作失败，请稍后重试')
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+function folderName(folderId) {
+  const f = favoriteFolders.value.find((x) => sameFolderId(x.id, folderId))
+  return f ? f.name : '默认收藏夹'
+}
+
+function openCreateFolderDialog() {
+  createFolderForm.value = { name: '', isPublic: 1 }
+  createFolderDialogVisible.value = true
+}
+
+async function submitCreateFolder() {
+  const name = (createFolderForm.value.name || '').trim()
+  if (!name) {
+    ElMessage.warning('请输入收藏夹名称')
+    return
+  }
+  createFolderSubmitting.value = true
+  try {
+    const created = await createFavoriteFolder({
+      name,
+      isPublic: createFolderForm.value.isPublic,
+    })
+    const { folders } = await getMyFavoriteFolders()
+    favoriteFolders.value = folders || []
+    const newId = created?.id != null ? normalizeFolderId(created.id) : null
+    if (newId != null) {
+      selectedFolderId.value = newId
+    }
+    createFolderDialogVisible.value = false
+    ElMessage.success('收藏夹已创建')
+  } catch (e) {
+    ElMessage.error((e && e.message) || '创建失败')
+  } finally {
+    createFolderSubmitting.value = false
+  }
+}
+
+async function removeFavoriteFromDialog() {
+  const id = memeId.value
+  if (!id || favoriteLoading.value) return
+  favoriteLoading.value = true
+  try {
+    await removeMemeFavorite(id)
+    memeDetailStore.setFavorited(false)
+    ElMessage.success('已取消收藏')
+    favoriteDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error((e && e.message) || '取消收藏失败')
   } finally {
     favoriteLoading.value = false
   }
@@ -1332,5 +1493,80 @@ function goSearchByTag(tag) {
   .detail-cover-wrap {
     margin-bottom: 12px;
   }
+}
+
+/* 收藏夹选择弹窗 */
+.favorite-folder-picker {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.favorite-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.favorite-folder-item:hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+.favorite-folder-item.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+.favorite-folder-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color-light);
+  font-size: 22px;
+  color: var(--el-text-color-secondary);
+}
+.favorite-folder-meta {
+  flex: 1;
+  min-width: 0;
+}
+.favorite-folder-name {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-primary);
+}
+.favorite-folder-count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+.favorite-folder-check {
+  color: var(--el-color-primary);
+  font-weight: 700;
+  font-size: 16px;
+}
+.favorite-folder-create {
+  border-style: dashed;
+  color: var(--el-color-primary);
+}
+.favorite-folder-create:hover {
+  border-color: var(--el-color-primary);
+}
+.favorite-folder-icon-create {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--el-color-primary);
 }
 </style>

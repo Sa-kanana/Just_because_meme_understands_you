@@ -5,6 +5,11 @@
  */
 import { request } from './request'
 
+function normalizeFolderId(value) {
+  if (value == null || value === '') return '0'
+  return String(value).trim()
+}
+
 /**
  * @typedef {Object} MemeTag
  * @property {number} id
@@ -116,7 +121,7 @@ export function addMemeFavorite(memeId, folderId = 0) {
     method: 'POST',
     body: JSON.stringify({
       memeId: id,
-      folderId: Number(folderId) || 0,
+      folderId: normalizeFolderId(folderId),
     }),
   }).then((res) => {
     if (res && Number(res.code) === 1) {
@@ -148,7 +153,7 @@ export function removeMemeFavorite(memeId) {
  * 查询当前用户是否已收藏该梗
  * GET /favorites/{memeId}/status
  * @param {number|string} memeId
- * @returns {Promise<{ favorited: boolean }>}
+ * @returns {Promise<{ favorited: boolean, folderId?: number, sortOrder?: number }>}
  */
 export function getMemeFavoriteStatus(memeId) {
   const id = memeId != null ? String(memeId).trim() : ''
@@ -159,9 +164,62 @@ export function getMemeFavoriteStatus(memeId) {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       return {
         favorited: !!res.data.favorited,
+        folderId: res.data.folderId != null ? normalizeFolderId(res.data.folderId) : undefined,
+        sortOrder: res.data.sortOrder != null ? Number(res.data.sortOrder) : undefined,
       }
     }
     throw new Error((res && (res.message || res.msg)) || '查询收藏状态失败')
+  })
+}
+
+/**
+ * 单条移动到目标夹
+ * PUT /user/me/favorites/{memeId}/move?folderId=
+ */
+export function moveMemeFavorite(memeId, folderId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少梗 id'))
+  const fid = normalizeFolderId(folderId)
+  const query = new URLSearchParams({ folderId: fid })
+  return request(`/user/me/favorites/${encodeURIComponent(id)}/move?${query}`, {
+    method: 'PUT',
+  }).then((res) => {
+    if (res && Number(res.code) === 1) return res.data || {}
+    throw new Error((res && (res.message || res.msg)) || '移动收藏失败')
+  })
+}
+
+/**
+ * 批量移动收藏到目标夹
+ * PUT /user/me/favorites/move
+ */
+export function batchMoveFavorites(targetFolderId, memeIds) {
+  return request('/user/me/favorites/move', {
+    method: 'PUT',
+    body: JSON.stringify({
+      targetFolderId: normalizeFolderId(targetFolderId),
+      memeIds: Array.isArray(memeIds) ? memeIds : [],
+    }),
+  }).then((res) => {
+    if (res && Number(res.code) === 1) return res.data || { movedCount: 0, failed: [] }
+    throw new Error((res && (res.message || res.msg)) || '批量移动失败')
+  })
+}
+
+/**
+ * 夹内收藏排序
+ * PUT /user/me/favorites/reorder
+ */
+export function reorderFavorites(folderId, favoriteIds) {
+  return request('/user/me/favorites/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({
+      folderId: normalizeFolderId(folderId),
+      favoriteIds: Array.isArray(favoriteIds) ? favoriteIds : [],
+    }),
+  }).then((res) => {
+    if (res && Number(res.code) === 1) return true
+    throw new Error((res && (res.message || res.msg)) || '排序失败')
   })
 }
 

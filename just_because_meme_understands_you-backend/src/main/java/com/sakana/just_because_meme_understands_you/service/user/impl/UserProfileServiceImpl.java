@@ -21,6 +21,8 @@ import com.sakana.just_because_meme_understands_you.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserStatsMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.service.user.UserFavoriteCountService;
@@ -81,6 +83,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
     private UserFavoriteMapper userFavoriteMapper;
 
     @Resource
+    private com.sakana.just_because_meme_understands_you.mapper.UserFavoriteFolderMapper userFavoriteFolderMapper;
+
+    @Resource
     private UserRelationMapper userRelationMapper;
 
     @Resource
@@ -95,11 +100,14 @@ public class UserProfileServiceImpl implements IUserProfileService {
     @Resource
     private UserFavoriteCountService userFavoriteCountService;
 
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private IUserFavoriteFolderService userFavoriteFolderService;
+
     @Value("${oss.bucketName}")
     private String bucketName;
-
-    @Value("${oss.endpoint}")
-    private String ossEndpoint;
 
     @Override
     public UserProfileVO getUserProfile(Long targetUserId, Long currentUserId) {
@@ -109,6 +117,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         String cacheKey = PROFILE_CACHE_PREFIX + targetUserId + ":" + currentUserId;
         UserProfileVO cached = readCache(cacheKey, new TypeReference<>() {});
         if (cached != null) {
+            ossUrlHelper.refreshUserProfileUrls(cached);
             return cached;
         }
 
@@ -120,7 +129,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         UserProfileVO vo = new UserProfileVO();
         vo.setUserId(targetUser.getId());
         vo.setNickname(targetUser.getNickname());
-        vo.setAvatar(targetUser.getAvatar());
+        vo.setAvatar(ossUrlHelper.toPublicUrl(targetUser.getAvatar()));
         vo.setSignature(targetUser.getSignature());
         vo.setGender(targetUser.getGender());
         vo.setIsSelf(targetUserId.equals(currentUserId));
@@ -143,7 +152,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
         EditProfileEchoVO vo = new EditProfileEchoVO();
-        vo.setAvatar(user.getAvatar());
+        vo.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
         vo.setNickname(user.getNickname());
         vo.setSignature(user.getSignature());
         vo.setGender(user.getGender());
@@ -197,7 +206,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             vo.setMemeId(meme.getId());
             vo.setName(meme.getName());
             vo.setIntroduction(meme.getIntroduction());
-            vo.setImage(meme.getImage());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             vo.setPageViews(meme.getPageViews());
             vo.setLikes(meme.getLikes());
             vo.setComments(meme.getComments());
@@ -269,19 +278,51 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public PageVO<UserFavoriteItemVO> pageUserFavorites(Long userId, Integer page, Integer size) {
+    public PageVO<UserFavoriteItemVO> pageUserFavorites(Long targetUserId, Long currentUserId, Long folderId, Integer page, Integer size) {
+        if (targetUserId == null || targetUserId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
+        }
+        boolean isOwner = currentUserId != null && currentUserId.equals(targetUserId);
+        long resolvedFolderId = folderId == null ? IUserFavoriteFolderService.DEFAULT_FOLDER_ID : folderId;
+        if (resolvedFolderId < 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "folderId 不合法");
+        }
+
+        // 权限隔离：他人不可查看私密默认夹，仅可查看公开夹
+        if (!isOwner) {
+            if (resolvedFolderId == IUserFavoriteFolderService.DEFAULT_FOLDER_ID) {
+                if (!userFavoriteFolderService.isDefaultFolderPublic(targetUserId)) {
+                    PageVO<UserFavoriteItemVO> empty = new PageVO<>();
+                    empty.setList(Collections.emptyList());
+                    empty.setPage(normalizePage(page));
+                    empty.setSize(normalizeSize(size));
+                    empty.setTotal(0L);
+                    return empty;
+                }
+            } else {
+                userFavoriteFolderService.assertFolderOwnedByUser(targetUserId, resolvedFolderId);
+                boolean isPublic = isFolderPublic(targetUserId, resolvedFolderId);
+                if (!isPublic) {
+                    throw new BizException(Result.CODE_FORBIDDEN, "该收藏夹不可查看");
+                }
+            }
+        }
+
         int pageNo = normalizePage(page);
         int pageSize = normalizeSize(size);
-        String cacheKey = FAVORITES_CACHE_PREFIX + userId + ":" + pageNo + ":" + pageSize;
+        String cacheKey = FAVORITES_CACHE_PREFIX + targetUserId + ":f" + resolvedFolderId + ":" + pageNo + ":" + pageSize;
         PageVO<UserFavoriteItemVO> cached = readCache(cacheKey, new TypeReference<>() {});
         if (cached != null) {
+            refreshFavoriteImages(cached.getList());
             return cached;
         }
 
         Page<UserFavorite> favoritePage = new Page<>(pageNo, pageSize);
         LambdaQueryWrapper<UserFavorite> favoriteWrapper = new LambdaQueryWrapper<UserFavorite>()
-                .eq(UserFavorite::getUserId, userId)
+                .eq(UserFavorite::getUserId, targetUserId)
+                .eq(UserFavorite::getFolderId, resolvedFolderId)
                 .eq(UserFavorite::getIsDeleted, FAVORITE_NOT_DELETED)
+                .orderByDesc(UserFavorite::getSortOrder)
                 .orderByDesc(UserFavorite::getCreateTime);
         IPage<UserFavorite> result = userFavoriteMapper.selectPage(favoritePage, favoriteWrapper);
         List<UserFavorite> records = result.getRecords();
@@ -296,9 +337,13 @@ public class UserProfileServiceImpl implements IUserProfileService {
             }
             UserFavoriteItemVO item = new UserFavoriteItemVO();
             item.setId(meme.getId() == null ? null : meme.getId().longValue());
+            item.setFavoriteId(favorite.getId());
             item.setName(meme.getName());
-            item.setImage(meme.getImage());
+            item.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             item.setPageViews(meme.getPageViews());
+            item.setFolderId(favorite.getFolderId());
+            item.setSortOrder(favorite.getSortOrder());
+            item.setFavoriteTime(favorite.getCreateTime());
             list.add(item);
         }
 
@@ -310,6 +355,17 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
         writeCache(cacheKey, pageVO);
         return pageVO;
+    }
+
+    private boolean isFolderPublic(Long targetUserId, Long folderId) {
+        com.sakana.just_because_meme_understands_you.entity.UserFavoriteFolder folder =
+                userFavoriteFolderMapper.selectOne(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.sakana.just_because_meme_understands_you.entity.UserFavoriteFolder>()
+                                .eq(com.sakana.just_because_meme_understands_you.entity.UserFavoriteFolder::getId, folderId)
+                                .eq(com.sakana.just_because_meme_understands_you.entity.UserFavoriteFolder::getUserId, targetUserId)
+                                .eq(com.sakana.just_because_meme_understands_you.entity.UserFavoriteFolder::getIsDeleted, 0)
+                                .last("LIMIT 1"));
+        return folder != null && folder.getIsPublic() != null && folder.getIsPublic() == 1;
     }
 
     @Override
@@ -336,7 +392,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         }
 
         UploadAvatarVO vo = new UploadAvatarVO();
-        vo.setUrl("https://" + bucketName + "." + ossEndpoint + "/" + objectKey);
+        vo.setUrl(ossUrlHelper.toPublicUrl(objectKey));
         return vo;
     }
 
@@ -371,7 +427,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
         user.setGender(request.getGender());
         user.setBirthday(birthday);
         user.setSignature(request.getSignature().trim());
-        user.setAvatar(request.getAvatar().trim());
+        String avatarKey = ossUrlHelper.normalizeForStorage(request.getAvatar());
+        ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/");
+        user.setAvatar(avatarKey);
         user.setUpdateTime(LocalDateTime.now());
         userService.updateById(user);
 
@@ -451,7 +509,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             UserFavoriteItemVO vo = new UserFavoriteItemVO();
             vo.setId(meme.getId() == null ? null : meme.getId().longValue());
             vo.setName(meme.getName());
-            vo.setImage(meme.getImage());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
             vo.setPageViews(meme.getPageViews());
             list.add(vo);
         }
@@ -483,12 +541,23 @@ public class UserProfileServiceImpl implements IUserProfileService {
         UserMemeItemVO vo = new UserMemeItemVO();
         vo.setId(meme.getId() == null ? null : meme.getId().longValue());
         vo.setName(meme.getName());
-        vo.setImage(meme.getImage());
+        vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
         vo.setPageViews(meme.getPageViews());
         vo.setLikes(meme.getLikes());
         vo.setComments(meme.getComments());
         vo.setReleaseTime(meme.getReleaseTime());
         return vo;
+    }
+
+    private void refreshFavoriteImages(List<UserFavoriteItemVO> list) {
+        if (list == null) {
+            return;
+        }
+        for (UserFavoriteItemVO item : list) {
+            if (item != null) {
+                item.setImage(ossUrlHelper.toPublicUrl(item.getImage()));
+            }
+        }
     }
 
     private int normalizePage(Integer page) {

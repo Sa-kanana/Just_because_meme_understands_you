@@ -105,9 +105,6 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async renewLogin() {
-      if (!this.token) {
-        return Promise.reject(new Error('当前未登录，无法续航'))
-      }
       if (this._renewingPromise) {
         return this._renewingPromise
       }

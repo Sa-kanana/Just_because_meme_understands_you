@@ -6,4 +6,8 @@ import lombok.Data;
 public class MemeFavoriteStatusVO {
 
     private Boolean favorited;
+
+    private Long folderId;
+
+    private Integer sortOrder;
 }

@@ -64,6 +64,24 @@ public final class AuthContext {
     }
 
     /**
+     * 解析收藏夹 folderId；0 表示虚拟默认收藏夹。
+     */
+    public static long parseFolderId(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "folderId 不能为空");
+        }
+        try {
+            long parsed = Long.parseLong(raw.trim());
+            if (parsed < 0) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "folderId 不合法");
+            }
+            return parsed;
+        } catch (NumberFormatException ignored) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "folderId 格式错误");
+        }
+    }
+
+    /**
      * 解析路径上的用户 id，仅校验格式，不校验是否为正数（兼容历史接口语义）。
      */
     public static Long parseUserId(String raw) {
