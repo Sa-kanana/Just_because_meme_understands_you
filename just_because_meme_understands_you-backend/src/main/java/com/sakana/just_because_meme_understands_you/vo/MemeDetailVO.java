@@ -57,9 +57,27 @@ public class MemeDetailVO {
     private LocalDateTime updateTime;
 
     /**
-     * 状态（1.正常，2.审核中，3.下架）
+     * 状态（1.正常，2.审核中，3.下架，4.已彻底删除）
      */
     private Integer status;
+
+    /** 状态描述 */
+    private String statusDesc;
+
+    /** 当前登录用户是否为发布者 */
+    private Boolean owner;
+
+    /** 是否为发布者预览模式（审核中/已下架，仅本人可见） */
+    private Boolean ownerPreview;
+
+    /** 是否开放评论（公域 status=1 时为 true） */
+    private Boolean commentsEnabled;
+
+    /** 视图模式：public / owner_preview */
+    private String viewMode;
+
+    /** 是否允许收藏 */
+    private Boolean favoriteEnabled;
 
     /**
      * 标签列表，对应接口 Meme.memeTag

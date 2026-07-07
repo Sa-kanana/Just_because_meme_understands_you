@@ -149,8 +149,8 @@ public class OssUrlHelper {
             return;
         }
         for (MemeResourceVO link : vo.getLinks()) {
-            if (link != null && link.getResourceUrl() != null) {
-                link.setResourceUrl(toPublicUrls(link.getResourceUrl()));
+            if (link != null && link.getUrl() != null) {
+                link.setUrl(toPublicUrl(link.getUrl()));
             }
         }
     }

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
+import com.sakana.just_because_meme_understands_you.common.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
 import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
@@ -16,6 +17,8 @@ import com.sakana.just_because_meme_understands_you.service.meme.IMemeResourceSe
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentCountService;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport.ViewAccess;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeResourceVO;
@@ -25,12 +28,14 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -47,6 +52,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     /** 梗详情 Redis key 前缀，key: meme:detail:{memeId}，TTL 10 分钟 */
     private static final String DETAIL_CACHE_KEY_PREFIX = "meme:detail:";
     private static final long DETAIL_CACHE_MINUTES = 10;
+    private static final int STATUS_NORMAL = 1;
 
     @Resource
     private MemeTagRelationMapper memeTagRelationMapper;
@@ -191,45 +197,67 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     @Override
-    public MemeDetailVO getMemeDetail(Integer memeId) {
+    public MemeDetailVO getMemeDetail(Integer memeId, Long currentUserId) {
         if (memeId == null || memeId <= 0) {
             return null;
         }
-        String cacheKey = DETAIL_CACHE_KEY_PREFIX + memeId;
 
-        // 1. 先查 Redis 缓存
-        try {
-            String json = stringRedisTemplate.opsForValue().get(cacheKey);
-            if (json != null && !json.isEmpty()) {
-                MemeDetailVO cached = objectMapper.readValue(json, new TypeReference<>() {});
-                if (cached != null) {
-                    ossUrlHelper.refreshMemeDetailUrls(cached);
-                    return cached;
-                }
-            }
-        } catch (Exception e) {
-            log.warn("读取梗详情缓存失败, memeId={}", memeId, e);
-        }
-
-        // 2. 缓存未命中：查 DB 并组装 VO
         Meme meme = this.getById(memeId);
         if (meme == null) {
             return null;
         }
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
+            return null;
+        }
+
+        String cacheKey = DETAIL_CACHE_KEY_PREFIX + memeId;
+        if (access == ViewAccess.PUBLIC) {
+            try {
+                String json = stringRedisTemplate.opsForValue().get(cacheKey);
+                if (json != null && !json.isEmpty()) {
+                    MemeDetailVO cached = objectMapper.readValue(json, new TypeReference<>() {});
+                    if (cached != null && Objects.equals(cached.getStatus(), STATUS_NORMAL)) {
+                        applyViewMeta(cached, meme, currentUserId, access);
+                        ossUrlHelper.refreshMemeDetailUrls(cached);
+                        return cached;
+                    }
+                    stringRedisTemplate.delete(cacheKey);
+                }
+            } catch (Exception e) {
+                log.warn("读取梗详情缓存失败, memeId={}", memeId, e);
+            }
+        }
+
         List<MemeTag> tags = getTagsByMemeId(memeId);
         List<MemeResource> links = getLinksByMemeId(memeId);
         MemeDetailVO detailVO = buildDetailVO(meme, tags, links);
+        applyViewMeta(detailVO, meme, currentUserId, access);
 
-        // 3. 写入 Redis
-        try {
-            String jsonValue = objectMapper.writeValueAsString(detailVO);
-            if (jsonValue != null) {
-                stringRedisTemplate.opsForValue().set(cacheKey, jsonValue, DETAIL_CACHE_MINUTES, TimeUnit.MINUTES);
+        if (access == ViewAccess.PUBLIC) {
+            try {
+                String jsonValue = objectMapper.writeValueAsString(detailVO);
+                if (jsonValue != null) {
+                    stringRedisTemplate.opsForValue().set(cacheKey, jsonValue, DETAIL_CACHE_MINUTES, TimeUnit.MINUTES);
+                }
+            } catch (Exception e) {
+                log.warn("写入梗详情缓存失败, memeId={}", memeId, e);
             }
-        } catch (Exception e) {
-            log.warn("写入梗详情缓存失败, memeId={}", memeId, e);
         }
         return detailVO;
+    }
+
+    private void applyViewMeta(MemeDetailVO vo, Meme meme, Long currentUserId, ViewAccess access) {
+        if (vo == null || meme == null) {
+            return;
+        }
+        vo.setStatus(meme.getStatus());
+        vo.setStatusDesc(MemeVisibilitySupport.statusDesc(meme.getStatus()));
+        vo.setOwner(MemeVisibilitySupport.isOwner(meme, currentUserId));
+        vo.setOwnerPreview(access == ViewAccess.OWNER_PREVIEW);
+        vo.setCommentsEnabled(access == ViewAccess.PUBLIC);
+        vo.setViewMode(access == ViewAccess.PUBLIC ? "public" : "owner_preview");
+        vo.setFavoriteEnabled(access == ViewAccess.PUBLIC);
     }
 
     /**
@@ -247,6 +275,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         List<MemeResource> resources = memeResourceService.list(
                 new LambdaQueryWrapper<MemeResource>()
                         .eq(MemeResource::getMemeId, memeId.longValue())
+                        .eq(MemeResource::getStatus, 1)
+                        .orderByAsc(MemeResource::getSortOrder)
                         .orderByAsc(MemeResource::getId)
         );
         return resources != null ? resources : Collections.emptyList();
@@ -328,10 +358,33 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             if (resource.getId() != null) {
                 vo.setId(resource.getId().intValue());
             }
-            vo.setResourceUrl(Collections.singletonList(ossUrlHelper.toPublicUrl(url.trim())));
+            MemeResourceType type = MemeResourceType.fromCode(resource.getResourceType());
+            String storedUrl = url.trim();
+            if (type == MemeResourceType.LINK && !StringUtils.hasText(resource.getTitle())) {
+                String key = ossUrlHelper.normalizeForStorage(storedUrl);
+                if (!key.toLowerCase().startsWith("http")) {
+                    type = MemeResourceType.MEDIA;
+                }
+            }
+            vo.setType(type.getApiType());
+            vo.setTitle(resource.getTitle());
+            vo.setUrl(ossUrlHelper.toPublicUrl(storedUrl));
+            vo.setSortOrder(resource.getSortOrder() != null ? resource.getSortOrder() : 0);
             list.add(vo);
         }
         return list;
+    }
+
+    @Override
+    public void evictMemeDetailCache(Long memeId) {
+        if (memeId == null || memeId <= 0) {
+            return;
+        }
+        try {
+            stringRedisTemplate.delete(DETAIL_CACHE_KEY_PREFIX + memeId);
+        } catch (Exception e) {
+            log.warn("清理梗详情缓存失败, memeId={}", memeId, e);
+        }
     }
 
     private static Integer parseRelatedQuantity(String value) {

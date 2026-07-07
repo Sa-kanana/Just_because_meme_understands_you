@@ -29,8 +29,14 @@ public class MemeCommentController {
     public Result<MemeCommentPageVO> pageRootComments(@PathVariable("memeId") String memeId,
                                                       @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
                                                       @RequestParam(value = "size", required = false, defaultValue = "10") Integer size,
-                                                      @RequestParam(value = "sortType", required = false, defaultValue = "new") String sortType) {
-        return Result.success(memeCommentService.pageRootComments(AuthContext.parseLongId(memeId, "memeId"), page, size, sortType));
+                                                      @RequestParam(value = "sortType", required = false, defaultValue = "new") String sortType,
+                                                      HttpServletRequest httpServletRequest) {
+        return Result.success(memeCommentService.pageRootComments(
+                AuthContext.parseLongId(memeId, "memeId"),
+                page,
+                size,
+                sortType,
+                AuthContext.currentUserId(httpServletRequest)));
     }
 
     @GetMapping("/detail/comments/{rootId}/replies")

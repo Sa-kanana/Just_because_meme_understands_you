@@ -1,28 +1,42 @@
 <template>
   <div class="page meme-detail-page">
-    <el-breadcrumb class="page-breadcrumb" separator=">">
-      <el-breadcrumb-item>
-        <router-link to="/" class="crumb-link">主页</router-link>
-      </el-breadcrumb-item>
-      <el-breadcrumb-item>{{ meme?.name || '梗详情' }}</el-breadcrumb-item>
-    </el-breadcrumb>
+    <AppBreadcrumb :items="breadcrumbItems" />
 
     <div v-if="loading" class="detail-loading">
       <el-skeleton :rows="5" animated />
     </div>
     <div v-else-if="error" class="detail-error">
-      <el-result icon="warning" title="加载失败" :sub-title="error">
+      <el-result
+        :icon="detailErrorIcon"
+        :title="detailErrorTitle"
+        :sub-title="detailErrorSubtitle"
+      >
         <template #extra>
-          <el-button type="primary" @click="reload">重试</el-button>
+          <div class="detail-error-actions">
+            <el-button v-if="authStore.isLoggedIn" round @click="goMyPublished">
+              回到我的发布
+            </el-button>
+            <el-button type="primary" round @click="reload">重试</el-button>
+            <el-button round @click="goHome">返回主页</el-button>
+          </div>
         </template>
       </el-result>
     </div>
     <div v-else-if="!meme" class="detail-empty">
       <el-empty description="没有找到这个梗，可能被时光吃掉了～" />
     </div>
-    <div v-else class="detail-content">
+    <div v-else class="detail-content" :class="{ 'detail-content--preview': ownerPreview }">
+      <MemeDetailPreviewBanner
+        v-if="ownerPreview"
+        :status="meme.status"
+        :status-desc="meme.statusDesc || meme.status_desc"
+        :refreshing="previewRefreshing"
+        @back-published="goMyPublished"
+        @refresh="handlePreviewRefresh"
+      />
+
       <!-- 顶部大卡片：封面 + 基本信息 -->
-      <el-card class="detail-hero-card" shadow="never">
+      <el-card class="detail-hero-card" :class="{ 'detail-hero-card--preview': ownerPreview }" shadow="never">
         <el-row :gutter="24" class="detail-hero-row">
           <el-col :xs="24" :md="10">
             <div class="detail-cover-wrap">
@@ -38,10 +52,14 @@
                 </template>
               </el-image>
               <div v-else class="detail-cover-fallback">暂无封面</div>
-              <div class="detail-cover-overlay">
-                <span class="overlay-stat">👁 {{ formatNum(meme.pageViews) }}</span>
-                <span class="overlay-stat">👍 {{ formatNum(meme.likes) }}</span>
-                <span class="overlay-stat">💬 {{ formatNum(meme.comments) }}</span>
+              <div v-if="ownerPreview" class="detail-cover-preview-tag">仅发布者可见</div>
+              <div class="detail-cover-overlay" :class="{ 'detail-cover-overlay--muted': ownerPreview }">
+                <span v-if="ownerPreview" class="overlay-stat overlay-stat--hint">公域暂未展示</span>
+                <template v-else>
+                  <span class="overlay-stat">👁 {{ formatNum(meme.pageViews) }}</span>
+                  <span class="overlay-stat">👍 {{ formatNum(meme.likes) }}</span>
+                  <span class="overlay-stat">💬 {{ formatNum(meme.comments) }}</span>
+                </template>
               </div>
             </div>
           </el-col>
@@ -49,22 +67,31 @@
           <el-col :xs="24" :md="14">
             <div class="detail-meta">
               <div class="detail-title-row">
-                <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
+                <div class="detail-title-block">
+                  <span
+                    v-if="ownerPreview && memeStatusLabel"
+                    class="detail-status-chip"
+                    :class="`detail-status-chip--${meme.status}`"
+                  >
+                    {{ memeStatusLabel }}
+                  </span>
+                  <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
+                </div>
                 <el-button
                   class="detail-favorite-btn"
                   :type="isFavorited ? 'warning' : 'default'"
                   :loading="favoriteLoading"
-                  :disabled="favoriteLoading"
+                  :disabled="favoriteLoading || ownerPreview"
                   @click="handleFavoriteClick"
                 >
-                  {{ isFavorited ? '已收藏' : '收藏' }}
+                  {{ ownerPreview ? '预览中' : (isFavorited ? '已收藏' : '收藏') }}
                 </el-button>
               </div>
               <p v-if="meme.introduction" class="detail-intro">
                 {{ meme.introduction }}
               </p>
               <p v-else class="detail-intro muted">
-                这个梗还没有详细介绍，欢迎你在评论区或社区里为它补完故事。
+                {{ ownerPreview ? '预览模式下暂无介绍，可在发布页补充后再提交审核。' : '这个梗还没有详细介绍，欢迎你在评论区或社区里为它补完故事。' }}
               </p>
 
               <div v-if="detailTags.length" class="detail-tags">
@@ -99,7 +126,7 @@
       </el-card>
 
       <!-- 相关链接 / 延伸阅读 -->
-      <el-card v-if="detailLinks.length" class="detail-section-card" shadow="never">
+      <el-card v-if="normalizedLinks.length" class="detail-section-card" shadow="never">
         <template #header>
           <div class="detail-section-header">
             <h2 class="detail-section-title">相关链接 · 延伸阅读</h2>
@@ -110,58 +137,69 @@
         </template>
         <div class="detail-links">
           <div
-            v-for="link in detailLinks"
-            :key="link.id"
-            class="detail-link-group"
+            v-for="link in normalizedLinks"
+            :key="link.key"
+            class="detail-link-slot"
           >
-            <div
-              v-for="(url, idx) in safeUrls(link.resourceUrl)"
-              :key="`${link.id}-${idx}-${url}`"
-              class="detail-link-slot"
-            >
-              <div v-if="isImageUrl(url)" class="detail-link-image-item">
-                <el-image
-                  :src="url"
-                  fit="cover"
-                  class="detail-link-image"
-                  :preview-src-list="[url]"
-                  preview-teleported
-                >
-                  <template #error>
-                    <div class="detail-link-image-error">图片加载失败</div>
-                  </template>
-                </el-image>
-              </div>
-              <el-link
-                v-else
-                :href="url"
-                target="_blank"
-                type="primary"
-                class="detail-link-item"
+            <div v-if="link.isMedia && isImageUrl(link.url)" class="detail-link-image-item">
+              <el-image
+                :src="link.url"
+                fit="cover"
+                class="detail-link-image"
+                :preview-src-list="[link.url]"
+                preview-teleported
               >
-                <span class="detail-link-icon">🔗</span>
-                <span class="detail-link-text">{{ url }}</span>
-              </el-link>
+                <template #error>
+                  <div class="detail-link-image-error">图片加载失败</div>
+                </template>
+              </el-image>
             </div>
+            <el-link
+              v-else
+              :href="link.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              type="primary"
+              class="detail-link-item"
+            >
+              <span class="detail-link-icon">{{ linkTypeIcon(link.type) }}</span>
+              <span class="detail-link-text">{{ link.displayTitle }}</span>
+            </el-link>
           </div>
         </div>
       </el-card>
 
       <!-- 评论区 -->
-      <el-card class="detail-section-card detail-comment-card" shadow="never">
+      <el-card class="detail-section-card detail-comment-card" :class="{ 'detail-comment-card--preview': ownerPreview }" shadow="never">
         <template #header>
           <div class="detail-section-header comment-header-row">
             <div>
-              <h2 class="detail-section-title">评论区</h2>
-              <span class="detail-section-sub">共 {{ formatNum(commentTotal) }} 条评论</span>
+              <h2 class="detail-section-title">
+                {{ ownerPreview ? '评论区（预览未开放）' : '评论区' }}
+              </h2>
+              <span class="detail-section-sub">
+                {{ ownerPreview ? '审核通过后将开放互动' : `共 ${formatNum(commentTotal)} 条评论` }}
+              </span>
             </div>
-            <el-radio-group v-model="commentSortType" size="small" @change="reloadComments">
+            <el-radio-group
+              v-if="commentsEnabled"
+              v-model="commentSortType"
+              size="small"
+              @change="reloadComments"
+            >
               <el-radio-button label="new">最新</el-radio-button>
               <el-radio-button label="hot">最热</el-radio-button>
             </el-radio-group>
           </div>
         </template>
 
+        <div v-if="ownerPreview" class="comment-preview-disabled">
+          <p class="comment-preview-disabled-title">评论区暂未开放</p>
+          <p class="comment-preview-disabled-desc">
+            {{ previewCommentHint }}
+          </p>
+        </div>
+        <template v-else>
         <div v-if="authStore.isLoggedIn" class="comment-editor">
           <div class="comment-editor-row">
             <el-avatar
@@ -334,6 +372,7 @@
         <div v-if="commentHasMore" class="comment-load-more">
           <el-button :loading="commentsLoading" @click="loadMoreComments">加载更多</el-button>
         </div>
+        </template>
       </el-card>
 
       <!-- 底部提示 -->
@@ -424,6 +463,9 @@ import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteS
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
 import { isAuthErrorHandled } from '@/utils/authSession'
+import MemeDetailPreviewBanner from '@/components/meme/MemeDetailPreviewBanner.vue'
+import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
+import { buildMemeDetailBreadcrumbs } from '@/utils/pageBreadcrumb'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 
@@ -433,11 +475,97 @@ const memeDetailStore = useMemeDetailStore()
 const authStore = useAuthStore()
 
 const { meme, loading, error, isFavorited } = storeToRefs(memeDetailStore)
+const detailErrorCode = computed(() => memeDetailStore.errorCode)
 const detailTags = computed(() => memeDetailStore.tags)
 const detailLinks = computed(() => memeDetailStore.links)
 
+const ownerPreview = computed(() => memeDetailStore.isOwnerPreview)
+const breadcrumbItems = computed(() => buildMemeDetailBreadcrumbs({
+  route,
+  meme: meme.value,
+  loading: loading.value,
+  ownerPreview: ownerPreview.value,
+  authStore,
+  error: error.value,
+}))
+const memeStatusLabel = computed(() => {
+  const desc = meme.value?.statusDesc || meme.value?.status_desc
+  if (desc) return desc
+  const status = Number(meme.value?.status)
+  if (status === 2) return '审核中'
+  if (status === 3) return '已下架'
+  return ''
+})
+const commentsEnabled = computed(() => {
+  if (!meme.value) return false
+  if (meme.value.viewMode === 'owner_preview') return false
+  if (meme.value.commentsEnabled != null) return !!meme.value.commentsEnabled
+  if (meme.value.comments_enabled != null) return !!meme.value.comments_enabled
+  return Number(meme.value.status) === 1
+})
+const previewCommentHint = computed(() => {
+  if (Number(meme.value?.status) === 3) {
+    return '下架梗不会出现在公域，评论区也不会对外开放。'
+  }
+  return '审核通过后才会在首页展示，并开放评论与收藏。'
+})
+
+const isNotFoundError = computed(() => {
+  const code = detailErrorCode.value
+  if (code === 404 || code === 0) return true
+  const msg = String(error.value || '')
+  return msg.includes('不存在') || msg.includes('找不到')
+})
+
+const detailErrorIcon = computed(() => (isNotFoundError.value ? 'info' : 'warning'))
+const detailErrorTitle = computed(() => {
+  if (isNotFoundError.value && authStore.isLoggedIn) {
+    return '这条梗暂时看不了'
+  }
+  if (isNotFoundError.value) return '梗不存在'
+  return '加载失败'
+})
+const detailErrorSubtitle = computed(() => {
+  if (isNotFoundError.value && authStore.isLoggedIn) {
+    return '可能还在审核、已下架，或已被彻底删除。审核中/已下架的梗只有发布者本人能预览。'
+  }
+  if (isNotFoundError.value) {
+    return '链接可能有误，或者这条梗还没公开展示。登录发布者账号后可预览审核中的梗。'
+  }
+  return error.value || '网络开小差了，稍后再试'
+})
+
+const normalizedLinks = computed(() => {
+  const items = []
+  for (const link of detailLinks.value) {
+    if (!link) continue
+    if (link.url) {
+      const type = String(link.type || 'link').toLowerCase()
+      items.push({
+        key: `link-${link.id ?? items.length}`,
+        url: String(link.url).trim(),
+        displayTitle: String(link.title || link.url).trim(),
+        type,
+        isMedia: type === 'media' || type === 'image',
+      })
+      continue
+    }
+    for (const [idx, url] of safeUrls(link.resourceUrl).entries()) {
+      items.push({
+        key: `legacy-${link.id ?? items.length}-${idx}`,
+        url,
+        displayTitle: url,
+        type: 'link',
+        isMedia: false,
+      })
+    }
+  }
+  return items.filter((item) => item.url)
+})
+
 const memeId = computed(() => route.params.id || route.query.memeId)
 const favoriteLoading = ref(false)
+const previewRefreshing = ref(false)
 let favoriteDebounceTimer = null
 
 // 收藏夹选择弹窗
@@ -495,9 +623,21 @@ watch(
     clearFavoriteDebounceTimer()
     resetCommentState()
     memeDetailStore.fetchDetail(id)
-    loadComments(true)
   },
   { immediate: true }
+)
+
+watch(
+  () => [meme.value?.id, meme.value?.commentsEnabled, meme.value?.comments_enabled],
+  ([loadedId, commentsEnabledFlag, commentsEnabledSnake]) => {
+    const routeId = memeId.value != null ? String(memeId.value).trim() : ''
+    if (!routeId || loadedId == null || String(loadedId) !== routeId) return
+    resetCommentState()
+    const enabled = commentsEnabledFlag ?? commentsEnabledSnake
+    if (enabled !== false) {
+      loadComments(true)
+    }
+  }
 )
 
 onUnmounted(() => {
@@ -506,7 +646,26 @@ onUnmounted(() => {
 
 function reload() {
   memeDetailStore.fetchDetail(memeId.value)
-  loadComments(true)
+}
+
+async function handlePreviewRefresh() {
+  const prevStatus = Number(meme.value?.status)
+  previewRefreshing.value = true
+  try {
+    await memeDetailStore.fetchDetail(memeId.value)
+    const nextStatus = Number(memeDetailStore.meme?.status)
+    const stillPreview = memeDetailStore.isOwnerPreview
+    if (!stillPreview && prevStatus === 2 && nextStatus === 1) {
+      ElMessage.success('审核已通过，已进入公开展示')
+      loadComments(true)
+      return
+    }
+    if (stillPreview) {
+      ElMessage.success('状态已刷新')
+    }
+  } finally {
+    previewRefreshing.value = false
+  }
 }
 
 function resetCommentState() {
@@ -525,7 +684,7 @@ function resetCommentState() {
 
 async function loadComments(reset = false) {
   const id = memeId.value
-  if (!id) return
+  if (!id || !commentsEnabled.value) return
   if (reset) {
     commentPage.value = 1
     rootComments.value = []
@@ -542,7 +701,9 @@ async function loadComments(reset = false) {
     commentTotal.value = Number(data.total) || rootComments.value.length
     commentHasMore.value = !!data.hasMore
   } catch (e) {
-    ElMessage.error(e.message || '加载评论失败')
+    if (commentsEnabled.value) {
+      ElMessage.error(e.message || '加载评论失败')
+    }
   } finally {
     commentsLoading.value = false
   }
@@ -560,6 +721,21 @@ function loadMoreComments() {
 
 function goToLogin() {
   router.push({ name: 'login', query: { redirect: route.fullPath } })
+}
+
+function goHome() {
+  router.push({ name: 'home' })
+}
+
+function goMyPublished() {
+  const user = authStore.currentUser
+  const rawId = user?.id ?? user?.userId
+  const userId = rawId != null ? String(rawId).trim() : ''
+  if (!userId || !/^\d+$/.test(userId)) {
+    goToLogin()
+    return
+  }
+  router.push({ name: 'userProfile', params: { userId }, query: { tab: 'published' } })
 }
 
 function goUserProfile(rawId) {
@@ -902,6 +1078,14 @@ function formatDate(str) {
   return match ? match[1] : ''
 }
 
+function linkTypeIcon(type) {
+  const normalized = String(type || 'link').toLowerCase()
+  if (normalized === 'video') return '▶'
+  if (normalized === 'article') return '📄'
+  if (normalized === 'media' || normalized === 'image') return '🖼'
+  return '🔗'
+}
+
 function safeUrls(resourceUrl) {
   if (!Array.isArray(resourceUrl)) return []
   return resourceUrl
@@ -935,35 +1119,109 @@ function goSearchByTag(tag) {
   margin: 0 auto;
 }
 
-.page-breadcrumb {
-  margin-bottom: 16px;
-}
-
-.crumb-link {
-  display: inline-block;
-  padding: 2px 4px;
-  border-radius: 4px;
-  text-decoration: none;
-  color: #6b7280;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-
-.crumb-link:hover {
-  color: #111827;
-  background-color: #f3f4f6;
-  text-decoration: none;
-}
-
 .detail-loading,
 .detail-error,
 .detail-empty {
   padding: 40px 0;
 }
 
+.detail-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
 .detail-content {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.detail-content--preview {
+  gap: 16px;
+}
+
+.detail-hero-card--preview {
+  border: 1px solid rgba(49, 138, 239, 0.14);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.detail-comment-card--preview :deep(.el-card__header) {
+  background: #fafbfc;
+}
+
+.detail-cover-preview-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.detail-cover-overlay--muted {
+  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
+  justify-content: center;
+}
+
+.overlay-stat--hint {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.detail-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-status-chip {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.detail-status-chip--2 {
+  color: #1d4ed8;
+  background: rgba(49, 138, 239, 0.12);
+}
+
+.detail-status-chip--3 {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.14);
+}
+
+.comment-preview-disabled {
+  padding: 28px 16px;
+  text-align: center;
+  border-radius: 12px;
+  background: #fafbfc;
+  border: 1px dashed #e5e7eb;
+}
+
+.comment-preview-disabled-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.comment-preview-disabled-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #9ca3af;
 }
 
 .detail-hero-card {
@@ -1030,7 +1288,7 @@ function goSearchByTag(tag) {
 
 .detail-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;

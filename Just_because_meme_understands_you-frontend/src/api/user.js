@@ -81,7 +81,13 @@ export function pageUserMemes(userId, params = {}) {
   const { page = 1, size = 10 } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
   return request(`/user/${encodeURIComponent(id)}/memes?${query}`, { method: 'GET' }).then((res) => {
-    if (res && Number(res.code) === 1 && res.data) return res.data
+    if (res && Number(res.code) === 1 && res.data) {
+      const data = res.data
+      return {
+        ...data,
+        isOwner: !!(data.isOwner ?? data.owner),
+      }
+    }
     throw new Error((res && (res.message || res.msg)) || '获取发布列表失败')
   })
 }
@@ -153,7 +159,8 @@ export function updateUserProfile(payload = {}, token) {
     body.gender = Number(payload.gender)
   }
   if (payload.birthday != null) {
-    body.birthday = String(payload.birthday).trim()
+    const birthday = String(payload.birthday).trim()
+    body.birthday = birthday
   }
   if (payload.signature != null) {
     body.signature = String(payload.signature).trim()

@@ -79,7 +79,10 @@ export function getMemeList(params = {}) {
 /**
  * @typedef {Object} MemeResource
  * @property {number} id
- * @property {string[]} resourceUrl - 相关链接
+ * @property {string} type - link / media / video / article / image
+ * @property {string} [title]
+ * @property {string} url
+ * @property {number} [sortOrder]
  */
 
 /**
@@ -306,21 +309,84 @@ export function getMemeTags() {
 /**
  * 发布梗
  * POST /memes
- * @param {Object} payload { name, introduction, image, tagIds:number[], resourceUrls:string[] }
+ * @param {Object} payload { name, introduction, image, tagIds:number[], resourceUrls:string[], resources:Array<{type,url,title,sortOrder}> }
  */
 export function publishMeme(payload = {}) {
+  const resources = Array.isArray(payload.resources)
+    ? payload.resources
+        .map((item, index) => ({
+          type: String(item?.type || 'link').trim() || 'link',
+          url: String(item?.url || '').trim(),
+          title: String(item?.title || '').trim(),
+          sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index,
+        }))
+        .filter((item) => item.url && item.title)
+    : []
+
   const body = {
     name: String(payload.name || '').trim(),
     introduction: String(payload.introduction || '').trim(),
     image: String(payload.image || '').trim(),
     tagIds: Array.isArray(payload.tagIds) ? payload.tagIds : [],
     resourceUrls: Array.isArray(payload.resourceUrls) ? payload.resourceUrls : [],
+    resources,
   }
-  return request('/memes', {
+    return request('/memes', {
     method: 'POST',
     body: JSON.stringify(body),
   }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '发布失败')
+  })
+}
+
+/**
+ * 删除自己发布的梗
+ * DELETE /memes/{memeId}
+ * @param {number|string} memeId
+ * @returns {Promise<{ memeId:number, status:number, statusDesc:string, deletedAt:string }>}
+ */
+export function deletePublishedMeme(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/memes/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '删除失败')
+  })
+}
+
+/**
+ * 恢复已下架的梗
+ * GET /memes/{memeId}/restore
+ * @param {number|string} memeId
+ * @returns {Promise<{ memeId:number, status:number, statusDesc:string, restoredAt:string }>}
+ */
+export function restorePublishedMeme(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/memes/${encodeURIComponent(id)}/restore`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '恢复失败')
+  })
+}
+
+/**
+ * 彻底删除已下架的梗
+ * DELETE /memes/{memeId}/purge
+ * @param {number|string} memeId
+ * @returns {Promise<{ memeId:number, status:number, statusDesc:string, purgedAt:string }>}
+ */
+export function purgePublishedMeme(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/memes/${encodeURIComponent(id)}/purge`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '彻底删除失败')
   })
 }

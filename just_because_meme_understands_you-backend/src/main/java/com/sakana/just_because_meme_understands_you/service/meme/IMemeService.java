@@ -53,8 +53,14 @@ public interface IMemeService extends IService<Meme> {
      * 梗的详细页面：根据 memeId 查询梗的详细信息（包含标签和相关链接）
      *
      * @param memeId 梗的 id
-     * @return 梗的详细信息，找不到返回 null
+     * @param currentUserId 当前登录用户 id，未登录传 null
+     * @return 梗的详细信息，无权查看或不存在返回 null
      */
-    MemeDetailVO getMemeDetail(Integer memeId);
+    MemeDetailVO getMemeDetail(Integer memeId, Long currentUserId);
+
+    /**
+     * 删除梗后清理详情 Redis 缓存。
+     */
+    void evictMemeDetailCache(Long memeId);
 }
 

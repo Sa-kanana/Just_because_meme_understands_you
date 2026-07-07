@@ -176,7 +176,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 .eq(Meme::getUserId, targetUserId)
                 .orderByDesc(Meme::getReleaseTime)
                 .orderByDesc(Meme::getId);
-        if (!isOwner) {
+        if (isOwner) {
+            wrapper.ne(Meme::getStatus, 4);
+        } else {
             wrapper.eq(Meme::getStatus, 1);
         }
         IPage<Meme> result = memeService.page(mpPage, wrapper);
@@ -256,6 +258,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             case 1 -> "正常";
             case 2 -> "审核中";
             case 3 -> "已下架";
+            case 4 -> "已彻底删除";
             default -> "未知";
         };
     }
@@ -401,38 +404,58 @@ public class UserProfileServiceImpl implements IUserProfileService {
         if (request == null) {
             throw new BizException(Result.CODE_BAD_REQUEST, "请求参数不能为空");
         }
-        if (!StringUtils.hasText(request.getNickname())
-                || request.getGender() == null
-                || !StringUtils.hasText(request.getBirthday())
-                || !StringUtils.hasText(request.getSignature())
-                || !StringUtils.hasText(request.getAvatar())) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "资料参数不完整");
-        }
-        if (request.getGender() < 0 || request.getGender() > 2) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "gender 参数不合法");
-        }
-
-        LocalDate birthday;
-        try {
-            birthday = LocalDate.parse(request.getBirthday());
-        } catch (Exception ignored) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "birthday 格式应为 yyyy-MM-dd");
-        }
-
         User user = userService.getById(userId);
         if (user == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
-        user.setNickname(request.getNickname().trim());
-        user.setGender(request.getGender());
-        user.setBirthday(birthday);
-        user.setSignature(request.getSignature().trim());
-        String avatarKey = ossUrlHelper.normalizeForStorage(request.getAvatar());
-        ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/");
-        user.setAvatar(avatarKey);
+
+        if (request.getNickname() != null) {
+            String nickname = request.getNickname().trim();
+            if (nickname.length() > 50) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "昵称长度最多 50 个字符");
+            }
+            if (StringUtils.hasText(nickname)) {
+                user.setNickname(nickname);
+            }
+        }
+        if (request.getGender() != null) {
+            if (request.getGender() < 0 || request.getGender() > 2) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "gender 参数不合法");
+            }
+            user.setGender(request.getGender());
+        }
+        if (request.getBirthday() != null) {
+            String birthdayRaw = request.getBirthday().trim();
+            if (!StringUtils.hasText(birthdayRaw)) {
+                user.setBirthday(null);
+            } else {
+                try {
+                    user.setBirthday(LocalDate.parse(birthdayRaw));
+                } catch (Exception ignored) {
+                    throw new BizException(Result.CODE_BAD_REQUEST, "birthday 格式应为 yyyy-MM-dd");
+                }
+            }
+        }
+        if (request.getSignature() != null) {
+            String signature = request.getSignature().trim();
+            if (signature.length() > 255) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "签名最多 255 个字符");
+            }
+            user.setSignature(StringUtils.hasText(signature) ? signature : null);
+        }
+        if (request.getAvatar() != null) {
+            String avatarRaw = request.getAvatar().trim();
+            if (!StringUtils.hasText(avatarRaw)) {
+                user.setAvatar(null);
+            } else {
+                String avatarKey = ossUrlHelper.normalizeForStorage(avatarRaw);
+                ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/");
+                user.setAvatar(avatarKey);
+            }
+        }
+
         user.setUpdateTime(LocalDateTime.now());
         userService.updateById(user);
-
         clearUserCache(userId);
     }
 

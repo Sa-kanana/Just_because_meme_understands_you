@@ -18,6 +18,8 @@ import com.sakana.just_because_meme_understands_you.common.support.PageParamNorm
 import com.sakana.just_because_meme_understands_you.service.comment.support.MemeCommentSupport;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.meme.MemeBloomFilterService;
+import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport.ViewAccess;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentPageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
@@ -60,13 +62,17 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
     private MemeCommentSupport commentSupport;
 
     @Override
-    public MemeCommentPageVO pageRootComments(Long memeId, Integer page, Integer size, String sortType) {
+    public MemeCommentPageVO pageRootComments(Long memeId, Integer page, Integer size, String sortType, Long currentUserId) {
         if (memeId == null || memeId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
         }
         Meme meme = memeService.getById(memeId);
-        if (meme == null || meme.getStatus() == null || meme.getStatus() != 1) {
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可查看评论");
+        }
+        if (access == ViewAccess.OWNER_PREVIEW) {
+            return emptyCommentPage();
         }
 
         int pageNo = PageParamNormalizer.normalizePage(page);
@@ -152,7 +158,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
         }
         Meme meme = memeService.getById(memeId);
-        if (meme == null || meme.getStatus() == null || meme.getStatus() != 1) {
+        if (!MemeVisibilitySupport.isCommentsEnabled(meme, userId)) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
         }
 
@@ -222,5 +228,13 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         } else {
             task.run();
         }
+    }
+
+    private MemeCommentPageVO emptyCommentPage() {
+        MemeCommentPageVO pageVO = new MemeCommentPageVO();
+        pageVO.setList(Collections.emptyList());
+        pageVO.setTotal(0L);
+        pageVO.setHasMore(false);
+        return pageVO;
     }
 }

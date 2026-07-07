@@ -24,7 +24,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/user/*/profile",
                         "/user/*/memes",
                         "/user/*/favorites",
-                        "/user/*/favorite-folders"
+                        "/user/*/favorite-folders",
+                        "/detail",
+                        "/detail/*/comments",
+                        "/detail/comments/*/replies"
                 );
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns("/**")

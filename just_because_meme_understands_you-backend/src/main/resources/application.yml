@@ -85,3 +85,9 @@ meme-comment:
     core-pool-size: 4
     max-pool-size: 16
     queue-capacity: 500
+
+meme:
+  # 下架后允许恢复的天数
+  restore-days: 30
+  # 下架后允许彻底删除的冷静期（天），0 表示不限制
+  purge-cooldown-days: 0

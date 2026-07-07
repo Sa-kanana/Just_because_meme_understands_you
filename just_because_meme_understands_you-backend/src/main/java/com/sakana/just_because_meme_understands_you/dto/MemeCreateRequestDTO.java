@@ -26,4 +26,7 @@ public class MemeCreateRequestDTO {
 
     /** 相关资源 URL 列表（图片/视频/GIF，前端直传 OSS 后回传） */
     private List<String> resourceUrls;
+
+    /** 结构化相关链接（标题 + 外链） */
+    private List<MemeResourceItemDTO> resources;
 }

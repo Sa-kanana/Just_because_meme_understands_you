@@ -1,8 +1,10 @@
 package com.sakana.just_because_meme_understands_you.service.meme;
 
 import com.sakana.just_because_meme_understands_you.common.BizException;
+import com.sakana.just_because_meme_understands_you.common.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.dto.MemeCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.MemeResourceItemDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
@@ -22,7 +24,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
+import java.net.URI;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,6 +44,11 @@ public class MemePublishService {
     /** 新发布梗默认状态：2=审核中 */
     private static final int DEFAULT_STATUS = 2;
     private static final String DEFAULT_STATUS_DESC = "审核中";
+    private static final int MAX_RESOURCE_URLS = 6;
+    private static final int MAX_STRUCTURED_LINKS = 10;
+    private static final int MAX_TITLE_LENGTH = 128;
+    private static final int MAX_URL_LENGTH = 500;
+    private static final int RESOURCE_STATUS_ACTIVE = 1;
 
     @Resource
     private MemeMapper memeMapper;
@@ -103,7 +112,8 @@ public class MemePublishService {
         }
 
         // 2. 写入 meme_resource 资源表
-        saveResources(memeId, request.getResourceUrls());
+        saveMediaResources(memeId, request.getResourceUrls());
+        saveStructuredLinks(memeId, request.getResources());
 
         // 3. 写入 meme_tag_relation 关联表
         saveTagRelations(memeId, tagIds);
@@ -172,10 +182,15 @@ public class MemePublishService {
         }
     }
 
-    private void saveResources(Integer memeId, List<String> resourceUrls) {
+    private void saveMediaResources(Integer memeId, List<String> resourceUrls) {
         if (resourceUrls == null || resourceUrls.isEmpty()) {
             return;
         }
+        if (resourceUrls.size() > MAX_RESOURCE_URLS) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "相关资源最多 " + MAX_RESOURCE_URLS + " 个");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int sortOrder = 0;
         for (String url : resourceUrls) {
             if (!StringUtils.hasText(url)) {
                 continue;
@@ -187,7 +202,80 @@ public class MemePublishService {
             MemeResource resource = new MemeResource();
             resource.setMemeId(memeId.longValue());
             resource.setResourceUrl(normalized);
+            resource.setResourceType(MemeResourceType.MEDIA.getCode());
+            resource.setSortOrder(sortOrder++);
+            resource.setStatus(RESOURCE_STATUS_ACTIVE);
+            resource.setCreateTime(now);
             memeResourceMapper.insert(resource);
+        }
+    }
+
+    private void saveStructuredLinks(Integer memeId, List<MemeResourceItemDTO> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return;
+        }
+        if (resources.size() > MAX_STRUCTURED_LINKS) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "相关链接最多 " + MAX_STRUCTURED_LINKS + " 条");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Set<String> seenUrls = new HashSet<>();
+        List<MemeResourceItemDTO> validItems = new ArrayList<>();
+        for (MemeResourceItemDTO item : resources) {
+            if (item == null) {
+                continue;
+            }
+            String url = item.getUrl() != null ? item.getUrl().trim() : "";
+            String title = item.getTitle() != null ? item.getTitle().trim() : "";
+            if (!StringUtils.hasText(url) && !StringUtils.hasText(title)) {
+                continue;
+            }
+            if (!StringUtils.hasText(url)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "相关链接 URL 不能为空");
+            }
+            if (!StringUtils.hasText(title)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "相关链接标题不能为空");
+            }
+            if (title.length() > MAX_TITLE_LENGTH) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "相关链接标题最多 " + MAX_TITLE_LENGTH + " 个字符");
+            }
+            assertSafeExternalUrl(url);
+            String dedupeKey = url.toLowerCase();
+            if (!seenUrls.add(dedupeKey)) {
+                continue;
+            }
+            validItems.add(item);
+        }
+        for (MemeResourceItemDTO item : validItems) {
+            MemeResourceType type = MemeResourceType.fromApiType(item.getType());
+            int sortOrder = item.getSortOrder() != null ? item.getSortOrder() : 0;
+            MemeResource resource = new MemeResource();
+            resource.setMemeId(memeId.longValue());
+            resource.setResourceUrl(item.getUrl().trim());
+            resource.setResourceType(type.getCode());
+            resource.setTitle(item.getTitle().trim());
+            resource.setSortOrder(sortOrder);
+            resource.setStatus(RESOURCE_STATUS_ACTIVE);
+            resource.setCreateTime(now);
+            memeResourceMapper.insert(resource);
+        }
+    }
+
+    private void assertSafeExternalUrl(String url) {
+        if (url.length() > MAX_URL_LENGTH) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "链接地址过长");
+        }
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (Exception ignored) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "链接地址格式不合法");
+        }
+        String scheme = uri.getScheme();
+        if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "链接须以 http:// 或 https:// 开头");
+        }
+        if (!StringUtils.hasText(uri.getHost())) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "链接地址格式不合法");
         }
     }
 

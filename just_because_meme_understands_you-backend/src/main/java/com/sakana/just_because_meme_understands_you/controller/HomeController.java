@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.controller;
 
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.service.home.IHomeImageService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.vo.HomeImageVO;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 
 @Slf4j
@@ -81,13 +83,15 @@ public class HomeController {
      */
     @GetMapping("/detail")
     public Result<MemeDetailVO> detail(
-            @RequestParam(value = "memeId", required = false) Integer memeId
+            @RequestParam(value = "memeId", required = false) Integer memeId,
+            HttpServletRequest httpServletRequest
     ) {
         log.info("请求梗的详细页面, memeId={}", memeId);
         if (memeId == null) {
             return Result.fail(Result.CODE_BAD_REQUEST, "memeId 不能为空");
         }
-        MemeDetailVO detail = memeService.getMemeDetail(memeId);
+        Long currentUserId = AuthContext.currentUserId(httpServletRequest);
+        MemeDetailVO detail = memeService.getMemeDetail(memeId, currentUserId);
         if (detail == null) {
             return Result.fail(Result.CODE_NOT_FOUND, "梗不存在");
         }

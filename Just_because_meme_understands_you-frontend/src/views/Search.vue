@@ -1,12 +1,6 @@
 <template>
   <div class="page search-page">
-    <el-breadcrumb class="page-breadcrumb" separator=">">
-      <el-breadcrumb-item>
-        <router-link to="/" class="crumb-link">主页</router-link>
-      </el-breadcrumb-item>
-      <el-breadcrumb-item>搜索</el-breadcrumb-item>
-      <el-breadcrumb-item v-if="keyword">{{ keyword }}</el-breadcrumb-item>
-    </el-breadcrumb>
+    <AppBreadcrumb :items="breadcrumbItems" />
 
     <!-- 排序筛选栏：参考 B 站式横向 tab -->
     <div class="search-toolbar">
@@ -51,7 +45,11 @@
             class="meme-col"
           >
             <router-link
-              :to="{ name: 'memeDetail', params: { id: item.id } }"
+              :to="{
+                name: 'memeDetail',
+                params: { id: item.id },
+                query: keyword ? { from: 'search', keyword } : { from: 'search' },
+              }"
               class="meme-card-link"
             >
               <el-card
@@ -130,6 +128,8 @@
 
 <script>
 import { searchMeme } from '@/api/search'
+import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
+import { buildSearchBreadcrumbs } from '@/utils/pageBreadcrumb'
 
 const SORT_TABS = [
   { label: '综合排序', value: '' },
@@ -142,6 +142,9 @@ const PAGE_SIZE = 8
 
 export default {
   name: 'SearchPage',
+  components: {
+    AppBreadcrumb,
+  },
   data() {
     return {
       sortTabs: SORT_TABS,
@@ -158,6 +161,9 @@ export default {
   computed: {
     keyword() {
       return (this.$route.query.keyword || '').trim()
+    },
+    breadcrumbItems() {
+      return buildSearchBreadcrumbs({ keyword: this.keyword })
     },
     noMore() {
       if (!this.fullList) return true
@@ -271,30 +277,6 @@ export default {
 .search-page {
   max-width: 1400px;
   margin: 0 auto;
-}
-
-.page-breadcrumb {
-  margin-bottom: 16px;
-}
-
-.crumb-link {
-  display: inline-block;
-  padding: 2px 4px;
-  border-radius: 4px;
-  text-decoration: none;
-  color: #6b7280;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-
-.crumb-link:hover {
-  color: #111827;
-  background-color: #f3f4f6;
-  text-decoration: none;
-}
-
-.crumb-link:focus-visible {
-  outline: 2px solid #318AEF;
-  outline-offset: 2px;
 }
 
 /* 排序 tab 栏：类似参考图 */
