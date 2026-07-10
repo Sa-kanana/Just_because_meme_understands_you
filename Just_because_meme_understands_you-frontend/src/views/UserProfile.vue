@@ -213,9 +213,12 @@
                   class="published-filter-empty"
                 />
                 <el-empty v-else description="这个用户还没有发布梗图" />
-                <div v-if="publishedHasMore" class="published-load-more">
-                  <el-button :loading="publishedLoading" round @click="loadMorePublished">加载更多</el-button>
-                </div>
+                <ListLoadFooter
+                  :has-more="publishedHasMore"
+                  :loading="publishedLoading"
+                  :item-count="filteredPublishedList.length"
+                  @load-more="loadMorePublished"
+                />
               </div>
             </el-tab-pane>
 
@@ -393,9 +396,12 @@
                         </div>
                       </div>
                       <el-empty v-else description="这个收藏夹还没有梗图" />
-                      <div v-if="folderContentHasMore" class="published-load-more">
-                        <el-button :loading="folderContentLoading" @click="loadMoreFolderContent">加载更多</el-button>
-                      </div>
+                      <ListLoadFooter
+                        :has-more="folderContentHasMore"
+                        :loading="folderContentLoading"
+                        :item-count="folderContentList.length"
+                        @load-more="loadMoreFolderContent"
+                      />
                       <Transition name="folder-batch-dock">
                         <div
                           v-if="isOwnProfile && selectedMemeIds.length > 0"
@@ -619,12 +625,12 @@
       </template>
       <div v-if="deletePublishedTarget" class="delete-published-body">
         <p class="delete-published-lead">
-          确定下架「<strong>{{ deletePublishedTarget.name || '未命名梗图' }}</strong>」？
+          确定要把「<strong>{{ deletePublishedTarget.name || '未命名梗图' }}</strong>」下架吗？
         </p>
         <ul class="delete-published-notes">
-          <li>下架后该梗会从首页、搜索等公域入口「失联」</li>
-          <li>已收藏该梗的梗友，详情页也会变成 404</li>
-          <li>下架后可在「已下架」里恢复（30 天内）或彻底删除</li>
+          <li>下架后，别人在首页、搜索里都刷不到这条梗了</li>
+          <li>收藏过它的梗友再点开，会看到「找不到这条梗」</li>
+          <li>30 天内可在「已下架」里恢复；也可以彻底删除</li>
         </ul>
         <div class="delete-published-preview">
           <el-image
@@ -671,11 +677,11 @@
       </template>
       <div v-if="restorePublishedTarget" class="delete-published-body">
         <p class="delete-published-lead">
-          要把「<strong>{{ restorePublishedTarget.name || '未命名梗图' }}</strong>」捞回来？
+          要把「<strong>{{ restorePublishedTarget.name || '未命名梗图' }}</strong>」重新上架吗？
         </p>
         <ul class="delete-published-notes">
-          <li>恢复后会重新进入审核，通过后才会回到公域</li>
-          <li>需在下架后 30 天内操作</li>
+          <li>恢复后会重新进入审核，通过后才会出现在首页和搜索</li>
+          <li>请在下架后 30 天内操作</li>
         </ul>
       </div>
       <template #footer>
@@ -710,12 +716,12 @@
       </template>
       <div v-if="purgePublishedTarget" class="delete-published-body">
         <p class="delete-published-lead">
-          确定要把「<strong>{{ purgePublishedTarget.name || '未命名梗图' }}</strong>」从黑历史里抹掉？
+          确定要彻底删除「<strong>{{ purgePublishedTarget.name || '未命名梗图' }}</strong>」吗？
         </p>
         <ul class="delete-published-notes purge-published-notes">
-          <li>彻底删除后无法恢复，发布列表里也找不到了</li>
-          <li>封面与 OSS 资源会被异步清理</li>
-          <li>评论、收藏等关联记录仍保留在系统中</li>
+          <li>删除后无法恢复，「我的发布」里也不会再出现</li>
+          <li>封面和相关图片会一并清理</li>
+          <li>别人的评论、收藏记录仍会保留</li>
         </ul>
         <el-input
           v-model="purgeConfirmName"
@@ -818,12 +824,15 @@ import {
 } from '@/api/favoriteFolder'
 import { batchMoveFavorites, removeMemeFavorite, deletePublishedMeme, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { useAuthStore } from '@/stores/auth'
+import ListLoadFooter from '@/components/layout/ListLoadFooter.vue'
+import { resolvePageHasMore } from '@/utils/pagination'
 
 export default {
   name: 'UserProfilePage',
   components: {
     Cropper,
     ElImageViewer,
+    ListLoadFooter,
   },
   data() {
     return {
@@ -872,6 +881,7 @@ export default {
       publishedPage: {
         list: [],
         total: 0,
+        hasMore: false,
         isOwner: false,
       },
       publishedPageNo: 1,
@@ -892,7 +902,7 @@ export default {
       folderList: [],
       folderLoading: false,
       selectedFolderId: '0',
-      folderContentPage: { list: [], total: 0 },
+      folderContentPage: { list: [], total: 0, hasMore: false },
       folderContentPageNo: 1,
       folderContentPageSize: 12,
       folderContentLoading: false,
@@ -981,7 +991,7 @@ export default {
       ]
     },
     publishedHasMore() {
-      return this.publishedPage.list.length < this.publishedPage.total
+      return !!this.publishedPage.hasMore
     },
     purgeConfirmMatched() {
       if (!this.purgePublishedTarget) return false
@@ -998,7 +1008,7 @@ export default {
       return Array.isArray(this.folderContentPage.list) ? this.folderContentPage.list : []
     },
     folderContentHasMore() {
-      return this.folderContentPage.list.length < Number(this.folderContentPage.total) || 0
+      return !!this.folderContentPage.hasMore
     },
     selectedFolderName() {
       const folder = this.folderList.find((f) => sameFolderId(f.id, this.selectedFolderId))
@@ -1049,7 +1059,7 @@ export default {
       this.favoriteViewMode = 'folders'
       this.folderList = []
       this.selectedFolderId = '0'
-      this.folderContentPage = { list: [], total: 0 }
+      this.folderContentPage = { list: [], total: 0, hasMore: false }
       this.selectedMemeIds = []
       this.folderSelectAll = false
     },
@@ -1230,14 +1240,17 @@ export default {
           this.publishedPage = {
             list: normalized,
             total: Number(data.total) || 0,
+            hasMore: resolvePageHasMore(data, normalized.length, this.publishedPageSize, normalized.length),
             isOwner: !!(data.isOwner ?? data.owner ?? this.isOwnProfile),
           }
           this.publishedStatusFilter = 'all'
         } else {
+          const merged = this.publishedPage.list.concat(normalized)
           this.publishedPage = {
             ...this.publishedPage,
-            list: this.publishedPage.list.concat(normalized),
+            list: merged,
             total: Number(data.total) || this.publishedPage.total,
+            hasMore: resolvePageHasMore(data, normalized.length, this.publishedPageSize, merged.length),
             isOwner: !!(data.isOwner ?? data.owner ?? this.publishedPage.isOwner),
           }
         }
@@ -1446,7 +1459,7 @@ export default {
         this.folderList = folders || []
         if (!this.folderList.length) {
           this.selectedFolderId = '0'
-          this.folderContentPage = { list: [], total: 0 }
+          this.folderContentPage = { list: [], total: 0, hasMore: false }
           return
         }
         const exists = this.folderList.some((f) => sameFolderId(f.id, this.selectedFolderId))
@@ -1499,11 +1512,17 @@ export default {
         })
         const list = Array.isArray(data.list) ? data.list : []
         if (this.folderContentPageNo === 1) {
-          this.folderContentPage = { list, total: Number(data.total) || 0 }
-        } else {
           this.folderContentPage = {
-            list: this.folderContentPage.list.concat(list),
+            list,
+            total: Number(data.total) || 0,
+            hasMore: resolvePageHasMore(data, list.length, this.folderContentPageSize, list.length),
+          }
+        } else {
+          const merged = this.folderContentPage.list.concat(list)
+          this.folderContentPage = {
+            list: merged,
             total: Number(data.total) || this.folderContentPage.total,
+            hasMore: resolvePageHasMore(data, list.length, this.folderContentPageSize, merged.length),
           }
         }
         this.refreshFolderSelectAll()
@@ -2201,12 +2220,6 @@ export default {
   padding: 24px 0;
 }
 
-.published-load-more {
-  display: flex;
-  justify-content: center;
-  padding-top: 8px;
-}
-
 .delete-published-dialog-head {
   display: flex;
   align-items: center;
@@ -2318,11 +2331,6 @@ export default {
 
 .meme-status-tag.meme-status-3 {
   background: rgba(239, 68, 68, 0.9);
-}
-
-.published-load-more {
-  margin-top: 16px;
-  text-align: center;
 }
 
 .published-skeleton {

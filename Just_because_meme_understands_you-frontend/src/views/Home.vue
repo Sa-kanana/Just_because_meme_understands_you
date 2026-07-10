@@ -110,7 +110,7 @@
                 class="meme-card"
                 :body-style="{ padding: 0, display: 'flex', flexDirection: 'column', height: '100%' }"
               >
-                <!-- 图片区（比例 2）：圆角、叠字 浏览量/评论/点赞 -->
+                <!-- 图片区：封面 + 互动数据叠层 -->
                 <div class="meme-img-wrap">
                   <el-image
                     v-if="item.image"
@@ -121,40 +121,51 @@
                     lazy
                   >
                     <template #error>
-                      <div class="meme-img-error">
-                        <span>图片加载失败</span>
+                      <div class="meme-img-placeholder">
+                        <span class="meme-img-placeholder-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none">
+                            <rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.5" />
+                            <path d="M8 10.5 10.5 13 14.5 8.5 20.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                            <circle cx="8.5" cy="9" r="1" fill="currentColor" />
+                          </svg>
+                        </span>
+                        <span>封面加载失败</span>
                       </div>
                     </template>
                   </el-image>
-                  <div v-else class="meme-img-error">
+                  <div v-else class="meme-img-placeholder">
+                    <span class="meme-img-placeholder-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.5" />
+                        <path d="M8 10.5 10.5 13 14.5 8.5 20.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="8.5" cy="9" r="1" fill="currentColor" />
+                      </svg>
+                    </span>
                     <span>暂无封面</span>
                   </div>
                   <div class="meme-img-overlay">
-                    <div class="meme-overlay-left">
-                      <span class="meme-overlay-item" title="浏览量">👁 {{ formatNum(item.pageViews) }}</span>
-                      <span class="meme-overlay-item" title="评论">💬 {{ formatNum(item.comments) }}</span>
-                    </div>
-                    <div class="meme-overlay-right">
-                      <span class="meme-overlay-item" title="点赞">👍 {{ formatNum(item.likes) }}</span>
-                    </div>
+                    <MemeCardStats
+                      variant="overlay"
+                      :page-views="item.pageViews"
+                      :likes="item.likes"
+                      :comments="item.comments"
+                    />
                   </div>
                 </div>
-                <!-- 信息区（比例 1）：背景透明，标题、标签、日期 -->
+                <!-- 信息区：标题、标签、日期 -->
                 <div class="meme-info">
                   <h3 class="meme-name" :title="item.name">{{ item.name }}</h3>
                   <div v-if="tags(item).length" class="meme-tags">
-                    <el-tag
+                    <span
                       v-for="tag in tags(item).slice(0, 3)"
                       :key="tag.id"
-                      size="small"
-                      type="info"
-                      class="meme-tag"
+                      class="meme-tag-chip"
                     >
-                      {{ tag.name }}
-                    </el-tag>
+                      #{{ tag.name }}
+                    </span>
                   </div>
                   <div class="meme-meta">
-                    {{ formatDate(item.releaseTime || item.updateTime) || '—' }}
+                    <span class="meme-meta-date">{{ formatDate(item.releaseTime || item.updateTime) || '—' }}</span>
                   </div>
                 </div>
               </el-card>
@@ -200,12 +211,16 @@
 <script>
 import { getMemeList } from '@/api/meme'
 import { getHomeImages } from '@/api/homeImage'
+import MemeCardStats from '@/components/meme/MemeCardStats.vue'
 
 /** 跳转类型：0-无跳转，1-内部梗ID，2-外部链接 */
 const TARGET_TYPE = { NONE: 0, INTERNAL: 1, EXTERNAL: 2 }
 
 export default {
   name: 'HomePage',
+  components: {
+    MemeCardStats,
+  },
   data() {
     return {
       carouselList: [],
@@ -311,13 +326,6 @@ export default {
       } finally {
         this.memeLoading = false
       }
-    },
-    formatNum(num) {
-      if (num == null) return '0'
-      const n = Number(num)
-      if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿'
-      if (n >= 1e4) return (n / 1e4).toFixed(1) + '万'
-      return String(n)
     },
     /** 日期只显示 YYYY-MM-DD，不显示时分秒 */
     formatDate(str) {
@@ -628,8 +636,9 @@ export default {
 .section-title {
   margin: 0 0 20px;
   font-size: 22px;
-  font-weight: 600;
-  color: #111827;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f172a;
 }
 
 .meme-list-wrap {
@@ -676,7 +685,12 @@ export default {
 .meme-card {
   border-radius: 16px;
   overflow: hidden;
-  transition: box-shadow 0.2s ease, transform 0.15s ease;
+  border: 1px solid var(--meme-border, #e5e7eb);
+  background: #fff;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.15s ease,
+    border-color 0.2s ease;
   display: flex;
   flex-direction: column;
   height: 300px;
@@ -692,8 +706,15 @@ export default {
 }
 
 .meme-card:hover {
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  border-color: rgba(49, 138, 239, 0.22);
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.1),
+    0 4px 14px rgba(49, 138, 239, 0.08);
   transform: translateY(-2px);
+}
+
+.meme-card:hover .meme-img-overlay {
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.82) 0%, rgba(15, 23, 42, 0.28) 58%, transparent 100%);
 }
 
 /* 图片区：占 2 份高度 */
@@ -702,7 +723,9 @@ export default {
   width: 100%;
   height: 200px;
   flex-shrink: 0;
-  background: #f3f4f6;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(49, 138, 239, 0.08), transparent 42%),
+    #eef2f7;
   overflow: hidden;
   border-radius: 16px 16px 0 0;
 }
@@ -713,43 +736,48 @@ export default {
   display: block;
 }
 
-.meme-img-error {
+.meme-img-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
-  font-size: 14px;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
-/* 图片叠字：半透明深色底、白字，左下 浏览量/评论、右下 点赞 */
+.meme-img-placeholder-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  color: #cbd5e1;
+}
+
+.meme-img-placeholder-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 封面底部互动数据叠层 */
 .meme-img-overlay {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 8px 10px;
+  z-index: 2;
+  padding: 18px 10px 8px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+  align-items: flex-end;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.72) 0%, rgba(15, 23, 42, 0.22) 55%, transparent 100%);
   pointer-events: none;
+  transition: background 0.2s ease;
 }
 
-.meme-overlay-left,
-.meme-overlay-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.meme-overlay-item {
-  font-size: 12px;
-  color: #fff;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.4);
+.meme-img-overlay :deep(.meme-card-stats) {
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 /* 信息区：占 1 份高度，背景透明 */
@@ -759,18 +787,20 @@ export default {
   height: 100px;
   display: flex;
   flex-direction: column;
-  padding: 10px 12px;
-  background: transparent;
+  padding: 10px 12px 11px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
 }
 
 .meme-name {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 15px;
-  font-weight: 600;
-  color: #111827;
+  font-weight: 700;
+  color: #0f172a;
   line-height: 1.35;
+  letter-spacing: -0.01em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -779,19 +809,31 @@ export default {
 .meme-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 4px;
+  margin-bottom: 4px;
   min-height: 0;
 }
 
-.meme-tag {
-  margin: 0;
+.meme-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: rgba(49, 138, 239, 0.08);
+  border: 1px solid rgba(49, 138, 239, 0.14);
 }
 
 .meme-meta {
-  font-size: 12px;
-  color: #9ca3af;
   margin-top: auto;
+  min-width: 0;
+}
+
+.meme-meta-date {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .meme-loading,

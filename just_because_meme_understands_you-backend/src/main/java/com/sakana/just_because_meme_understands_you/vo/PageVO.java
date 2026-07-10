@@ -14,4 +14,7 @@ public class PageVO<T> {
     private Integer size;
 
     private Long total;
+
+    /** 是否还有下一页 */
+    private Boolean hasMore;
 }

@@ -22,4 +22,7 @@ public class UserMemePageVO {
     /** 是否是本人查看（决定是否展示全部状态） */
     @JsonProperty("isOwner")
     private boolean isOwner;
+
+    /** 是否还有下一页 */
+    private Boolean hasMore;
 }

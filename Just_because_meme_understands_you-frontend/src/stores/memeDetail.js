@@ -2,7 +2,7 @@
  * 梗详情页状态：与接口 GET /detail?memeId= 对应，集中管理详情数据与加载状态
  */
 import { defineStore } from 'pinia'
-import { getMemeDetail, getMemeFavoriteStatus } from '@/api/meme'
+import { getMemeDetail, getMemeFavoriteStatus, getMemeLikeStatus } from '@/api/meme'
 import { useAuthStore } from './auth'
 
 function isNotFoundLikeError(error) {
@@ -19,6 +19,8 @@ export const useMemeDetailStore = defineStore('memeDetail', {
     meme: null,
     /** 当前用户是否已收藏该梗（未登录时为 false） */
     isFavorited: false,
+    /** 当前用户是否已点赞该梗（未登录时为 false） */
+    isLiked: false,
     loading: false,
     /** 当前正在请求的 memeId，用于避免面包屑/内容串页 */
     loadingMemeId: '',
@@ -59,6 +61,7 @@ export const useMemeDetailStore = defineStore('memeDetail', {
         this.meme = null
         this.loadingMemeId = ''
         this.isFavorited = false
+        this.isLiked = false
         this.error = '缺少梗 id，无法加载详情'
         this.errorCode = undefined
         return
@@ -69,6 +72,7 @@ export const useMemeDetailStore = defineStore('memeDetail', {
       this.error = ''
       this.errorCode = undefined
       this.isFavorited = false
+      this.isLiked = false
       this.meme = null
 
       try {
@@ -83,13 +87,22 @@ export const useMemeDetailStore = defineStore('memeDetail', {
         ))
 
         let favorited = false
+        let liked = false
         if (authStore.isLoggedIn && !preview) {
-          const status = await getMemeFavoriteStatus(id).catch(() => ({ favorited: false }))
-          favorited = !!(status && status.favorited)
+          const [favoriteStatus, likeStatus] = await Promise.all([
+            getMemeFavoriteStatus(id).catch(() => ({ favorited: false })),
+            getMemeLikeStatus(id).catch(() => ({ liked: false })),
+          ])
+          favorited = !!(favoriteStatus && favoriteStatus.favorited)
+          liked = !!(likeStatus && likeStatus.liked)
+          if (data && likeStatus?.likeCount != null) {
+            data.likes = likeStatus.likeCount
+          }
         }
 
         this.meme = data || null
         this.isFavorited = favorited
+        this.isLiked = liked
       } catch (e) {
         if (this.loadingMemeId !== id) return
 
@@ -103,6 +116,7 @@ export const useMemeDetailStore = defineStore('memeDetail', {
         this.errorCode = e.code != null ? Number(e.code) : e.status
         this.meme = null
         this.isFavorited = false
+        this.isLiked = false
       } finally {
         if (this.loadingMemeId === id) {
           this.loading = false
@@ -114,11 +128,42 @@ export const useMemeDetailStore = defineStore('memeDetail', {
       this.isFavorited = !!value
     },
 
+    setLiked(value) {
+      this.isLiked = !!value
+    },
+
+    /**
+     * 仅更新点赞数，避免替换 meme 引用导致评论区等依赖误刷新。
+     */
+    setLikeCount(count) {
+      if (!this.meme) return
+      this.meme.likes = Math.max(0, Number(count) || 0)
+    },
+
+    /**
+     * 仅更新浏览量，避免替换 meme 引用导致评论区等依赖误刷新。
+     */
+    setPageViews(count) {
+      if (!this.meme) return
+      this.meme.pageViews = Math.max(0, Number(count) || 0)
+    },
+
+    /** 原子更新点赞态与计数（点赞/取消点赞成功后调用） */
+    applyLikeState({ liked, likeCount } = {}) {
+      if (liked != null) {
+        this.isLiked = !!liked
+      }
+      if (likeCount != null) {
+        this.setLikeCount(likeCount)
+      }
+    },
+
     /** 清空详情状态（如离开页面时可选调用） */
     clearDetail() {
       this.meme = null
       this.loadingMemeId = ''
       this.isFavorited = false
+      this.isLiked = false
       this.loading = false
       this.error = ''
       this.errorCode = undefined

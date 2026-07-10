@@ -26,6 +26,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/user/*/favorites",
                         "/user/*/favorite-folders",
                         "/detail",
+                        "/detail/views",
                         "/detail/*/comments",
                         "/detail/comments/*/replies"
                 );
@@ -45,6 +46,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/list",
                         "/search",
                         "/detail",
+                        "/detail/views",
+                        "/views/**",
                         "/detail/*/comments",
                         "/detail/comments/*/replies",
                         "/",

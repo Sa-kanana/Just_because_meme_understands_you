@@ -4,6 +4,7 @@
  * @see https://api.apifox.com/temp-links/api/423205377
  */
 import { request } from './request'
+import { getViewSessionId } from '@/utils/viewSession'
 
 function normalizeFolderId(value) {
   if (value == null || value === '') return '0'
@@ -149,6 +150,168 @@ export function removeMemeFavorite(memeId) {
       return res.data || {}
     }
     throw new Error((res && (res.message || res.msg)) || '取消收藏失败')
+  })
+}
+
+/**
+ * 上报浏览
+ * POST /detail/views
+ * @param {number|string} memeId
+ * @param {{ source?: 'detail'|'list'|'search'|'share' }} [options]
+ * @returns {Promise<{ memeId: number, pageViews: number, counted?: boolean }>}
+ */
+export function reportMemeView(memeId, options = {}) {
+  const id = memeId != null ? Number(memeId) : NaN
+  if (!Number.isFinite(id) || id <= 0) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  const source = options.source != null ? String(options.source).trim() : 'detail'
+  return request('/detail/views', {
+    method: 'POST',
+    body: JSON.stringify({ memeId: id, source }),
+    headers: {
+      'X-View-Session-Id': getViewSessionId(),
+    },
+  }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      return {
+        memeId: res.data.memeId != null ? Number(res.data.memeId) : id,
+        pageViews: res.data.pageViews != null ? Number(res.data.pageViews) : 0,
+        counted: res.data.counted != null ? !!res.data.counted : undefined,
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '上报浏览失败')
+  })
+}
+
+/**
+ * 查询单个梗浏览量
+ * GET /views/{memeId}/count
+ */
+export function getMemeViewCount(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/views/${encodeURIComponent(id)}/count`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      return {
+        memeId: res.data.memeId != null ? Number(res.data.memeId) : Number(id),
+        pageViews: res.data.pageViews != null ? Number(res.data.pageViews) : 0,
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '查询浏览量失败')
+  })
+}
+
+/**
+ * 批量查询浏览量
+ * GET /views/counts?memeIds=1,2,3
+ */
+export function batchMemeViewCounts(memeIds) {
+  const ids = (Array.isArray(memeIds) ? memeIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  if (!ids.length) {
+    return Promise.resolve({ items: [] })
+  }
+  const query = new URLSearchParams({ memeIds: ids.join(',') })
+  return request(`/views/counts?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      const items = Array.isArray(res.data.items) ? res.data.items : []
+      return {
+        items: items.map((item) => ({
+          memeId: item?.memeId != null ? Number(item.memeId) : undefined,
+          pageViews: item?.pageViews != null ? Number(item.pageViews) : 0,
+        })),
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '批量查询浏览量失败')
+  })
+}
+
+/**
+ * 点赞梗
+ * POST /detail/likes
+ * @param {number|string} memeId
+ * @returns {Promise<{ likeId?: number, memeId: number, liked: boolean, likeCount: number, createTime?: string }>}
+ */
+export function addMemeLike(memeId) {
+  const id = memeId != null ? Number(memeId) : NaN
+  if (!Number.isFinite(id) || id <= 0) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request('/detail/likes', {
+    method: 'POST',
+    body: JSON.stringify({ memeId: id }),
+  }).then((res) => {
+    if (res && Number(res.code) === 1) {
+      return res.data || {}
+    }
+    throw new Error((res && (res.message || res.msg)) || '点赞失败')
+  })
+}
+
+/**
+ * 取消点赞
+ * DELETE /likes/{memeId}
+ */
+export function removeMemeLike(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/likes/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1) {
+      return res.data || {}
+    }
+    throw new Error((res && (res.message || res.msg)) || '取消点赞失败')
+  })
+}
+
+/**
+ * 查询当前用户是否已点赞
+ * GET /likes/{memeId}/status
+ */
+export function getMemeLikeStatus(memeId) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!id) {
+    return Promise.reject(new Error('缺少梗 id'))
+  }
+  return request(`/likes/${encodeURIComponent(id)}/status`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      return {
+        liked: !!res.data.liked,
+        likeCount: res.data.likeCount != null ? Number(res.data.likeCount) : 0,
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '查询点赞状态失败')
+  })
+}
+
+/**
+ * 批量查询点赞状态
+ * GET /likes/status?memeIds=1,2,3
+ */
+export function batchMemeLikeStatus(memeIds) {
+  const ids = (Array.isArray(memeIds) ? memeIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  if (!ids.length) {
+    return Promise.resolve({ items: [] })
+  }
+  const query = new URLSearchParams({ memeIds: ids.join(',') })
+  return request(`/likes/status?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
+      const items = Array.isArray(res.data.items) ? res.data.items : []
+      return {
+        items: items.map((item) => ({
+          memeId: item?.memeId != null ? Number(item.memeId) : undefined,
+          liked: !!item?.liked,
+        })),
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '批量查询点赞状态失败')
   })
 }
 

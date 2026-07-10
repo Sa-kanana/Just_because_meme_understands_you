@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 /**
  * 梗 Mapper
@@ -31,4 +32,13 @@ public interface MemeMapper extends BaseMapper<Meme> {
                                @Param("mostLikes") String mostLikes,
                                @Param("mostViews") String mostViews,
                                @Param("mostComments") String mostComments);
+
+    @Update("UPDATE meme SET likes = IFNULL(likes, 0) + 1 WHERE id = #{memeId} AND status = 1")
+    int incrementLikes(@Param("memeId") long memeId);
+
+    @Update("UPDATE meme SET likes = GREATEST(IFNULL(likes, 0) - 1, 0) WHERE id = #{memeId}")
+    int decrementLikes(@Param("memeId") long memeId);
+
+    @Update("UPDATE meme SET page_views = IFNULL(page_views, 0) + 1 WHERE id = #{memeId} AND status = 1")
+    int incrementPageViews(@Param("memeId") long memeId);
 }

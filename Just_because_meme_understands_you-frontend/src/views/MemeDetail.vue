@@ -37,8 +37,8 @@
 
       <!-- 顶部大卡片：封面 + 基本信息 -->
       <el-card class="detail-hero-card" :class="{ 'detail-hero-card--preview': ownerPreview }" shadow="never">
-        <el-row :gutter="24" class="detail-hero-row">
-          <el-col :xs="24" :md="10">
+        <el-row :gutter="20" class="detail-hero-row">
+          <el-col :xs="24" :md="10" :lg="9">
             <div class="detail-cover-wrap">
               <el-image
                 v-if="meme.image"
@@ -48,25 +48,35 @@
                 class="detail-cover"
               >
                 <template #error>
-                  <div class="detail-cover-fallback">加载失败</div>
+                  <div class="detail-cover-fallback">
+                    <span class="detail-cover-fallback-icon" aria-hidden="true">🖼</span>
+                    <span>封面加载失败</span>
+                  </div>
                 </template>
               </el-image>
-              <div v-else class="detail-cover-fallback">暂无封面</div>
+              <div v-else class="detail-cover-fallback">
+                <span class="detail-cover-fallback-icon" aria-hidden="true">🖼</span>
+                <span>暂无封面</span>
+              </div>
               <div v-if="ownerPreview" class="detail-cover-preview-tag">仅发布者可见</div>
-              <div class="detail-cover-overlay" :class="{ 'detail-cover-overlay--muted': ownerPreview }">
-                <span v-if="ownerPreview" class="overlay-stat overlay-stat--hint">公域暂未展示</span>
-                <template v-else>
-                  <span class="overlay-stat">👁 {{ formatNum(meme.pageViews) }}</span>
-                  <span class="overlay-stat">👍 {{ formatNum(meme.likes) }}</span>
-                  <span class="overlay-stat">💬 {{ formatNum(meme.comments) }}</span>
-                </template>
+              <div
+                v-if="!ownerPreview"
+                class="detail-cover-overlay detail-cover-overlay--mobile"
+                aria-hidden="true"
+              >
+                <span class="overlay-stat">👁 {{ formatNum(meme.pageViews) }}</span>
+                <span class="overlay-stat">👍 {{ formatNum(meme.likes) }}</span>
+                <span class="overlay-stat">💬 {{ formatNum(meme.comments) }}</span>
+              </div>
+              <div v-else class="detail-cover-overlay detail-cover-overlay--muted detail-cover-overlay--mobile">
+                <span class="overlay-stat overlay-stat--hint">公域暂未展示</span>
               </div>
             </div>
           </el-col>
 
-          <el-col :xs="24" :md="14">
+          <el-col :xs="24" :md="14" :lg="15">
             <div class="detail-meta">
-              <div class="detail-title-row">
+              <div class="detail-meta-head">
                 <div class="detail-title-block">
                   <span
                     v-if="ownerPreview && memeStatusLabel"
@@ -77,48 +87,82 @@
                   </span>
                   <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
                 </div>
-                <el-button
-                  class="detail-favorite-btn"
-                  :type="isFavorited ? 'warning' : 'default'"
-                  :loading="favoriteLoading"
-                  :disabled="favoriteLoading || ownerPreview"
-                  @click="handleFavoriteClick"
-                >
-                  {{ ownerPreview ? '预览中' : (isFavorited ? '已收藏' : '收藏') }}
-                </el-button>
-              </div>
-              <p v-if="meme.introduction" class="detail-intro">
-                {{ meme.introduction }}
-              </p>
-              <p v-else class="detail-intro muted">
-                {{ ownerPreview ? '预览模式下暂无介绍，可在发布页补充后再提交审核。' : '这个梗还没有详细介绍，欢迎你在评论区或社区里为它补完故事。' }}
-              </p>
-
-              <div v-if="detailTags.length" class="detail-tags">
-                <span class="detail-tags-label">标签</span>
-                <div class="detail-tags-list">
-                  <el-tag
-                    v-for="tag in detailTags"
-                    :key="tag.id"
-                    size="small"
-                    type="info"
-                    class="detail-tag"
-                    @click="goSearchByTag(tag)"
-                  >
-                    {{ tag.name }}
-                  </el-tag>
+                <div class="detail-meta-actions">
+                  <MemeDetailLikeBtn
+                    class="detail-meta-like"
+                    compact
+                    :active="isLiked"
+                    :loading="likeLoading"
+                    :disabled="ownerPreview"
+                    :preview="ownerPreview"
+                    @click="handleLikeClick"
+                  />
+                  <MemeDetailFavoriteBtn
+                    class="detail-meta-favorite"
+                    compact
+                    :active="isFavorited"
+                    :loading="favoriteLoading"
+                    :disabled="ownerPreview"
+                    :preview="ownerPreview"
+                    @click="handleFavoriteClick"
+                  />
                 </div>
               </div>
 
-              <div class="detail-meta-footer">
-                <div class="detail-time">
-                  <span v-if="meme.releaseTime">
-                    首次出现：{{ formatDate(meme.releaseTime) }}
-                  </span>
-                  <span v-if="meme.updateTime">
-                    最近更新：{{ formatDate(meme.updateTime) }}
-                  </span>
+              <div v-if="!ownerPreview" class="detail-stats-row" role="group" aria-label="梗数据统计">
+                <div class="detail-stat-item">
+                  <span class="detail-stat-value">{{ formatNum(meme.pageViews) }}</span>
+                  <span class="detail-stat-label">浏览</span>
                 </div>
+                <span class="detail-stat-divider" aria-hidden="true" />
+                <div class="detail-stat-item">
+                  <span class="detail-stat-value">{{ formatNum(meme.likes) }}</span>
+                  <span class="detail-stat-label">点赞</span>
+                </div>
+                <span class="detail-stat-divider" aria-hidden="true" />
+                <div class="detail-stat-item">
+                  <span class="detail-stat-value">{{ formatNum(meme.comments) }}</span>
+                  <span class="detail-stat-label">评论</span>
+                </div>
+              </div>
+
+              <div class="detail-meta-body">
+                <section class="detail-intro-panel">
+                  <p class="detail-intro-label">梗介绍</p>
+                  <p v-if="meme.introduction" class="detail-intro">
+                    {{ meme.introduction }}
+                  </p>
+                  <p v-else class="detail-intro detail-intro--placeholder">
+                    {{ ownerPreview ? '预览模式下暂无介绍，可在发布页补充后再提交审核。' : '这个梗还没有详细介绍，欢迎你在评论区或社区里为它补完故事。' }}
+                  </p>
+                </section>
+
+                <section v-if="detailTags.length" class="detail-tags-section">
+                  <span class="detail-tags-label">标签</span>
+                  <div class="detail-tags-list">
+                    <button
+                      v-for="tag in detailTags"
+                      :key="tag.id"
+                      type="button"
+                      class="detail-tag-chip"
+                      @click="goSearchByTag(tag)"
+                    >
+                      #{{ tag.name }}
+                    </button>
+                  </div>
+                </section>
+
+                <footer v-if="meme.releaseTime || meme.updateTime" class="detail-meta-footer">
+                  <div class="detail-time">
+                    <span v-if="meme.releaseTime" class="detail-time-item">
+                      首次出现 {{ formatDate(meme.releaseTime) }}
+                    </span>
+                    <span v-if="meme.releaseTime && meme.updateTime" class="detail-time-sep">·</span>
+                    <span v-if="meme.updateTime" class="detail-time-item">
+                      最近更新 {{ formatDate(meme.updateTime) }}
+                    </span>
+                  </div>
+                </footer>
               </div>
             </div>
           </el-col>
@@ -185,6 +229,7 @@
               v-if="commentsEnabled"
               v-model="commentSortType"
               size="small"
+              class="comment-sort-tabs"
               @change="reloadComments"
             >
               <el-radio-button label="new">最新</el-radio-button>
@@ -200,7 +245,8 @@
           </p>
         </div>
         <template v-else>
-        <div v-if="authStore.isLoggedIn" class="comment-editor">
+        <div v-if="authStore.isLoggedIn" class="comment-composer">
+          <div class="comment-editor">
           <div class="comment-editor-row">
             <el-avatar
               :size="40"
@@ -259,6 +305,7 @@
             >
               发表评论
             </el-button>
+          </div>
           </div>
         </div>
         <div v-else class="comment-login-prompt">
@@ -459,11 +506,13 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import MemeDetailPreviewBanner from '@/components/meme/MemeDetailPreviewBanner.vue'
+import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
+import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
 import { buildMemeDetailBreadcrumbs } from '@/utils/pageBreadcrumb'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
@@ -474,7 +523,7 @@ const router = useRouter()
 const memeDetailStore = useMemeDetailStore()
 const authStore = useAuthStore()
 
-const { meme, loading, error, isFavorited } = storeToRefs(memeDetailStore)
+const { meme, loading, error, isFavorited, isLiked } = storeToRefs(memeDetailStore)
 const detailErrorCode = computed(() => memeDetailStore.errorCode)
 const detailTags = computed(() => memeDetailStore.tags)
 const detailLinks = computed(() => memeDetailStore.links)
@@ -565,8 +614,11 @@ const normalizedLinks = computed(() => {
 
 const memeId = computed(() => route.params.id || route.query.memeId)
 const favoriteLoading = ref(false)
+const likeLoading = ref(false)
 const previewRefreshing = ref(false)
 let favoriteDebounceTimer = null
+let viewReportTimer = null
+let viewReportSeq = 0
 
 // 收藏夹选择弹窗
 const favoriteDialogVisible = ref(false)
@@ -617,31 +669,92 @@ function clearFavoriteDebounceTimer() {
   }
 }
 
+function clearViewReportTimer() {
+  if (viewReportTimer) {
+    clearTimeout(viewReportTimer)
+    viewReportTimer = null
+  }
+}
+
+function scheduleViewReport() {
+  clearViewReportTimer()
+  if (ownerPreview.value) return
+
+  const routeId = memeId.value != null ? String(memeId.value).trim() : ''
+  const loaded = meme.value
+  if (!routeId || !loaded || loaded.id == null || String(loaded.id) !== routeId) {
+    return
+  }
+
+  const seq = ++viewReportSeq
+  viewReportTimer = setTimeout(async () => {
+    if (seq !== viewReportSeq) return
+    if (ownerPreview.value) return
+    const currentId = memeId.value != null ? String(memeId.value).trim() : ''
+    if (!currentId || currentId !== routeId) return
+
+    try {
+      const res = await reportMemeView(currentId, { source: 'detail' })
+      if (seq !== viewReportSeq) return
+      if (res?.pageViews != null) {
+        memeDetailStore.setPageViews(res.pageViews)
+      }
+    } catch {
+      // 浏览上报失败静默处理，不影响详情页体验
+    }
+  }, 1000)
+}
+
 watch(
   memeId,
   (id) => {
     clearFavoriteDebounceTimer()
+    clearViewReportTimer()
+    viewReportSeq += 1
     resetCommentState()
     memeDetailStore.fetchDetail(id)
   },
   { immediate: true }
 )
 
-watch(
-  () => [meme.value?.id, meme.value?.commentsEnabled, meme.value?.comments_enabled],
-  ([loadedId, commentsEnabledFlag, commentsEnabledSnake]) => {
-    const routeId = memeId.value != null ? String(memeId.value).trim() : ''
-    if (!routeId || loadedId == null || String(loadedId) !== routeId) return
-    resetCommentState()
-    const enabled = commentsEnabledFlag ?? commentsEnabledSnake
-    if (enabled !== false) {
-      loadComments(true)
-    }
+/** 详情加载完成后延迟上报浏览（公域梗、非预览） */
+const viewReportBootstrapKey = computed(() => {
+  const routeId = memeId.value != null ? String(memeId.value).trim() : ''
+  const loaded = meme.value
+  if (!routeId || !loaded || loaded.id == null || String(loaded.id) !== routeId) {
+    return ''
   }
-)
+  if (ownerPreview.value) return ''
+  return routeId
+})
+
+watch(viewReportBootstrapKey, (key, prevKey) => {
+  if (!key || key === prevKey) return
+  scheduleViewReport()
+})
+
+/** 评论区仅在梗 id / 开放状态变化时初始化，避免点赞等局部更新触发重载 */
+const commentBootstrapKey = computed(() => {
+  const routeId = memeId.value != null ? String(memeId.value).trim() : ''
+  const loaded = meme.value
+  if (!routeId || !loaded || loaded.id == null || String(loaded.id) !== routeId) {
+    return ''
+  }
+  const enabled = loaded.commentsEnabled ?? loaded.comments_enabled
+  if (enabled === false) return ''
+  return `${routeId}:${enabled === true ? 1 : 0}`
+})
+
+watch(commentBootstrapKey, (key, prevKey) => {
+  if (!key || key === prevKey) return
+  resetCommentState()
+  loadComments(true)
+})
 
 onUnmounted(() => {
   clearFavoriteDebounceTimer()
+  clearViewReportTimer()
+  viewReportSeq += 1
 })
 
 function reload() {
@@ -943,6 +1056,43 @@ function handleFavoriteClick() {
   }, 300)
 }
 
+function handleLikeClick() {
+  toggleLike()
+}
+
+async function toggleLike() {
+  if (ownerPreview.value) return
+  if (!authStore.isLoggedIn) {
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+  const id = memeId.value
+  if (!id || likeLoading.value) return
+
+  const prevLiked = isLiked.value
+  const prevCount = Number(meme.value?.likes) || 0
+  const nextLiked = !prevLiked
+  const nextCount = Math.max(0, prevCount + (nextLiked ? 1 : -1))
+
+  memeDetailStore.applyLikeState({ liked: nextLiked, likeCount: nextCount })
+
+  likeLoading.value = true
+  try {
+    const res = nextLiked ? await addMemeLike(id) : await removeMemeLike(id)
+    memeDetailStore.applyLikeState({
+      liked: nextLiked,
+      likeCount: res?.likeCount != null ? res.likeCount : nextCount,
+    })
+  } catch (e) {
+    memeDetailStore.applyLikeState({ liked: prevLiked, likeCount: prevCount })
+    if (!isAuthErrorHandled(e)) {
+      ElMessage.error(e.message || (prevLiked ? '取消点赞失败' : '点赞失败'))
+    }
+  } finally {
+    likeLoading.value = false
+  }
+}
+
 async function openFavoriteDialog() {
   if (!authStore.isLoggedIn) {
     router.push({ name: 'login', query: { redirect: route.fullPath } })
@@ -1142,13 +1292,353 @@ function goSearchByTag(tag) {
   gap: 16px;
 }
 
-.detail-hero-card--preview {
-  border: 1px solid rgba(49, 138, 239, 0.14);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+.detail-hero-card {
+  border-radius: 24px;
+  border: 1px solid var(--meme-border, #e5e7eb);
+  background: linear-gradient(165deg, #ffffff 0%, #fafbfc 48%, #f8fbff 100%);
+  box-shadow:
+    0 4px 20px rgba(49, 138, 239, 0.05),
+    0 12px 40px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
 }
 
-.detail-comment-card--preview :deep(.el-card__header) {
-  background: #fafbfc;
+.detail-hero-card :deep(.el-card__body) {
+  padding: 20px 24px;
+}
+
+.detail-hero-card--preview {
+  border: 1px solid rgba(49, 138, 239, 0.14);
+  background: linear-gradient(165deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.detail-hero-row {
+  align-items: stretch;
+}
+
+.detail-cover-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 180px;
+  max-height: 280px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(49, 138, 239, 0.08), transparent 45%),
+    #eef2f7;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.detail-cover {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.detail-cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.detail-cover-fallback-icon {
+  font-size: 28px;
+  opacity: 0.55;
+}
+
+.detail-cover-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 12px;
+  background: linear-gradient(transparent, rgba(15, 23, 42, 0.78));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.detail-cover-overlay--mobile {
+  display: flex;
+}
+
+.detail-cover-overlay--muted {
+  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
+  justify-content: center;
+}
+
+.overlay-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
+
+.overlay-stat--hint {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.detail-meta {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 0;
+}
+
+.detail-meta-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.detail-meta-like,
+.detail-meta-favorite {
+  flex-shrink: 0;
+}
+
+.detail-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-title {
+  margin: 0;
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.detail-stats-row {
+  display: none;
+  align-items: center;
+  gap: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+}
+
+.detail-stat-item {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.detail-stat-divider {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+.detail-stat-value {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.detail-stat-label {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.detail-meta-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.75);
+  border: 1px solid #eef2f7;
+}
+
+.detail-intro-panel {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.detail-intro-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.detail-intro-panel .detail-intro {
+  padding-left: 10px;
+  border-left: 3px solid var(--meme-primary, #318aef);
+}
+
+.detail-intro {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-intro--placeholder {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.detail-tags-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.detail-tags-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.detail-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-tag-chip {
+  border: 1px solid rgba(49, 138, 239, 0.18);
+  background: rgba(49, 138, 239, 0.06);
+  color: #1d4ed8;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.detail-tag-chip:hover {
+  background: rgba(49, 138, 239, 0.12);
+  border-color: rgba(49, 138, 239, 0.35);
+}
+
+.detail-tag-chip:active {
+  transform: scale(0.98);
+}
+
+.detail-meta-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #eef2f7;
+}
+
+.detail-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-time-item {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.detail-time-sep {
+  color: #cbd5e1;
+  font-size: 12px;
+  user-select: none;
+}
+
+@media (min-width: 768px) {
+  .detail-cover-wrap {
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    min-height: 220px;
+  }
+
+  .detail-cover-overlay--mobile:not(.detail-cover-overlay--muted) {
+    display: none;
+  }
+
+  .detail-stats-row {
+    display: flex;
+  }
+}
+
+@media (max-width: 767px) {
+  .detail-hero-card :deep(.el-card__body) {
+    padding: 16px;
+  }
+
+  .detail-meta {
+    gap: 10px;
+    padding-top: 2px;
+  }
+
+  .detail-meta-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .detail-meta-actions {
+    width: 100%;
+  }
+
+  .detail-meta-like,
+  .detail-meta-favorite {
+    flex: 1;
+  }
+
+  .detail-stat-value {
+    font-size: 14px;
+  }
+
+  .detail-meta-body {
+    padding: 10px 12px;
+    gap: 8px;
+  }
 }
 
 .detail-cover-preview-tag {
@@ -1163,25 +1653,6 @@ function goSearchByTag(tag) {
   color: #fff;
   background: rgba(15, 23, 42, 0.62);
   backdrop-filter: blur(4px);
-}
-
-.detail-cover-overlay--muted {
-  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
-  justify-content: center;
-}
-
-.overlay-stat--hint {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.detail-title-block {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .detail-status-chip {
@@ -1200,6 +1671,10 @@ function goSearchByTag(tag) {
 .detail-status-chip--3 {
   color: #64748b;
   background: rgba(100, 116, 139, 0.14);
+}
+
+.detail-comment-card--preview :deep(.el-card__header) {
+  background: #fafbfc;
 }
 
 .comment-preview-disabled {
@@ -1224,148 +1699,43 @@ function goSearchByTag(tag) {
   color: #9ca3af;
 }
 
-.detail-hero-card {
-  border-radius: 24px;
-  padding: 20px 24px;
-}
-
-.detail-hero-row {
-  align-items: stretch;
-}
-
-.detail-cover-wrap {
-  position: relative;
-  width: 100%;
-  height: 260px;
-  border-radius: 18px;
-  background-color: #f3f4f6;
+.detail-section-card {
+  border-radius: 20px;
+  border: 1px solid var(--meme-border, #e5e7eb);
+  background: #ffffff;
+  box-shadow:
+    0 4px 18px rgba(49, 138, 239, 0.04),
+    0 8px 28px rgba(15, 23, 42, 0.03);
   overflow: hidden;
 }
 
-.detail-cover {
-  width: 100%;
-  height: 100%;
-  display: block;
+.detail-section-card :deep(.el-card__header) {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(180deg, #fcfdff 0%, #ffffff 100%);
 }
 
-.detail-cover-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-  font-size: 14px;
-}
-
-.detail-cover-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 8px 10px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  color: #fff;
-}
-
-.overlay-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.detail-meta {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding-top: 4px;
-}
-
-.detail-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.detail-favorite-btn {
-  flex-shrink: 0;
-}
-
-.detail-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.detail-intro {
-  margin: 0 0 12px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #4b5563;
-}
-
-.detail-intro.muted {
-  color: #9ca3af;
-}
-
-.detail-tags {
-  margin-bottom: 8px;
-}
-
-.detail-tags-label {
-  font-size: 13px;
-  color: #6b7280;
-  margin-right: 4px;
-}
-
-.detail-tags-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.detail-tag {
-  cursor: pointer;
-}
-
-.detail-meta-footer {
-  margin-top: 12px;
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.detail-time {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.detail-section-card {
-  border-radius: 20px;
+.detail-section-card :deep(.el-card__body) {
+  padding: 20px 24px 24px;
 }
 
 .detail-section-header {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .detail-section-title {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .detail-section-sub {
   font-size: 13px;
-  color: #6b7280;
+  color: #64748b;
+  line-height: 1.5;
 }
 
 .detail-links {
@@ -1387,6 +1757,19 @@ function goSearchByTag(tag) {
 
 .detail-link-item {
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #eef2f7;
+  background: #f8fafc;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.detail-link-item:hover {
+  background: #f1f5f9;
+  border-color: rgba(49, 138, 239, 0.22);
 }
 
 .detail-link-image-item {
@@ -1440,8 +1823,42 @@ function goSearchByTag(tag) {
   gap: 12px;
 }
 
+.comment-sort-tabs :deep(.el-radio-button__inner) {
+  border: none;
+  border-radius: 999px !important;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.comment-sort-tabs :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-left: none;
+}
+
+.comment-sort-tabs :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  color: #fff;
+  background: var(--meme-primary, #318aef);
+}
+
+.comment-sort-tabs {
+  padding: 3px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.comment-composer {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border: 1px solid #e8eef7;
+}
+
 .comment-editor {
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .comment-editor-row {
@@ -1466,23 +1883,24 @@ function goSearchByTag(tag) {
 }
 
 .comment-editor-input :deep(.el-textarea__inner) {
-  min-height: 40px;
-  padding: 10px 16px;
-  line-height: 1.5;
-  border: 1px solid #e5e7eb;
-  border-radius: 20px;
-  box-shadow: none;
+  min-height: 44px;
+  padding: 11px 16px;
+  line-height: 1.55;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
   resize: none;
   background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .comment-editor-input :deep(.el-textarea__inner::placeholder) {
-  color: #9ca3af;
+  color: #94a3b8;
 }
 
 .comment-editor-input :deep(.el-textarea__inner:focus) {
-  border-color: #c7d2fe;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+  border-color: rgba(49, 138, 239, 0.45);
+  box-shadow: 0 0 0 3px rgba(49, 138, 239, 0.12);
 }
 
 .comment-editor-actions {
@@ -1564,15 +1982,16 @@ function goSearchByTag(tag) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding: 16px;
-  background: #f9fafb;
-  border-radius: 10px;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border: 1px solid #e8eef7;
+  border-radius: 14px;
 }
 
 .comment-login-text {
   font-size: 14px;
-  color: #6b7280;
+  color: #64748b;
 }
 
 .comment-loading {
@@ -1585,8 +2004,36 @@ function goSearchByTag(tag) {
 }
 
 .comment-item {
-  padding: 16px 0;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 18px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.comment-item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.comment-user {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.comment-content {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .comment-item:first-child {
@@ -1617,32 +2064,6 @@ function goSearchByTag(tag) {
 .comment-item-main {
   flex: 1;
   min-width: 0;
-}
-
-.comment-item-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
-.comment-user {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.comment-time {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.comment-content {
-  margin: 0 0 8px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #374151;
-  white-space: pre-wrap;
 }
 
 .comment-images {

@@ -10,6 +10,7 @@ import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.support.PageParamNormalizer;
 import com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO;
+import com.sakana.just_because_meme_understands_you.dto.UserFavoriteMemeJoinRow;
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.entity.User;
@@ -192,6 +193,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         pageVO.setList(list);
         pageVO.setTotal(result.getTotal());
         pageVO.setOwner(isOwner);
+        pageVO.setHasMore((long) pageNo * pageSize < result.getTotal());
         return pageVO;
     }
 
@@ -300,6 +302,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
                     empty.setPage(normalizePage(page));
                     empty.setSize(normalizeSize(size));
                     empty.setTotal(0L);
+                    empty.setHasMore(false);
                     return empty;
                 }
             } else {
@@ -313,40 +316,32 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
         int pageNo = normalizePage(page);
         int pageSize = normalizeSize(size);
-        String cacheKey = FAVORITES_CACHE_PREFIX + targetUserId + ":f" + resolvedFolderId + ":" + pageNo + ":" + pageSize;
+        String cacheKey = FAVORITES_CACHE_PREFIX + targetUserId + ":f" + resolvedFolderId + ":" + pageNo + ":" + pageSize + ":v2";
         PageVO<UserFavoriteItemVO> cached = readCache(cacheKey, new TypeReference<>() {});
         if (cached != null) {
             refreshFavoriteImages(cached.getList());
             return cached;
         }
 
-        Page<UserFavorite> favoritePage = new Page<>(pageNo, pageSize);
-        LambdaQueryWrapper<UserFavorite> favoriteWrapper = new LambdaQueryWrapper<UserFavorite>()
-                .eq(UserFavorite::getUserId, targetUserId)
-                .eq(UserFavorite::getFolderId, resolvedFolderId)
-                .eq(UserFavorite::getIsDeleted, FAVORITE_NOT_DELETED)
-                .orderByDesc(UserFavorite::getSortOrder)
-                .orderByDesc(UserFavorite::getCreateTime);
-        IPage<UserFavorite> result = userFavoriteMapper.selectPage(favoritePage, favoriteWrapper);
-        List<UserFavorite> records = result.getRecords();
+        long total = userFavoriteMapper.countVisibleFavoriteMemes(targetUserId, resolvedFolderId, isOwner);
+        long offset = (long) (pageNo - 1) * pageSize;
+        List<UserFavoriteMemeJoinRow> rows = userFavoriteMapper.selectVisibleFavoriteMemePage(
+                targetUserId, resolvedFolderId, isOwner, offset, pageSize);
 
-        List<Long> memeIdList = records.stream().map(UserFavorite::getMemeId).toList();
-        Map<Long, Meme> memeMap = queryMemeMap(memeIdList);
         List<UserFavoriteItemVO> list = new ArrayList<>();
-        for (UserFavorite favorite : records) {
-            Meme meme = memeMap.get(favorite.getMemeId());
-            if (meme == null) {
+        for (UserFavoriteMemeJoinRow row : rows) {
+            if (row == null || row.getMemeId() == null) {
                 continue;
             }
             UserFavoriteItemVO item = new UserFavoriteItemVO();
-            item.setId(meme.getId() == null ? null : meme.getId().longValue());
-            item.setFavoriteId(favorite.getId());
-            item.setName(meme.getName());
-            item.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            item.setPageViews(meme.getPageViews());
-            item.setFolderId(favorite.getFolderId());
-            item.setSortOrder(favorite.getSortOrder());
-            item.setFavoriteTime(favorite.getCreateTime());
+            item.setId(row.getMemeId());
+            item.setFavoriteId(row.getFavoriteId());
+            item.setName(row.getName());
+            item.setImage(ossUrlHelper.toPublicUrl(row.getImage()));
+            item.setPageViews(row.getPageViews());
+            item.setFolderId(row.getFolderId());
+            item.setSortOrder(row.getSortOrder());
+            item.setFavoriteTime(row.getFavoriteTime());
             list.add(item);
         }
 
@@ -354,7 +349,8 @@ public class UserProfileServiceImpl implements IUserProfileService {
         pageVO.setList(list);
         pageVO.setPage(pageNo);
         pageVO.setSize(pageSize);
-        pageVO.setTotal(result.getTotal());
+        pageVO.setTotal(total);
+        pageVO.setHasMore(offset + list.size() < total);
 
         writeCache(cacheKey, pageVO);
         return pageVO;
