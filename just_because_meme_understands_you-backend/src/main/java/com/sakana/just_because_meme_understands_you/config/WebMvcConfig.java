@@ -28,7 +28,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/detail",
                         "/detail/views",
                         "/detail/*/comments",
-                        "/detail/comments/*/replies"
+                        "/detail/comments/*/replies",
+                        "/list"
                 );
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns("/**")
@@ -45,6 +46,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/user/*/favorite-folders",
                         "/list",
                         "/search",
+                        "/home/**",
                         "/detail",
                         "/detail/views",
                         "/views/**",

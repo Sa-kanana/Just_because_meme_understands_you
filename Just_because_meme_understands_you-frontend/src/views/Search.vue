@@ -20,7 +20,15 @@
 
     <!-- 结果网格 -->
     <div v-if="!keyword" class="search-empty-tip">
-      <el-empty description="请输入关键字进行搜索" />
+      <div v-if="fromHome" class="search-entry">
+        <h2 class="search-entry__title">搜梗</h2>
+        <p class="search-entry__desc">在顶部搜索框输入关键词，查找梗图名称、介绍或标签。</p>
+        <ul class="search-entry__tips">
+          <li>支持标签名搜索，例如从首页热门标签点选会自动带入</li>
+          <li>可使用排序筛选：最多点击 / 点赞 / 评论</li>
+        </ul>
+      </div>
+      <el-empty v-else description="请输入关键字进行搜索" />
     </div>
     <template v-else>
       <div v-if="loading" class="meme-loading">
@@ -44,67 +52,20 @@
             :lg="6"
             class="meme-col"
           >
-            <router-link
+            <MemeCard
               :to="{
                 name: 'memeDetail',
                 params: { id: item.id },
                 query: keyword ? { from: 'search', keyword } : { from: 'search' },
               }"
-              class="meme-card-link"
-            >
-              <el-card
-                shadow="hover"
-                class="meme-card"
-                :body-style="{
-                  padding: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  height: '100%',
-                }"
-              >
-                <div class="meme-img-wrap">
-                  <el-image
-                    :src="item.image"
-                    :alt="item.name"
-                    fit="cover"
-                    class="meme-img"
-                    lazy
-                  >
-                    <template #error>
-                      <div class="meme-img-error">
-                        <span>加载失败</span>
-                      </div>
-                    </template>
-                  </el-image>
-                  <div class="meme-img-overlay">
-                    <span class="overlay-stat">👁 {{ formatNum(item.pageViews) }}</span>
-                    <span class="overlay-stat">💬 {{ formatNum(item.comments) }}</span>
-                  </div>
-                </div>
-                <div class="meme-info">
-                  <div class="meme-name" :title="item.name">{{ item.name || '—' }}</div>
-                  <div class="meme-stats">
-                    <span title="浏览量">👁 {{ formatNum(item.pageViews) }}</span>
-                    <span title="点赞">👍 {{ formatNum(item.likes) }}</span>
-                    <span title="评论">💬 {{ formatNum(item.comments) }}</span>
-                  </div>
-                  <div v-if="tags(item).length" class="meme-tags">
-                    <el-tag
-                      v-for="tag in tags(item).slice(0, 3)"
-                      :key="tag.id"
-                      size="small"
-                      type="info"
-                      class="meme-tag"
-                    >
-                      {{ tag.name }}
-                    </el-tag>
-                  </div>
-                  <div class="meme-time">
-                    {{ formatDate(item.releaseTime || item.updateTime) || '—' }}
-                  </div>
-                </div>
-              </el-card>
-            </router-link>
+              :name="item.name"
+              :image="item.image"
+              :page-views="item.pageViews"
+              :likes="item.likes"
+              :comments="item.comments"
+              :release-time="item.releaseTime"
+              :update-time="item.updateTime"
+            />
           </el-col>
         </el-row>
         <!-- 无限滚动触底哨兵 -->
@@ -129,6 +90,7 @@
 <script>
 import { searchMeme } from '@/api/search'
 import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
+import MemeCard from '@/components/meme/MemeCard.vue'
 import { buildSearchBreadcrumbs } from '@/utils/pageBreadcrumb'
 
 const SORT_TABS = [
@@ -144,6 +106,7 @@ export default {
   name: 'SearchPage',
   components: {
     AppBreadcrumb,
+    MemeCard,
   },
   data() {
     return {
@@ -161,6 +124,9 @@ export default {
   computed: {
     keyword() {
       return (this.$route.query.keyword || '').trim()
+    },
+    fromHome() {
+      return String(this.$route.query.from || '').trim() === 'home'
     },
     breadcrumbItems() {
       return buildSearchBreadcrumbs({ keyword: this.keyword })
@@ -208,9 +174,6 @@ export default {
     changeSort(value) {
       this.sortBy = value
     },
-    tags(item) {
-      return item.memeTag || item.label || []
-    },
     async fetchList() {
       if (!this.keyword) {
         this.list = []
@@ -251,19 +214,6 @@ export default {
         this.loadMoreLoading = false
         this.observeSentinel()
       })
-    },
-    formatNum(num) {
-      if (num == null) return '0'
-      const n = Number(num)
-      if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿'
-      if (n >= 1e4) return (n / 1e4).toFixed(1) + '万'
-      return String(n)
-    },
-    formatDate(str) {
-      if (!str) return ''
-      const s = String(str).trim()
-      const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
-      return match ? match[1] : ''
     },
   },
 }
@@ -316,6 +266,37 @@ export default {
   padding: 48px 0;
 }
 
+.search-entry {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(49, 138, 239, 0.14);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.search-entry__title {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.search-entry__desc {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.search-entry__tips {
+  margin: 0;
+  padding-left: 18px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
 .meme-list-wrap {
   min-height: 120px;
 }
@@ -339,138 +320,7 @@ export default {
 }
 
 .meme-col {
-  margin-bottom: 16px;
-}
-
-.meme-card {
-  border-radius: 16px;
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  height: 320px;
-}
-
-.meme-card :deep(.el-card__body) {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  padding: 0;
-}
-
-.meme-card:hover {
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-  transform: translateY(-3px);
-  border-color: #d1d5db;
-}
-
-.meme-card-link {
-  display: block;
-  text-decoration: none !important;
-  color: inherit;
-}
-
-.meme-card-link:hover,
-.meme-card-link:visited,
-.meme-card-link:focus {
-  text-decoration: none !important;
-}
-
-.meme-card-link * {
-  text-decoration: none !important;
-}
-
-.meme-img-wrap {
-  position: relative;
-  width: 100%;
-  height: 160px;
-  flex-shrink: 0;
-  background: #f3f4f6;
-  overflow: hidden;
-}
-
-.meme-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.meme-img-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 8px 10px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  color: #fff;
-}
-
-.overlay-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.meme-img-error {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-  font-size: 14px;
-}
-
-.meme-info {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-}
-
-.meme-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meme-stats {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 8px;
-}
-
-.meme-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
-  min-height: 26px;
-}
-
-.meme-tag {
-  margin: 0;
-}
-
-.meme-time {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: auto;
-  text-decoration: none;
+  margin-bottom: 20px;
 }
 
 .meme-loading,

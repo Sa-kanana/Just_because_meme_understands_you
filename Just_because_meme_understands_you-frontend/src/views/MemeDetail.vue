@@ -515,6 +515,7 @@ import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
 import { buildMemeDetailBreadcrumbs } from '@/utils/pageBreadcrumb'
+import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 
@@ -590,9 +591,11 @@ const normalizedLinks = computed(() => {
     if (!link) continue
     if (link.url) {
       const type = String(link.type || 'link').toLowerCase()
+      const url = sanitizeExternalUrl(String(link.url).trim())
+      if (!url) continue
       items.push({
         key: `link-${link.id ?? items.length}`,
-        url: String(link.url).trim(),
+        url,
         displayTitle: String(link.title || link.url).trim(),
         type,
         isMedia: type === 'media' || type === 'image',
@@ -1239,7 +1242,7 @@ function linkTypeIcon(type) {
 function safeUrls(resourceUrl) {
   if (!Array.isArray(resourceUrl)) return []
   return resourceUrl
-    .map((u) => String(u || '').trim())
+    .map((u) => sanitizeExternalUrl(String(u || '').trim()))
     .filter(Boolean)
 }
 

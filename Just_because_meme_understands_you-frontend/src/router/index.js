@@ -30,6 +30,7 @@ const routes = [
     path: '/publish',
     name: 'publishMeme',
     component: () => import('@/views/PublishMeme.vue'),
+    meta: { requiresAuth: true },
   },
   {
     path: '/login',
@@ -48,6 +49,14 @@ const routes = [
     name: 'forgotPassword',
     component: () => import('@/views/ForgotPassword.vue'),
     meta: guestOnlyMeta,
+  },
+  {
+    path: '/user/me',
+    redirect: (to) => ({
+      name: 'userProfile',
+      params: { userId: 'me' },
+      query: to.query,
+    }),
   },
   {
     path: '/user/:userId',
@@ -106,6 +115,13 @@ function dispatchRouteLoading(loading) {
 
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
+  if (to.meta?.requiresAuth && !authStore.isLoggedIn) {
+    next({
+      name: 'login',
+      query: { redirect: resolveSafeRedirectPath(to.fullPath) },
+    })
+    return
+  }
   if (to.meta?.guestOnly && authStore.isLoggedIn) {
     next(resolveSafeRedirectPath(to.query.redirect))
     return

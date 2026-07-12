@@ -8,10 +8,12 @@ import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserAuth;
 import com.sakana.just_because_meme_understands_you.mapper.UserAuthMapper;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.auth.UserSessionRevoker;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.util.EmailValidatorUtil;
+import com.sakana.just_because_meme_understands_you.util.PasswordPolicy;
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
@@ -69,6 +71,9 @@ public class AuthServiceImpl implements IAuthService {
 
     @Resource
     private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private UserSessionRevoker userSessionRevoker;
 
     /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
     @Value("${spring.mail.username}")
@@ -183,6 +188,7 @@ public class AuthServiceImpl implements IAuthService {
         if (!password.equals(confirmPassword)) {
             throw new BizException(Result.CODE_ERROR, "两次密码输入不一致");
         }
+        PasswordPolicy.validate(password);
 
         // 校验邮箱是否已注册
         if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {
@@ -298,6 +304,7 @@ public class AuthServiceImpl implements IAuthService {
         if (!StringUtils.hasText(token) || !StringUtils.hasText(newPassword)) {
             throw new BizException(Result.CODE_ERROR, "token 和新密码不能为空");
         }
+        PasswordPolicy.validate(newPassword);
 
         String resetKey = AuthConstants.RESET_TOKEN_PREFIX + token;
         String userIdStr = stringRedisTemplate.opsForValue().get(resetKey);
@@ -315,6 +322,7 @@ public class AuthServiceImpl implements IAuthService {
         userAuth.setCredential(passwordEncoder.encode(newPassword));
         userAuthMapper.updateById(userAuth);
         stringRedisTemplate.delete(resetKey);
+        userSessionRevoker.revokeAllByUserId(userIdStr);
     }
 
     // ==================== 退出登录 ====================
@@ -347,8 +355,7 @@ public class AuthServiceImpl implements IAuthService {
         );
 
         if (StringUtils.hasText(refreshToken)) {
-            String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
-            stringRedisTemplate.delete(refreshKey);
+            userSessionRevoker.revokeRefreshToken(refreshToken, String.valueOf(claims.getSubject()));
         }
     }
 
@@ -437,10 +444,24 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     private void storeRefreshToken(String refreshToken, String userId) {
-        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
+        String refreshMd5 = DigestUtil.md5Hex(refreshToken);
+        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + refreshMd5;
+        String userIndexKey = AuthConstants.USER_REFRESH_INDEX_PREFIX + userId;
+
+        String previousMd5 = stringRedisTemplate.opsForValue().get(userIndexKey);
+        if (StringUtils.hasText(previousMd5) && !previousMd5.equals(refreshMd5)) {
+            stringRedisTemplate.delete(AuthConstants.REFRESH_TOKEN_PREFIX + previousMd5);
+        }
+
         stringRedisTemplate.opsForValue().set(
                 refreshKey,
                 userId,
+                refreshTokenExpirationMillis,
+                TimeUnit.MILLISECONDS
+        );
+        stringRedisTemplate.opsForValue().set(
+                userIndexKey,
+                refreshMd5,
                 refreshTokenExpirationMillis,
                 TimeUnit.MILLISECONDS
         );

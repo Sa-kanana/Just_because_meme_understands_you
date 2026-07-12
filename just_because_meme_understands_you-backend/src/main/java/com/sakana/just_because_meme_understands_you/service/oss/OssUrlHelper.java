@@ -28,6 +28,10 @@ import java.util.Set;
 @Component
 public class OssUrlHelper {
 
+    private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of(
+            ".jpg", ".jpeg", ".png", ".webp", ".gif"
+    );
+
     @Value("${oss.bucketName:}")
     private String bucketName;
 
@@ -134,10 +138,22 @@ public class OssUrlHelper {
         }
         for (String prefix : allowedPrefixes) {
             if (StringUtils.hasText(prefix) && key.startsWith(prefix)) {
+                assertAllowedImageExtension(key);
                 return;
             }
         }
         throw new BizException(Result.CODE_BAD_REQUEST, "图片地址不合法");
+    }
+
+    private void assertAllowedImageExtension(String key) {
+        int dotIndex = key.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex >= key.length() - 1) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "图片须为 JPG、PNG、WebP 或 GIF 格式");
+        }
+        String extension = key.substring(dotIndex).toLowerCase(Locale.ROOT);
+        if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "图片须为 JPG、PNG、WebP 或 GIF 格式");
+        }
     }
 
     public void refreshMemeDetailUrls(MemeDetailVO vo) {

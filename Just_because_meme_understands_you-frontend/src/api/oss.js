@@ -31,6 +31,7 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
   if (!file) {
     throw new Error('请选择要上传的文件')
   }
+  assertImageFile(file)
   const policy = await getOssPolicy(fileType)
   const uploadHost = String(policy.host || '').replace(/\/$/, '')
   const publicBaseUrl = String(policy.publicBaseUrl || policy.host || '').replace(/\/$/, '')
@@ -39,7 +40,7 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
   }
   const dir = String(policy.dir || '')
   // 强制图片 Content-Type，与后端 policy 的 starts-with $Content-Type image/ 对应
-  const contentType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg'
+  const contentType = ALLOWED_IMAGE_TYPES.includes(file.type) ? file.type : 'image/jpeg'
   const suffix = pickSuffix(fileName || (file.name || ''), file.type)
   const objectName = `${dir}${Date.now()}_${randomToken()}${suffix}`
   const objectKey = objectName
@@ -77,6 +78,18 @@ export async function uploadToOss(file, fileType = 'common', fileName) {
   }
 
   return `${publicBaseUrl}/${objectKey}`
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+function assertImageFile(file) {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    throw new Error('仅支持 JPG、PNG、WebP、GIF 图片')
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error('图片不能超过 10MB')
+  }
 }
 
 function pickSuffix(name, mime) {

@@ -77,7 +77,7 @@ export default {
     },
     spread: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     showViews: {
       type: Boolean,
@@ -168,35 +168,46 @@ export default {
   white-space: nowrap;
 }
 
-/* 封面叠层：毛玻璃胶囊 */
+/* 封面叠层：B 站风格，白字 + 图标，无胶囊底 */
 .meme-card-stats--overlay {
-  gap: 5px;
+  gap: 10px;
 }
 
 .meme-card-stats--overlay .meme-card-stats__chip {
-  padding: 4px 9px 4px 7px;
+  padding: 0;
   font-size: 12px;
-  color: #f8fafc;
-  background: rgba(15, 23, 42, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  font-weight: 400;
+  color: #fff;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .meme-card-stats--overlay .meme-card-stats__icon {
-  width: 14px;
-  height: 14px;
-  color: #e2e8f0;
+  width: 16px;
+  height: 16px;
+  color: #fff;
+  opacity: 0.95;
+}
+
+.meme-card-stats--overlay .meme-card-stats__value {
+  font-weight: 400;
 }
 
 .meme-card-stats--overlay .meme-card-stats__chip.is-likes {
-  color: #fff7ed;
-  background: rgba(234, 88, 12, 0.38);
-  border-color: rgba(255, 237, 213, 0.22);
+  color: #fff;
+  background: transparent;
+  border: none;
 }
 
 .meme-card-stats--overlay .meme-card-stats__chip.is-likes .meme-card-stats__icon {
-  color: #fdba74;
+  color: #fff;
+}
+
+.meme-card-stats--overlay .meme-card-stats__group {
+  gap: 10px;
 }
 
 /* 信息区横排 */

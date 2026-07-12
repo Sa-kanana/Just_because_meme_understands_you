@@ -3,6 +3,8 @@ package com.sakana.just_because_meme_understands_you.controller;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.auth.LoginRateLimiter;
+import com.sakana.just_because_meme_understands_you.util.ClientIpResolver;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.dto.ForgotPasswordSendCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
@@ -41,6 +43,12 @@ public class AuthController {
     private IAuthService authService;
 
     @Resource
+    private LoginRateLimiter loginRateLimiter;
+
+    @Resource
+    private ClientIpResolver clientIpResolver;
+
+    @Resource
     private StringRedisTemplate stringRedisTemplate;
 
     @Value("${jwt.refresh-expiration}")
@@ -59,11 +67,23 @@ public class AuthController {
      * 响应：Result<DataResponse>，其中 data 包含 token 和 user 信息
      */
     @PostMapping("/login")
-    public Result<LoginResponseVO> login(@RequestBody LoginRequestDTO request, HttpServletResponse response) {
-        AuthTokenBundleVO tokenBundle = authService.login(request);
-        writeRefreshTokenCookie(response, tokenBundle.getRefreshToken());
-        LoginResponseVO responseVO = buildLoginResponse(tokenBundle);
-        return Result.success(responseVO);
+    public Result<LoginResponseVO> login(
+            @RequestBody LoginRequestDTO request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response) {
+        loginRateLimiter.checkAllowed(httpRequest, request.getEmail());
+        try {
+            AuthTokenBundleVO tokenBundle = authService.login(request);
+            loginRateLimiter.onSuccess(request.getEmail());
+            writeRefreshTokenCookie(response, tokenBundle.getRefreshToken());
+            LoginResponseVO responseVO = buildLoginResponse(tokenBundle);
+            return Result.success(responseVO);
+        } catch (BizException e) {
+            if (e.getCode() == Result.CODE_ERROR && "账号或密码错误".equals(e.getMessage())) {
+                loginRateLimiter.onFailure(request.getEmail());
+            }
+            throw e;
+        }
     }
 
     /**
@@ -204,7 +224,7 @@ public class AuthController {
     }
 
     private void checkRefreshQpsLimit(HttpServletRequest request, String refreshToken) {
-        String clientIp = extractClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
         String tokenFingerprint = StringUtils.hasText(refreshToken)
                 ? DigestUtil.md5Hex(refreshToken)
                 : "no-token";
@@ -218,17 +238,5 @@ public class AuthController {
         }
     }
 
-    private String extractClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(xForwardedFor)) {
-            int commaIndex = xForwardedFor.indexOf(',');
-            return commaIndex > 0 ? xForwardedFor.substring(0, commaIndex).trim() : xForwardedFor.trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (StringUtils.hasText(realIp)) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
-    }
 }
 

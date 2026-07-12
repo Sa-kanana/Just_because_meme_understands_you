@@ -11,6 +11,7 @@ import com.sakana.just_because_meme_understands_you.service.meme.MemeBloomFilter
 import com.sakana.just_because_meme_understands_you.service.meme.MemeViewDedupService;
 import com.sakana.just_because_meme_understands_you.service.meme.MemeViewRateLimiter;
 import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.util.ClientIpResolver;
 import com.sakana.just_because_meme_understands_you.vo.MemePageViewBatchVO;
 import com.sakana.just_because_meme_understands_you.vo.MemePageViewVO;
 import jakarta.annotation.Resource;
@@ -53,6 +54,9 @@ public class MemeViewServiceImpl implements IMemeViewService {
     @Resource
     private MemeViewRateLimiter memeViewRateLimiter;
 
+    @Resource
+    private ClientIpResolver clientIpResolver;
+
     @Override
     public MemePageViewVO reportView(Long userId, String viewSessionId, MemeViewReportRequestDTO request,
                                      HttpServletRequest httpServletRequest) {
@@ -62,7 +66,7 @@ public class MemeViewServiceImpl implements IMemeViewService {
         Meme meme = loadPublicMeme(memeId, userId);
         int currentCount = resolvePageViews(meme);
 
-        String viewerKey = resolveViewerKey(userId, viewSessionId, extractClientIp(httpServletRequest));
+        String viewerKey = resolveViewerKey(userId, viewSessionId, clientIpResolver.resolve(httpServletRequest));
         memeViewRateLimiter.check(viewerKey);
 
         MemePageViewVO vo = new MemePageViewVO();
@@ -176,22 +180,6 @@ public class MemeViewServiceImpl implements IMemeViewService {
 
     private boolean isValidViewSessionId(String sessionId) {
         return sessionId.length() <= 64 && UUID_PATTERN.matcher(sessionId).matches();
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        if (request == null) {
-            return "unknown";
-        }
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(xForwardedFor)) {
-            int commaIndex = xForwardedFor.indexOf(',');
-            return commaIndex > 0 ? xForwardedFor.substring(0, commaIndex).trim() : xForwardedFor.trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (StringUtils.hasText(realIp)) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 
     static List<Long> parseMemeIdsParam(String raw) {

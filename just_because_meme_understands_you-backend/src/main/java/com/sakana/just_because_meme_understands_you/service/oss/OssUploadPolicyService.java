@@ -86,6 +86,16 @@ public class OssUploadPolicyService {
         if (!StringUtils.hasText(bucketName)) {
             throw new BizException(Result.CODE_ERROR, "未配置 OSS bucketName");
         }
+        String normalized = StringUtils.hasText(fileType) ? fileType.trim().toLowerCase() : DEFAULT_DIR;
+        if ("home".equals(normalized)) {
+            throw new BizException(Result.CODE_FORBIDDEN, "无权上传该类型文件");
+        }
+        if ("avatar".equals(normalized) || "meme".equals(normalized) || "comment".equals(normalized)) {
+            Long userId = parseCurrentUserId();
+            if (userId == null) {
+                throw new BizException(Result.CODE_UNAUTHORIZED, "请先登录后再上传");
+            }
+        }
         String dirPrefix = resolveDir(fileType);
 
         Date expiration = new Date(System.currentTimeMillis() + POLICY_TTL_SECONDS * 1000);

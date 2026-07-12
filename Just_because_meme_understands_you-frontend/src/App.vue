@@ -3,7 +3,7 @@
     <header class="site-header">
       <div class="header-left">
         <router-link to="/" class="logo-wrap">
-          <img class="logo-img" alt="网站 logo" src="@/assets/网站图标.png" />
+          <img class="logo-img" alt="网站 logo" src="@/assets/icon.jpg" />
           <span class="logo-text">只因“梗”懂你</span>
         </router-link>
         <nav class="nav-links">
@@ -19,8 +19,9 @@
 
       <div class="header-center">
         <el-input
+          ref="headerSearchRef"
           v-model="searchKeyword"
-          placeholder="搜索"
+          placeholder="搜索梗图、标签..."
           clearable
           class="header-search"
           @keyup.enter="handleSearch"
@@ -178,8 +179,27 @@ export default {
     '$route.query.keyword'(val) {
       if (val != null) this.searchKeyword = val
     },
+    '$route'(to) {
+      if (to.name === 'search' && String(to.query.focus || '') === '1') {
+        this.$nextTick(() => {
+          this.focusHeaderSearch()
+          const query = { ...to.query }
+          delete query.focus
+          this.$router.replace({ name: 'search', query })
+        })
+      }
+    },
   },
   methods: {
+    focusHeaderSearch() {
+      const input = this.$refs.headerSearchRef
+      if (input && typeof input.focus === 'function') {
+        input.focus()
+        return
+      }
+      const el = input?.$el?.querySelector('input')
+      el?.focus()
+    },
     handleSearch() {
       const keyword = this.searchKeyword?.trim() || ''
       this.$router.push({ path: '/search', query: { keyword } })

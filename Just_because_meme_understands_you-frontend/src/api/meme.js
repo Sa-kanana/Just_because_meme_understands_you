@@ -34,25 +34,61 @@ function normalizeFolderId(value) {
  */
 
 /**
- * 获取梗分页列表（接口每次返回 8 条）
+ * 获取梗分页列表
  * @param {Object} params
  * @param {number} [params.page=1]
- * @returns {Promise<MemeItem[]>}
+ * @param {string} [params.sort='hot'] hot | new | comments | views | following
+ * @param {number} [params.size=16]
+ * @returns {Promise<{ list: MemeItem[], page: number, size: number, hasMore: boolean }>}
  */
+function normalizeMemeItems(items) {
+  if (!Array.isArray(items)) return []
+  return items
+    .filter((item) => item && Number(item.status) === 1)
+    .map((item) => {
+      const label = item.label || item.memeTag || []
+      return { ...item, label }
+    })
+}
+
 export function getMemeList(params = {}) {
-  const { page = 1 } = params
-  const query = new URLSearchParams({ page: String(page) })
+  const { page = 1, sort = 'hot', size = 16 } = params
+  const query = new URLSearchParams({
+    page: String(page),
+    sort: String(sort),
+    size: String(size),
+  })
   return request(`/list?${query}`, { method: 'GET' }).then((res) => {
-    if (res && Array.isArray(res.data)) {
-      // 只展示 status 为 1 的梗，并兼容 memeTag / label 字段
-      return res.data
-        .filter((item) => item && Number(item.status) === 1)
-        .map((item) => {
-          const label = item.label || item.memeTag || []
-          return { ...item, label }
-        })
+    if (res && res.data && typeof res.data === 'object') {
+      const data = res.data
+      if (Array.isArray(data.list)) {
+        return {
+          list: normalizeMemeItems(data.list),
+          page: data.page != null ? Number(data.page) : Number(page),
+          size: data.size != null ? Number(data.size) : Number(size),
+          hasMore: data.hasMore != null ? !!data.hasMore : false,
+        }
+      }
+      if (Array.isArray(data)) {
+        const list = normalizeMemeItems(data)
+        return {
+          list,
+          page: Number(page),
+          size: Number(size),
+          hasMore: list.length >= Number(size),
+        }
+      }
     }
-    return []
+    if (res && Array.isArray(res.data)) {
+      const list = normalizeMemeItems(res.data)
+      return {
+        list,
+        page: Number(page),
+        size: Number(size),
+        hasMore: list.length >= Number(size),
+      }
+    }
+    return { list: [], page: Number(page), size: Number(size), hasMore: false }
   })
 }
 

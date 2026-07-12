@@ -7,14 +7,8 @@
     aria-hidden="true"
   >
     <template v-if="type === 'views'">
-      <path
-        d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12s-3.75 6.75-9.75 6.75S2.25 12 2.25 12Z"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <circle cx="12" cy="12" r="2.75" stroke="currentColor" stroke-width="1.75" />
+      <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.75" />
+      <path d="M10 9.5v5l4.5-2.5L10 9.5Z" fill="currentColor" stroke="none" />
     </template>
     <template v-else-if="type === 'likes'">
       <path

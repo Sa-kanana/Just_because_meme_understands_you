@@ -445,7 +445,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 user.setAvatar(null);
             } else {
                 String avatarKey = ossUrlHelper.normalizeForStorage(avatarRaw);
-                ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/");
+                ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/" + userId + "/");
                 user.setAvatar(avatarKey);
             }
         }

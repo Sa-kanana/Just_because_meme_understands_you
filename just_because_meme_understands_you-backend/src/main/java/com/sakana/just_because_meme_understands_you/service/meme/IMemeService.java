@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.SimpleMemeVO;
 
 import java.util.List;
@@ -28,6 +29,18 @@ public interface IMemeService extends IService<Meme> {
      * @return 当前页的梗列表（包含标签），最多 8 条
      */
     List<MemeListItemVO> pageMemeList(int page);
+
+    /**
+     * 梗分页 Feed，支持 sort：hot / new / comments / views / following。
+     *
+     * @param followingUserId 当 sort=following 时必填，表示当前登录用户 id
+     */
+    PageVO<MemeListItemVO> pageMemeFeed(int page, int size, String sort, Long followingUserId);
+
+    /**
+     * 今日热梗横滑列表，按综合热度排序。
+     */
+    List<MemeListItemVO> listHotMemes(int limit);
 
     /**
      * 关键字搜索梗，按名称、介绍或标签名模糊匹配，分页返回（每页 8 条）

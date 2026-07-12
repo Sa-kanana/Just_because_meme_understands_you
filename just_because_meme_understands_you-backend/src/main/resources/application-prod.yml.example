@@ -1,0 +1,37 @@
+# 生产环境配置示例（复制为 application-prod.yml 或通过环境变量注入）
+# 切勿将真实密钥提交到版本库
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+  mail:
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+
+oss:
+  endpoint: ${OSS_ENDPOINT}
+  accessKeyId: ${OSS_ACCESS_KEY_ID}
+  accessKeySecret: ${OSS_ACCESS_KEY_SECRET}
+  bucketName: ${OSS_BUCKET_NAME}
+  uploadHost: ${OSS_UPLOAD_HOST}
+  publicBaseUrl: ${OSS_PUBLIC_BASE_URL}
+
+jwt:
+  secret: ${JWT_SECRET}
+  cookie-secure: true
+
+app:
+  security:
+    trusted-proxies: ${TRUSTED_PROXIES}
+    headers:
+      enabled: true
+      hsts-enabled: true
+  cors:
+    enabled: true
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}

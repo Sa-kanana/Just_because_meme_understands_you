@@ -124,30 +124,30 @@
                     :class="{ 'meme-card-item--deleted': item.status === 3 }"
                     @click="handlePublishedCardClick(item)"
                   >
-                    <div class="meme-cover-wrap">
-                      <el-image :src="item.image" fit="cover" class="meme-cover">
-                        <template #error>
-                          <div class="meme-cover-error">图片加载失败</div>
-                        </template>
-                      </el-image>
-                      <div class="meme-cover-shade" aria-hidden="true" />
-                      <span
-                        v-if="isOwnProfile && item.status != null && item.status !== 1"
-                        class="published-status-badge"
-                        :class="`published-status-badge--${item.status}`"
-                      >
-                        {{ item.statusDesc || statusText(item.status) }}
-                      </span>
-                      <div v-if="item.status === 3" class="published-deleted-overlay">
-                        <span class="published-deleted-label">已下架</span>
-                      </div>
-                      <div v-else-if="!isOwnProfile" class="published-cover-stats">
-                        <span class="meme-cover-stat">👁 {{ formatNum(item.pageViews) }}</span>
-                      </div>
-                    </div>
-                    <div class="meme-info">
-                      <div class="meme-info-head">
-                        <div class="meme-title" :title="item.name">{{ item.name || '未命名梗图' }}</div>
+                    <MemeCard
+                      :name="item.name"
+                      :image="item.image"
+                      :page-views="item.pageViews"
+                      :likes="item.likes"
+                      :comments="item.comments"
+                      :release-time="item.releaseTime"
+                      :update-time="item.updateTime"
+                      :show-stats="item.status !== 3"
+                      :meta-text="item.status === 3 ? '已下架' : ''"
+                    >
+                      <template #cover-extra>
+                        <span
+                          v-if="isOwnProfile && item.status != null && item.status !== 1"
+                          class="published-status-badge"
+                          :class="`published-status-badge--${item.status}`"
+                        >
+                          {{ item.statusDesc || statusText(item.status) }}
+                        </span>
+                        <div v-if="item.status === 3" class="published-deleted-overlay">
+                          <span class="published-deleted-label">已下架</span>
+                        </div>
+                      </template>
+                      <template #title-extra>
                         <el-dropdown
                           v-if="isOwnProfile && item.status !== 3"
                           trigger="click"
@@ -197,13 +197,8 @@
                             </el-dropdown-menu>
                           </template>
                         </el-dropdown>
-                      </div>
-                      <div class="meme-meta">
-                        <span>👁 {{ formatNum(item.pageViews) }}</span>
-                        <span>👍 {{ formatNum(item.likes) }}</span>
-                        <span>💬 {{ formatNum(item.comments) }}</span>
-                      </div>
-                    </div>
+                      </template>
+                    </MemeCard>
                   </div>
                 </div>
                 <el-empty
@@ -344,28 +339,27 @@
                           :class="{ 'meme-card-item--selected': isMemeSelected(item.id) }"
                           @click="goMemeDetail(item.id)"
                         >
-                          <div class="meme-cover-wrap">
-                            <el-image :src="item.image" fit="cover" class="meme-cover">
-                              <template #error>
-                                <div class="meme-cover-error">图片加载失败</div>
-                              </template>
-                            </el-image>
-                            <div class="meme-cover-shade" aria-hidden="true" />
-                            <button
-                              v-if="isOwnProfile"
-                              type="button"
-                              class="meme-select-toggle"
-                              :class="{ 'is-checked': isMemeSelected(item.id) }"
-                              aria-label="选择梗图"
-                              @click.stop="toggleMemeSelect(item.id, !isMemeSelected(item.id))"
-                            />
-                            <div class="meme-cover-stats">
-                              <span class="meme-cover-stat">👁 {{ formatNum(item.pageViews) }}</span>
-                            </div>
-                          </div>
-                          <div class="meme-info">
-                            <div class="meme-info-head">
-                              <div class="meme-title" :title="item.name">{{ item.name || '未命名梗图' }}</div>
+                          <MemeCard
+                            :name="item.name"
+                            :image="item.image"
+                            :page-views="item.pageViews"
+                            :likes="item.likes"
+                            :comments="item.comments"
+                            :release-time="item.releaseTime"
+                            :update-time="item.updateTime"
+                            :meta-text="isOwnProfile ? formatFavoriteTime(item.favoriteTime) : ''"
+                          >
+                            <template #cover-extra>
+                              <button
+                                v-if="isOwnProfile"
+                                type="button"
+                                class="meme-select-toggle"
+                                :class="{ 'is-checked': isMemeSelected(item.id) }"
+                                aria-label="选择梗图"
+                                @click.stop="toggleMemeSelect(item.id, !isMemeSelected(item.id))"
+                              />
+                            </template>
+                            <template #title-extra>
                               <el-dropdown
                                 v-if="isOwnProfile"
                                 trigger="click"
@@ -388,11 +382,8 @@
                                   </el-dropdown-menu>
                                 </template>
                               </el-dropdown>
-                            </div>
-                            <div v-if="isOwnProfile" class="meme-meta">
-                              <span class="meme-meta-time">{{ formatFavoriteTime(item.favoriteTime) }}</span>
-                            </div>
-                          </div>
+                            </template>
+                          </MemeCard>
                         </div>
                       </div>
                       <el-empty v-else description="这个收藏夹还没有梗图" />
@@ -825,6 +816,7 @@ import {
 import { batchMoveFavorites, removeMemeFavorite, deletePublishedMeme, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { useAuthStore } from '@/stores/auth'
 import ListLoadFooter from '@/components/layout/ListLoadFooter.vue'
+import MemeCard from '@/components/meme/MemeCard.vue'
 import { resolvePageHasMore } from '@/utils/pagination'
 
 export default {
@@ -833,6 +825,7 @@ export default {
     Cropper,
     ElImageViewer,
     ListLoadFooter,
+    MemeCard,
   },
   data() {
     return {
@@ -1026,8 +1019,12 @@ export default {
       handler() {
         this.syncRouteUserId()
         this.resetFavoriteViewState()
+        this.applyRouteTab()
         this.loadProfile()
       },
+    },
+    '$route.query.tab'() {
+      this.applyRouteTab()
     },
     currentUserId() {
       this.syncRouteUserId()
@@ -1036,8 +1033,24 @@ export default {
     activeTab(val) {
       if (val === 'favorite') {
         this.loadFolders()
+        if (this.isOwnProfile && this.$route.query.tab !== 'favorite') {
+          this.$router.replace({
+            name: 'userProfile',
+            params: this.$route.params,
+            query: { ...this.$route.query, tab: 'favorite' },
+          })
+        }
       } else {
         this.favoriteViewMode = 'folders'
+        if (this.$route.query.tab === 'favorite') {
+          const query = { ...this.$route.query }
+          delete query.tab
+          this.$router.replace({
+            name: 'userProfile',
+            params: this.$route.params,
+            query,
+          })
+        }
       }
     },
   },
@@ -1046,14 +1059,25 @@ export default {
     sameFolderId,
     syncRouteUserId() {
       if (this.$route.name !== 'userProfile') return
-      // 仅当 URL 未带合法 userId 时，回退到当前登录用户主页
-      if (this.routeUserId && /^\d+$/.test(this.routeUserId)) return
+      const isMeAlias = this.routeUserId === 'me'
+      const hasNumericUserId = this.routeUserId && /^\d+$/.test(this.routeUserId)
+      if (hasNumericUserId && !isMeAlias) return
       if (!this.currentUserId || !/^\d+$/.test(this.currentUserId)) return
       this.$router.replace({
         name: 'userProfile',
         params: { userId: this.currentUserId },
         query: this.$route.query,
       })
+    },
+    applyRouteTab() {
+      const tab = this.$route.query.tab != null ? String(this.$route.query.tab).trim() : ''
+      if (tab !== 'favorite') return
+      const isSelfRoute = this.isOwnProfile
+        || this.routeUserId === 'me'
+        || (this.currentUserId && this.routeUserId === this.currentUserId)
+      if (isSelfRoute) {
+        this.activeTab = 'favorite'
+      }
     },
     resetFavoriteViewState() {
       this.favoriteViewMode = 'folders'
@@ -1086,6 +1110,7 @@ export default {
         }
         this.publishedPageNo = 1
         this.loadPublishedMemes()
+        this.applyRouteTab()
         if (this.activeTab === 'favorite') {
           this.loadFolders()
         }
@@ -2072,21 +2097,12 @@ export default {
   box-shadow: none;
 }
 
-.published-meme-grid .meme-cover-wrap {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #f3f4f6;
+.published-meme-grid .meme-card-item--published:not(.meme-card-item--deleted):hover :deep(.meme-card__cover) {
+  transform: scale(1.02);
 }
 
-.published-meme-grid .meme-cover {
-  height: 148px;
-  display: block;
+.published-meme-grid :deep(.meme-card__cover) {
   transition: transform 0.25s ease;
-}
-
-.published-meme-grid .meme-card-item--published:not(.meme-card-item--deleted):hover .meme-cover {
-  transform: scale(1.03);
 }
 
 .published-status-badge {
@@ -2939,27 +2955,8 @@ export default {
   transform: none;
   box-shadow: none;
 }
-.folder-meme-grid .meme-card-item--favorite.meme-card-item--selected .meme-cover-wrap {
+.folder-meme-grid .meme-card-item--favorite.meme-card-item--selected :deep(.meme-card__cover) {
   box-shadow: 0 0 0 2px var(--el-color-primary);
-}
-.meme-cover-wrap {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #f3f4f6;
-}
-.folder-meme-grid .meme-cover {
-  height: 118px;
-  display: block;
-}
-.meme-cover-shade {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 48px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.55) 100%);
-  pointer-events: none;
 }
 .meme-select-toggle {
   position: absolute;

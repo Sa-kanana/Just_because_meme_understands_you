@@ -11,8 +11,10 @@ import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.common.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
+import com.sakana.just_because_meme_understands_you.entity.UserRelation;
 import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
+import com.sakana.just_because_meme_understands_you.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeResourceService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentCountService;
@@ -23,6 +25,7 @@ import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeResourceVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeTagVO;
+import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.SimpleMemeVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -72,53 +75,60 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     @Resource
     private OssUrlHelper ossUrlHelper;
 
+    @Resource
+    private UserRelationMapper userRelationMapper;
+
     @Override
     public List<MemeListItemVO> pageMemeList(int page) {
+        PageVO<MemeListItemVO> pageVO = pageMemeFeed(page, IMemeService.PAGE_SIZE, "hot", null);
+        return pageVO.getList() != null ? pageVO.getList() : Collections.emptyList();
+    }
+
+    @Override
+    public PageVO<MemeListItemVO> pageMemeFeed(int page, int size, String sort, Long followingUserId) {
         if (page <= 0) {
             page = 1;
         }
-        // 每页固定 8 条，根据前端传递的页数分页返回
-        int pageSize = IMemeService.PAGE_SIZE;
+        if (size <= 0) {
+            size = IMemeService.PAGE_SIZE;
+        }
+        size = Math.min(size, 32);
 
-        Page<Meme> mpPage = new Page<>(page, pageSize);
+        String normalizedSort = normalizeSort(sort);
+        Page<Meme> mpPage = new Page<>(page, size);
         LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getStatus, 1)
-                .orderByDesc(Meme::getLikes)
-                .orderByDesc(Meme::getId);
+                .eq(Meme::getStatus, STATUS_NORMAL);
+        applyFeedSort(wrapper, normalizedSort, followingUserId);
 
         Page<Meme> resultPage = this.page(mpPage, wrapper);
         List<Meme> memeList = resultPage.getRecords();
-        if (memeList == null || memeList.isEmpty()) {
-            return Collections.emptyList();
+        List<MemeListItemVO> voList = toMemeListItemVOs(memeList);
+
+        PageVO<MemeListItemVO> pageVO = new PageVO<>();
+        pageVO.setList(voList);
+        pageVO.setPage(page);
+        pageVO.setSize(size);
+        pageVO.setTotal(resultPage.getTotal());
+        pageVO.setHasMore(resultPage.getCurrent() * resultPage.getSize() < resultPage.getTotal());
+        return pageVO;
+    }
+
+    @Override
+    public List<MemeListItemVO> listHotMemes(int limit) {
+        if (limit <= 0) {
+            limit = 6;
         }
+        limit = Math.min(limit, 12);
 
-        // 收集本页所有梗的 id
-        List<Integer> memeIds = memeList.stream()
-                .map(Meme::getId)
-                .toList();
-
-        Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
-
-        // 组装 VO
-        List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
-        for (Meme meme : memeList) {
-            MemeListItemVO vo = new MemeListItemVO();
-            vo.setId(meme.getId());
-            vo.setName(meme.getName());
-            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            vo.setPageViews(meme.getPageViews());
-            vo.setLikes(meme.getLikes());
-            vo.setComments(meme.getComments());
-            vo.setReleaseTime(meme.getReleaseTime());
-            vo.setUpdateTime(meme.getUpdateTime());
-            vo.setStatus(meme.getStatus());
-            List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
-            vo.setMemeTag(toMemeTagVOList(tags));
-            vo.setLabel(tags);
-            voList.add(vo);
-        }
-
-        return voList;
+        Page<Meme> mpPage = new Page<>(1, limit);
+        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getStatus, STATUS_NORMAL)
+                .orderByDesc(Meme::getLikes)
+                .orderByDesc(Meme::getComments)
+                .orderByDesc(Meme::getPageViews)
+                .orderByDesc(Meme::getId);
+        Page<Meme> resultPage = this.page(mpPage, wrapper);
+        return toMemeListItemVOs(resultPage.getRecords());
     }
 
     @Override
@@ -396,6 +406,79 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private List<MemeListItemVO> toMemeListItemVOs(List<Meme> memeList) {
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
+        Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+
+        List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
+        for (Meme meme : memeList) {
+            MemeListItemVO vo = new MemeListItemVO();
+            vo.setId(meme.getId());
+            vo.setName(meme.getName());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
+            vo.setPageViews(meme.getPageViews());
+            vo.setLikes(meme.getLikes());
+            vo.setComments(meme.getComments());
+            vo.setReleaseTime(meme.getReleaseTime());
+            vo.setUpdateTime(meme.getUpdateTime());
+            vo.setStatus(meme.getStatus());
+            List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
+            vo.setMemeTag(toMemeTagVOList(tags));
+            vo.setLabel(tags);
+            voList.add(vo);
+        }
+        return voList;
+    }
+
+    private void applyFeedSort(LambdaQueryWrapper<Meme> wrapper, String sort, Long followingUserId) {
+        if ("following".equals(sort)) {
+            List<Long> followingIds = listFollowingUserIds(followingUserId);
+            if (followingIds.isEmpty()) {
+                wrapper.eq(Meme::getId, -1);
+            } else {
+                wrapper.in(Meme::getUserId, followingIds);
+            }
+            wrapper.orderByDesc(Meme::getReleaseTime).orderByDesc(Meme::getId);
+            return;
+        }
+        switch (sort) {
+            case "new" -> wrapper.orderByDesc(Meme::getReleaseTime).orderByDesc(Meme::getId);
+            case "comments" -> wrapper.orderByDesc(Meme::getComments).orderByDesc(Meme::getId);
+            case "views" -> wrapper.orderByDesc(Meme::getPageViews).orderByDesc(Meme::getId);
+            default -> wrapper.orderByDesc(Meme::getLikes).orderByDesc(Meme::getId);
+        }
+    }
+
+    private List<Long> listFollowingUserIds(Long userId) {
+        if (userId == null || userId <= 0) {
+            return Collections.emptyList();
+        }
+        List<UserRelation> relations = userRelationMapper.selectList(new LambdaQueryWrapper<UserRelation>()
+                .eq(UserRelation::getFromUserId, userId));
+        if (relations == null || relations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return relations.stream()
+                .map(UserRelation::getToUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private static String normalizeSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return "hot";
+        }
+        String normalized = sort.trim().toLowerCase();
+        return switch (normalized) {
+            case "hot", "new", "comments", "views", "following" -> normalized;
+            default -> "hot";
+        };
     }
 }
 

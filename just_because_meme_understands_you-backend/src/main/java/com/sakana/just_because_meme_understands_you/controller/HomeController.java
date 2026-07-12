@@ -1,12 +1,14 @@
 package com.sakana.just_because_meme_understands_you.controller;
 
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.service.home.IHomeImageService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.vo.HomeImageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.SimpleMemeVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,16 +42,29 @@ public class HomeController {
     }
 
     /**
-     * 梗的分页展示，每次请求固定返回 8 条，根据前端传递的页数分页
-     * GET /list?page=1  （第 1 页）
-     * GET /list?page=2  （第 2 页）
+     * 梗的分页展示
+     * GET /list?page=1&sort=hot&size=16
+     * sort: hot（默认）/ new / comments / views / following（需登录）
      */
     @GetMapping("/list")
-    public Result<List<MemeListItemVO>> list(
-            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page
+    public Result<PageVO<MemeListItemVO>> list(
+            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+            @RequestParam(value = "sort", required = false, defaultValue = "hot") String sort,
+            @RequestParam(value = "size", required = false, defaultValue = "16") Integer size,
+            HttpServletRequest httpServletRequest
     ) {
-        log.info("请求梗分页列表, page={}", page);
-        List<MemeListItemVO> data = memeService.pageMemeList(page);
+        log.info("请求梗分页列表, page={}, sort={}, size={}", page, sort, size);
+        String normalizedSort = sort != null ? sort.trim().toLowerCase() : "hot";
+        Long currentUserId = AuthContext.currentUserId(httpServletRequest);
+        if ("following".equals(normalizedSort) && currentUserId == null) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "请先登录后查看关注动态");
+        }
+        PageVO<MemeListItemVO> data = memeService.pageMemeFeed(
+                page != null ? page : 1,
+                size != null ? size : IMemeService.PAGE_SIZE,
+                normalizedSort,
+                currentUserId
+        );
         return Result.success(data);
     }
 

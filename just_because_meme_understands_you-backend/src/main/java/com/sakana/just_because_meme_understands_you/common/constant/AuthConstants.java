@@ -25,6 +25,8 @@ public final class AuthConstants {
 
     // ---- Redis key 前缀 ----
     public static final String REFRESH_TOKEN_PREFIX = "auth:refresh:";
+    /** 用户当前有效 refresh token 索引，用于改密后吊销会话 */
+    public static final String USER_REFRESH_INDEX_PREFIX = "auth:user:refresh:";
     public static final String ACCESS_BLACKLIST_PREFIX = "auth:blacklist:access:";
     public static final String RESET_TOKEN_PREFIX = "reset_token:";
 

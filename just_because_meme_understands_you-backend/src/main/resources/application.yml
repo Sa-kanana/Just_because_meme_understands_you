@@ -26,9 +26,9 @@ spring:
             fallback: false
   #mysql数据库配置
   datasource:
-    password: 1234
-    username: root
-    url: jdbc:mysql://192.168.100.128:3306/MemeLIst?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    password: ${DB_PASSWORD:1234}
+    username: ${DB_USERNAME:root}
+    url: ${DB_URL:jdbc:mysql://192.168.100.128:3306/MemeLIst?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true}
     # hikari数据库连接池配置
     hikari:
       # 设置为 30 分钟
@@ -39,8 +39,8 @@ spring:
       connection-test-query: SELECT 1
   data:
     redis:
-      host: 192.168.100.128
-      port: 6379
+      host: ${REDIS_HOST:192.168.100.128}
+      port: ${REDIS_PORT:6379}
       timeout: 5000ms
       lettuce:
         pool:
@@ -61,18 +61,35 @@ oss:
   policy-rate-limit-per-minute: 10
 
 jwt:
-  # 注意：生产环境请使用更复杂且保密的密钥字符串，长度至少 32 字节
-  secret: "just_because_meme_understands_you_jwt_secret_2026"
+  # 生产环境必须通过环境变量 JWT_SECRET 注入，长度至少 32 字节
+  secret: ${JWT_SECRET:just_because_meme_understands_you_jwt_secret_2026}
   # access token 过期时间：2 小时
   expiration: 7200000
   # refresh token 过期时间：7 天
   refresh-expiration: 604800000
-  # 本地开发可为 false，生产环境建议 true（需 HTTPS）
-  cookie-secure: false
+  # 本地开发可为 false，生产环境 HTTPS 下设为 true
+  cookie-secure: ${JWT_COOKIE_SECURE:false}
 
 auth:
   # 刷新接口每秒允许请求次数（按 IP + refresh token 指纹限流）
   refresh-qps-limit: 5
+  # 登录：单 IP 每分钟最多次数
+  login-rate-limit-per-minute: 10
+  # 登录：连续失败 N 次后锁定账号
+  login-lockout-after-failures: 5
+  # 登录：账号锁定时长（分钟）
+  login-lockout-minutes: 15
+
+app:
+  security:
+    # 反向代理 IP 白名单（逗号分隔），配置后才信任 X-Forwarded-For
+    trusted-proxies: ${TRUSTED_PROXIES:}
+    headers:
+      enabled: ${SECURITY_HEADERS_ENABLED:true}
+      hsts-enabled: ${HSTS_ENABLED:false}
+  cors:
+    enabled: ${CORS_ENABLED:true}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://127.0.0.1}
 
 user-favorite:
   # 收藏总数 Redis -> DB 同步间隔（毫秒）
