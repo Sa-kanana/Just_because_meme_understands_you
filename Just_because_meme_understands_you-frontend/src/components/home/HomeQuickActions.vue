@@ -78,10 +78,10 @@ export default {
   gap: 6px;
   min-height: 42px;
   padding: 8px 12px;
-  border: 1px solid rgba(49, 138, 239, 0.14);
+  border: 1px solid var(--meme-border-accent);
   border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  color: #0f172a;
+  background: var(--meme-gradient-card);
+  color: var(--meme-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -90,15 +90,15 @@ export default {
 
 .home-quick-actions__item:hover {
   transform: translateY(-1px);
-  border-color: rgba(49, 138, 239, 0.28);
-  box-shadow: 0 8px 20px rgba(49, 138, 239, 0.12);
+  border-color: var(--meme-primary);
+  box-shadow: var(--meme-shadow-card);
 }
 
 .home-quick-actions__icon {
   display: inline-flex;
   width: 20px;
   height: 20px;
-  color: var(--meme-primary, #318aef);
+  color: var(--meme-primary);
 }
 
 .home-quick-actions__icon :deep(svg) {

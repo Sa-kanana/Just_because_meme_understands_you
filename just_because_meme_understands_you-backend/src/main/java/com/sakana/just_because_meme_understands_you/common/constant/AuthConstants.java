@@ -15,6 +15,8 @@ public final class AuthConstants {
     public static final String CLAIM_TOKEN_TYPE = "tokenType";
     public static final String CLAIM_LOGIN_TYPE = "loginType";
     public static final String CLAIM_ROLE = "role";
+    /** 会话版本号：改密 / 全量踢下线时递增，使历史 access/refresh 立即失效 */
+    public static final String CLAIM_TOKEN_VERSION = "tv";
 
     // ---- token 类型 ----
     public static final String TOKEN_TYPE_ACCESS = "access";
@@ -25,8 +27,14 @@ public final class AuthConstants {
 
     // ---- Redis key 前缀 ----
     public static final String REFRESH_TOKEN_PREFIX = "auth:refresh:";
-    /** 用户当前有效 refresh token 索引，用于改密后吊销会话 */
+    /**
+     * 兼容旧版：单 refresh 索引。新会话写入会话集合后逐步淘汰。
+     */
     public static final String USER_REFRESH_INDEX_PREFIX = "auth:user:refresh:";
+    /** 用户多设备 refresh 会话集合（value = refresh md5） */
+    public static final String USER_SESSIONS_PREFIX = "auth:user:sessions:";
+    /** 用户令牌版本：值越大表示越新的有效代际 */
+    public static final String USER_TOKEN_VERSION_PREFIX = "auth:tv:";
     public static final String ACCESS_BLACKLIST_PREFIX = "auth:blacklist:access:";
     public static final String RESET_TOKEN_PREFIX = "reset_token:";
 

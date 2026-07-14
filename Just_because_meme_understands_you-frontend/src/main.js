@@ -6,14 +6,22 @@ import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { setupRequestAuthLifecycle } from '@/api/request'
 import { createSessionExpiredHandler } from '@/utils/authSession'
 import 'element-plus/dist/index.css'
+/* Element Plus 官方暗色：仅当 html 带 .dark 时生效 */
+import 'element-plus/theme-chalk/dark/css-vars.css'
+import '@/styles/tokens.css'
+import '@/styles/base.css'
 import 'vue-advanced-cropper/dist/style.css'
 
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
+
+const themeStore = useThemeStore(pinia)
+themeStore.init()
 
 const authStore = useAuthStore(pinia)
 authStore.initFromStorage()

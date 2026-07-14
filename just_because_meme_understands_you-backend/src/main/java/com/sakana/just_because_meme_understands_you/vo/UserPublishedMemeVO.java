@@ -13,7 +13,10 @@ import java.util.List;
 @Data
 public class UserPublishedMemeVO {
 
-    /** 梗 id */
+    /** 梗 id（Apifox SimpleMeme.id） */
+    private Integer id;
+
+    /** 梗 id（兼容旧前端字段） */
     private Integer memeId;
 
     /** 梗名称 */
@@ -43,6 +46,12 @@ public class UserPublishedMemeVO {
     /** 关联标签 */
     private List<UserMemeTagVO> tags;
 
-    /** 创建/发布时间 */
+    /** 创建/发布时间（兼容旧字段） */
     private LocalDateTime createTime;
+
+    /** 发布时间（对齐 SimpleMeme.releaseTime） */
+    private LocalDateTime releaseTime;
+
+    /** 发布者 */
+    private AuthorVO author;
 }

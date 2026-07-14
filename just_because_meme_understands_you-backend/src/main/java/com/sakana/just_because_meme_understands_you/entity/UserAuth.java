@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 用户认证信息表，对应数据库表 user_auth
  */
@@ -37,5 +39,11 @@ public class UserAuth {
      */
     @TableField("password")
     private String credential;
+
+    /**
+     * 最近一次修改密码时间
+     */
+    @TableField("password_changed_at")
+    private LocalDateTime passwordChangedAt;
 }
 

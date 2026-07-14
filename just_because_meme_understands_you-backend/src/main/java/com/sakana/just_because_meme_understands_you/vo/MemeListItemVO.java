@@ -58,6 +58,11 @@ public class MemeListItemVO {
      private Integer status;
 
     /**
+     * 发布者（列表场景不含 signature）
+     */
+    private AuthorVO author;
+
+    /**
      * 接口返回的标签列表（memeTag）
      */
     private List<MemeTagVO> memeTag;

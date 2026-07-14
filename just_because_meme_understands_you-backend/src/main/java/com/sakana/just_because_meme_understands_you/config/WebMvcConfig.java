@@ -59,10 +59,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // /user/*/profile 已对外放行用于他人主页查询，这里单独拦截 /user/me/* 需登录的操作
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns(
-                        "/user/me/profile",
-                        "/user/me/favorite-folders",
-                        "/user/me/favorite-folders/**",
-                        "/user/me/favorites/**"
+                        "/user/me/**"
                 );
     }
 

@@ -98,6 +98,7 @@
 <script>
 import { getHomeImages } from '@/api/homeImage'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
+import { buildMemeDetailLocation } from '@/utils/pageBreadcrumb'
 
 /** 跳转类型：0-无跳转，1-内部梗ID，2-外部链接 */
 const TARGET_TYPE = { NONE: 0, INTERNAL: 1, EXTERNAL: 2 }
@@ -150,7 +151,7 @@ export default {
       const type = Number(item.target_type)
       const value = String(item.target_value || '').trim()
       if (type === TARGET_TYPE.INTERNAL && value) {
-        this.$router.push({ name: 'memeDetail', params: { id: value } })
+        this.$router.push(buildMemeDetailLocation(value, { from: 'banner' }))
         return
       }
       if (type === TARGET_TYPE.EXTERNAL && value) {
@@ -206,11 +207,9 @@ export default {
   gap: 0;
   min-height: 360px;
   border-radius: 20px;
-  border: 1px solid rgba(49, 138, 239, 0.12);
-  background: #fff;
-  box-shadow:
-    0 10px 40px rgba(15, 23, 42, 0.08),
-    0 2px 8px rgba(49, 138, 239, 0.05);
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-bg-card);
+  box-shadow: var(--meme-shadow-soft);
   overflow: hidden;
 }
 
@@ -220,10 +219,7 @@ export default {
   flex-direction: column;
   justify-content: center;
   padding: 36px 40px;
-  background:
-    radial-gradient(circle at 92% 8%, rgba(49, 138, 239, 0.12), transparent 44%),
-    radial-gradient(circle at 6% 92%, rgba(82, 199, 184, 0.1), transparent 40%),
-    linear-gradient(155deg, #f8fbff 0%, #ffffff 52%, #f3f8ff 100%);
+  background: var(--meme-gradient-hero);
   overflow: hidden;
 }
 
@@ -231,7 +227,7 @@ export default {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 82%, rgba(255, 255, 255, 0.65) 100%);
+  background: var(--meme-hero-fade);
   pointer-events: none;
 }
 
@@ -246,9 +242,9 @@ export default {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: #1d4ed8;
-  background: rgba(49, 138, 239, 0.1);
-  border: 1px solid rgba(49, 138, 239, 0.16);
+  color: var(--meme-accent-text);
+  background: var(--meme-primary-soft);
+  border: 1px solid var(--meme-border-accent);
 }
 
 .home-hero__title {
@@ -259,11 +255,11 @@ export default {
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.01em;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .home-hero__title-accent {
-  background: linear-gradient(120deg, #2563eb 0%, #318aef 45%, #52c7b8 100%);
+  background: linear-gradient(120deg, var(--meme-primary-dark) 0%, var(--meme-primary) 45%, #52c7b8 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -276,7 +272,7 @@ export default {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.45;
-  color: var(--meme-primary, #318aef);
+  color: var(--meme-primary);
 }
 
 .home-hero__lead {
@@ -286,7 +282,7 @@ export default {
   max-width: 28em;
   font-size: 15px;
   line-height: 1.75;
-  color: #475569;
+  color: var(--meme-text-secondary);
 }
 
 .home-hero__actions {
@@ -307,15 +303,15 @@ export default {
   min-width: 120px;
   border-radius: 12px !important;
   font-weight: 600;
-  color: #334155;
-  border-color: #cbd5e1;
-  background: rgba(255, 255, 255, 0.85);
+  color: var(--meme-text);
+  border-color: var(--meme-border-strong);
+  background: var(--meme-surface-ghost);
 }
 
 .home-hero__media {
   position: relative;
   min-height: 360px;
-  background: #0f172a;
+  background: var(--meme-bg-cover);
   overflow: hidden;
 }
 
@@ -370,7 +366,7 @@ export default {
   padding: 48px 20px 18px;
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--meme-text-inverse);
   background: linear-gradient(to top, rgba(15, 23, 42, 0.72) 0%, transparent 100%);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   overflow: hidden;
@@ -385,9 +381,9 @@ export default {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   font-size: 14px;
-  background: #1e293b;
+  background: var(--meme-bg-cover);
 }
 
 .home-hero__controls {
@@ -405,8 +401,8 @@ export default {
   height: 36px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.42);
-  color: #fff;
+  background: var(--meme-overlay);
+  color: var(--meme-text-inverse);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -454,7 +450,7 @@ export default {
 
 .home-hero__dot.is-active {
   width: 22px;
-  background: #fff;
+  background: var(--meme-text-inverse);
 }
 
 .home-hero__state {
@@ -465,20 +461,20 @@ export default {
   width: 100%;
   height: 100%;
   min-height: 360px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   font-size: 14px;
-  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+  background: var(--meme-bg-cover);
 }
 
 .home-hero__state--error {
-  color: #fca5a5;
+  color: var(--meme-danger);
 }
 
 .home-hero__spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #60a5fa;
+  border: 2px solid var(--meme-border-strong);
+  border-top-color: var(--meme-primary);
   border-radius: 50%;
   animation: home-hero-spin 0.8s linear infinite;
 }

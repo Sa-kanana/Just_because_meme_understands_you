@@ -60,6 +60,11 @@ public class SimpleMemeVO {
     private Integer status;
 
     /**
+     * 发布者
+     */
+    private AuthorVO author;
+
+    /**
      * 标签
      */
     private List<MemeTagVO> memeTag;

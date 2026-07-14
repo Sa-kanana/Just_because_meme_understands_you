@@ -1,7 +1,5 @@
 <template>
   <div class="page meme-detail-page">
-    <AppBreadcrumb :items="breadcrumbItems" />
-
     <div v-if="loading" class="detail-loading">
       <el-skeleton :rows="5" animated />
     </div>
@@ -86,6 +84,17 @@
                     {{ memeStatusLabel }}
                   </span>
                   <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
+                  <button
+                    v-if="authorUserId"
+                    type="button"
+                    class="detail-author"
+                    @click="goUserProfile(authorUserId)"
+                  >
+                    <el-avatar :size="28" :src="authorAvatar" class="detail-author-avatar">
+                      {{ authorAvatarFallback }}
+                    </el-avatar>
+                    <span class="detail-author-name">{{ authorNickname }}</span>
+                  </button>
                 </div>
                 <div class="detail-meta-actions">
                   <MemeDetailLikeBtn
@@ -513,16 +522,17 @@ import { isAuthErrorHandled } from '@/utils/authSession'
 import MemeDetailPreviewBanner from '@/components/meme/MemeDetailPreviewBanner.vue'
 import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
-import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
-import { buildMemeDetailBreadcrumbs } from '@/utils/pageBreadcrumb'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useBreadcrumbStore } from '@/stores/breadcrumb'
+import { buildUserProfileLocation, buildSearchLocation } from '@/utils/pageBreadcrumb'
 
 const route = useRoute()
 const router = useRouter()
 const memeDetailStore = useMemeDetailStore()
 const authStore = useAuthStore()
+const breadcrumbStore = useBreadcrumbStore()
 
 const { meme, loading, error, isFavorited, isLiked } = storeToRefs(memeDetailStore)
 const detailErrorCode = computed(() => memeDetailStore.errorCode)
@@ -530,14 +540,20 @@ const detailTags = computed(() => memeDetailStore.tags)
 const detailLinks = computed(() => memeDetailStore.links)
 
 const ownerPreview = computed(() => memeDetailStore.isOwnerPreview)
-const breadcrumbItems = computed(() => buildMemeDetailBreadcrumbs({
-  route,
-  meme: meme.value,
-  loading: loading.value,
-  ownerPreview: ownerPreview.value,
-  authStore,
-  error: error.value,
-}))
+
+watch(
+  [meme, loading, error, ownerPreview],
+  () => {
+    breadcrumbStore.setPatch({
+      meme: meme.value,
+      loading: loading.value,
+      error: error.value,
+      ownerPreview: ownerPreview.value,
+    })
+  },
+  { immediate: true, deep: true }
+)
+
 const memeStatusLabel = computed(() => {
   const desc = meme.value?.statusDesc || meme.value?.status_desc
   if (desc) return desc
@@ -546,6 +562,24 @@ const memeStatusLabel = computed(() => {
   if (status === 3) return '已下架'
   return ''
 })
+const authorInfo = computed(() => {
+  const raw = meme.value?.author
+  return raw && typeof raw === 'object' ? raw : null
+})
+const authorUserId = computed(() => {
+  const id = authorInfo.value?.userId
+  return id != null ? String(id).trim() : ''
+})
+const authorNickname = computed(() => {
+  const name = authorInfo.value?.nickname
+  const text = name != null ? String(name).trim() : ''
+  return text || '匿名用户'
+})
+const authorAvatar = computed(() => {
+  const avatar = authorInfo.value?.avatar
+  return avatar != null ? String(avatar).trim() : ''
+})
+const authorAvatarFallback = computed(() => authorNickname.value.charAt(0).toUpperCase())
 const commentsEnabled = computed(() => {
   if (!meme.value) return false
   if (meme.value.viewMode === 'owner_preview') return false
@@ -851,13 +885,24 @@ function goMyPublished() {
     goToLogin()
     return
   }
-  router.push({ name: 'userProfile', params: { userId }, query: { tab: 'published' } })
+  router.push(
+    buildUserProfileLocation(userId, {
+      fromRoute: route,
+      memeName: meme.value?.name,
+      tab: 'published',
+    })
+  )
 }
 
 function goUserProfile(rawId) {
   const userId = rawId != null ? String(rawId).trim() : ''
   if (!userId || !/^\d+$/.test(userId)) return
-  router.push({ name: 'userProfile', params: { userId } })
+  router.push(
+    buildUserProfileLocation(userId, {
+      fromRoute: route,
+      memeName: meme.value?.name,
+    })
+  )
 }
 
 function goCurrentUserProfile() {
@@ -1255,10 +1300,13 @@ function isImageUrl(url) {
 
 function goSearchByTag(tag) {
   if (!tag || !tag.name) return
-  router.push({
-    name: 'search',
-    query: { keyword: tag.name },
-  })
+  router.push(
+    buildSearchLocation({
+      keyword: tag.name,
+      fromRoute: route,
+      memeName: meme.value?.name,
+    })
+  )
 }
 </script>
 
@@ -1296,12 +1344,10 @@ function goSearchByTag(tag) {
 }
 
 .detail-hero-card {
-  border-radius: 24px;
-  border: 1px solid var(--meme-border, #e5e7eb);
-  background: linear-gradient(165deg, #ffffff 0%, #fafbfc 48%, #f8fbff 100%);
-  box-shadow:
-    0 4px 20px rgba(49, 138, 239, 0.05),
-    0 12px 40px rgba(15, 23, 42, 0.04);
+  border-radius: var(--meme-radius-xl);
+  border: 1px solid var(--meme-border);
+  background: var(--meme-gradient-hero);
+  box-shadow: var(--meme-shadow-card);
   overflow: hidden;
 }
 
@@ -1310,8 +1356,8 @@ function goSearchByTag(tag) {
 }
 
 .detail-hero-card--preview {
-  border: 1px solid rgba(49, 138, 239, 0.14);
-  background: linear-gradient(165deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-gradient-card);
 }
 
 .detail-hero-row {
@@ -1324,15 +1370,13 @@ function goSearchByTag(tag) {
   aspect-ratio: 16 / 10;
   min-height: 180px;
   max-height: 280px;
-  border-radius: 16px;
+  border-radius: var(--meme-radius-lg);
   background:
-    radial-gradient(circle at 20% 20%, rgba(49, 138, 239, 0.08), transparent 45%),
-    #eef2f7;
+    radial-gradient(circle at 20% 20%, var(--meme-primary-soft), transparent 45%),
+    var(--meme-bg-cover);
   overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 10px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--meme-border);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .detail-cover {
@@ -1349,7 +1393,7 @@ function goSearchByTag(tag) {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   font-size: 13px;
 }
 
@@ -1436,7 +1480,43 @@ function goSearchByTag(tag) {
   font-weight: 800;
   line-height: 1.3;
   letter-spacing: -0.02em;
-  color: #0f172a;
+  color: var(--meme-text);
+}
+
+.detail-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.detail-author:hover .detail-author-name {
+  color: var(--meme-primary);
+}
+
+.detail-author-avatar {
+  flex-shrink: 0;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font-size: 12px;
+}
+
+.detail-author-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--meme-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
 }
 
 .detail-stats-row {
@@ -1444,9 +1524,9 @@ function goSearchByTag(tag) {
   align-items: center;
   gap: 0;
   padding: 8px 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #eef2f7;
+  border-radius: var(--meme-radius-md);
+  background: var(--meme-bg-muted);
+  border: 1px solid var(--meme-border);
 }
 
 .detail-stat-item {
@@ -1458,7 +1538,7 @@ function goSearchByTag(tag) {
 .detail-stat-divider {
   width: 1px;
   height: 24px;
-  background: #e2e8f0;
+  background: var(--meme-border-strong);
   flex-shrink: 0;
 }
 
@@ -1467,7 +1547,7 @@ function goSearchByTag(tag) {
   font-size: 15px;
   font-weight: 700;
   line-height: 1.2;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .detail-stat-label {
@@ -1475,7 +1555,7 @@ function goSearchByTag(tag) {
   margin-top: 1px;
   font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .detail-meta-body {
@@ -1485,8 +1565,8 @@ function goSearchByTag(tag) {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(248, 250, 252, 0.75);
-  border: 1px solid #eef2f7;
+  background: var(--meme-bg-muted);
+  border: 1px solid var(--meme-border);
 }
 
 .detail-intro-panel {
@@ -1501,25 +1581,25 @@ function goSearchByTag(tag) {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: #64748b;
+  color: var(--meme-text-secondary);
 }
 
 .detail-intro-panel .detail-intro {
   padding-left: 10px;
-  border-left: 3px solid var(--meme-primary, #318aef);
+  border-left: 3px solid var(--meme-primary);
 }
 
 .detail-intro {
   margin: 0;
   font-size: 14px;
   line-height: 1.65;
-  color: #334155;
+  color: var(--meme-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .detail-intro--placeholder {
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   font-style: normal;
 }
 
@@ -1536,7 +1616,7 @@ function goSearchByTag(tag) {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #64748b;
+  color: var(--meme-text-secondary);
 }
 
 .detail-tags-list {
@@ -1546,9 +1626,9 @@ function goSearchByTag(tag) {
 }
 
 .detail-tag-chip {
-  border: 1px solid rgba(49, 138, 239, 0.18);
-  background: rgba(49, 138, 239, 0.06);
-  color: #1d4ed8;
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-primary-soft);
+  color: var(--meme-accent-text);
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
@@ -1561,8 +1641,8 @@ function goSearchByTag(tag) {
 }
 
 .detail-tag-chip:hover {
-  background: rgba(49, 138, 239, 0.12);
-  border-color: rgba(49, 138, 239, 0.35);
+  background: var(--meme-primary-soft);
+  border-color: var(--meme-primary);
 }
 
 .detail-tag-chip:active {
@@ -1572,7 +1652,7 @@ function goSearchByTag(tag) {
 .detail-meta-footer {
   margin-top: auto;
   padding-top: 8px;
-  border-top: 1px solid #eef2f7;
+  border-top: 1px solid var(--meme-border);
 }
 
 .detail-time {
@@ -1584,11 +1664,11 @@ function goSearchByTag(tag) {
 
 .detail-time-item {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .detail-time-sep {
-  color: #cbd5e1;
+  color: var(--meme-text-muted);
   font-size: 12px;
   user-select: none;
 }
@@ -1667,55 +1747,53 @@ function goSearchByTag(tag) {
 }
 
 .detail-status-chip--2 {
-  color: #1d4ed8;
-  background: rgba(49, 138, 239, 0.12);
+  color: var(--meme-accent-text);
+  background: var(--meme-primary-soft);
 }
 
 .detail-status-chip--3 {
-  color: #64748b;
-  background: rgba(100, 116, 139, 0.14);
+  color: var(--meme-text-secondary);
+  background: var(--meme-bg-muted);
 }
 
 .detail-comment-card--preview :deep(.el-card__header) {
-  background: #fafbfc;
+  background: var(--meme-bg-muted);
 }
 
 .comment-preview-disabled {
   padding: 28px 16px;
   text-align: center;
-  border-radius: 12px;
-  background: #fafbfc;
-  border: 1px dashed #e5e7eb;
+  border-radius: var(--meme-radius-md);
+  background: var(--meme-bg-muted);
+  border: 1px dashed var(--meme-border);
 }
 
 .comment-preview-disabled-title {
   margin: 0 0 6px;
   font-size: 15px;
   font-weight: 600;
-  color: #374151;
+  color: var(--meme-text-secondary);
 }
 
 .comment-preview-disabled-desc {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 .detail-section-card {
   border-radius: 20px;
-  border: 1px solid var(--meme-border, #e5e7eb);
-  background: #ffffff;
-  box-shadow:
-    0 4px 18px rgba(49, 138, 239, 0.04),
-    0 8px 28px rgba(15, 23, 42, 0.03);
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
+  box-shadow: var(--meme-shadow-card);
   overflow: hidden;
 }
 
 .detail-section-card :deep(.el-card__header) {
   padding: 18px 24px 14px;
-  border-bottom: 1px solid #f1f5f9;
-  background: linear-gradient(180deg, #fcfdff 0%, #ffffff 100%);
+  border-bottom: 1px solid var(--meme-border);
+  background: var(--meme-gradient-card);
 }
 
 .detail-section-card :deep(.el-card__body) {
@@ -1732,12 +1810,12 @@ function goSearchByTag(tag) {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .detail-section-sub {
   font-size: 13px;
-  color: #64748b;
+  color: var(--meme-text-secondary);
   line-height: 1.5;
 }
 
@@ -1764,15 +1842,15 @@ function goSearchByTag(tag) {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid #eef2f7;
-  background: #f8fafc;
+  border-radius: var(--meme-radius-md);
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-muted);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .detail-link-item:hover {
-  background: #f1f5f9;
-  border-color: rgba(49, 138, 239, 0.22);
+  background: var(--meme-bg-elevated);
+  border-color: var(--meme-border-accent);
 }
 
 .detail-link-image-item {
@@ -1782,9 +1860,9 @@ function goSearchByTag(tag) {
 .detail-link-image {
   width: 160px;
   height: 120px;
-  border-radius: 8px;
+  border-radius: var(--meme-radius-sm);
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--meme-border);
   cursor: zoom-in;
 }
 
@@ -1794,9 +1872,9 @@ function goSearchByTag(tag) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   font-size: 12px;
-  background: #f3f4f6;
+  background: var(--meme-bg-muted);
 }
 
 .detail-link-icon {
@@ -1815,7 +1893,7 @@ function goSearchByTag(tag) {
 .detail-footer-tip {
   padding: 8px 4px 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   text-align: right;
 }
 
@@ -1832,7 +1910,7 @@ function goSearchByTag(tag) {
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--meme-text-secondary);
   background: transparent;
   box-shadow: none !important;
 }
@@ -1842,22 +1920,22 @@ function goSearchByTag(tag) {
 }
 
 .comment-sort-tabs :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  color: #fff;
-  background: var(--meme-primary, #318aef);
+  color: var(--meme-text-inverse);
+  background: var(--meme-primary);
 }
 
 .comment-sort-tabs {
   padding: 3px;
   border-radius: 999px;
-  background: #f1f5f9;
+  background: var(--meme-bg-muted);
 }
 
 .comment-composer {
   margin-bottom: 20px;
   padding: 14px 16px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  border: 1px solid #e8eef7;
+  border-radius: var(--meme-radius-lg);
+  background: var(--meme-gradient-card);
+  border: 1px solid var(--meme-border);
 }
 
 .comment-editor {
@@ -1889,21 +1967,21 @@ function goSearchByTag(tag) {
   min-height: 44px;
   padding: 11px 16px;
   line-height: 1.55;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--meme-border-strong);
   border-radius: 14px;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+  box-shadow: var(--meme-shadow-soft);
   resize: none;
-  background: #fff;
+  background: var(--meme-bg-card);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .comment-editor-input :deep(.el-textarea__inner::placeholder) {
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .comment-editor-input :deep(.el-textarea__inner:focus) {
-  border-color: rgba(49, 138, 239, 0.45);
-  box-shadow: 0 0 0 3px rgba(49, 138, 239, 0.12);
+  border-color: var(--meme-primary);
+  box-shadow: 0 0 0 3px var(--meme-focus-ring);
 }
 
 .comment-editor-actions {
@@ -1926,9 +2004,9 @@ function goSearchByTag(tag) {
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 8px;
+  border-radius: var(--meme-radius-sm);
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--meme-border);
 }
 
 .comment-editor-image-thumb {
@@ -1945,31 +2023,31 @@ function goSearchByTag(tag) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  background: var(--meme-overlay);
+  color: var(--meme-text-inverse);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  border-bottom-left-radius: 6px;
+  border-bottom-left-radius: var(--meme-radius-sm);
 }
 
 .comment-editor-image-add {
   width: 64px;
   height: 64px;
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
+  border: 1px dashed var(--meme-border-strong);
+  border-radius: var(--meme-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   font-size: 12px;
   transition: border-color 0.2s, color 0.2s;
 }
 
 .comment-editor-image-add:hover {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--meme-primary);
+  color: var(--meme-primary);
 }
 
 .comment-editor-image-add-inner {
@@ -1987,14 +2065,14 @@ function goSearchByTag(tag) {
   gap: 12px;
   margin-bottom: 20px;
   padding: 16px 18px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  border: 1px solid #e8eef7;
+  background: var(--meme-gradient-card);
+  border: 1px solid var(--meme-border);
   border-radius: 14px;
 }
 
 .comment-login-text {
   font-size: 14px;
-  color: #64748b;
+  color: var(--meme-text-secondary);
 }
 
 .comment-loading {
@@ -2008,7 +2086,7 @@ function goSearchByTag(tag) {
 
 .comment-item {
   padding: 18px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--meme-border);
 }
 
 .comment-item-head {
@@ -2022,19 +2100,19 @@ function goSearchByTag(tag) {
 .comment-user {
   font-size: 14px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .comment-time {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .comment-content {
   margin: 0 0 8px;
   font-size: 14px;
   line-height: 1.65;
-  color: #334155;
+  color: var(--meme-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2079,7 +2157,7 @@ function goSearchByTag(tag) {
 .comment-image {
   width: 88px;
   height: 88px;
-  border-radius: 8px;
+  border-radius: var(--meme-radius-sm);
 }
 
 .comment-item-footer {
@@ -2090,23 +2168,23 @@ function goSearchByTag(tag) {
 
 .comment-meta {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--meme-text-muted);
 }
 
 .comment-reply-btn.el-button.is-link {
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   font-size: 13px;
 }
 
 .comment-reply-btn.el-button.is-link:hover,
 .comment-reply-btn.el-button.is-link:focus {
-  color: #409eff;
+  color: var(--meme-primary);
 }
 
 .reply-editor {
   margin-top: 10px;
   padding: 10px;
-  background: #f9fafb;
+  background: var(--meme-bg-muted);
   border-radius: 10px;
 }
 
@@ -2121,7 +2199,7 @@ function goSearchByTag(tag) {
   align-items: flex-start;
   gap: 10px;
   padding: 10px 0;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--meme-border);
 }
 
 .reply-item:first-child {
@@ -2151,7 +2229,7 @@ function goSearchByTag(tag) {
 
 .reply-target {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--meme-text-muted);
 }
 
 .reply-item-avatar {

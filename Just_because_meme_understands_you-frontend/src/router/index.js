@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useBreadcrumbStore } from '@/stores/breadcrumb'
 
 const GUEST_AUTH_PATHS = new Set(['/login', '/register', '/forgot-password'])
 const guestOnlyMeta = { guestOnly: true }
@@ -9,6 +10,7 @@ const routes = [
     path: '/',
     name: 'home',
     component: () => import('@/views/Home.vue'),
+    meta: { hideBreadcrumb: true },
   },
   {
     path: '/search',
@@ -30,25 +32,31 @@ const routes = [
     path: '/publish',
     name: 'publishMeme',
     component: () => import('@/views/PublishMeme.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, breadcrumbLabel: '发布梗' },
+  },
+  {
+    path: '/settings',
+    name: 'accountSettings',
+    component: () => import('@/views/AccountSettings.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: '账号设置' },
   },
   {
     path: '/login',
     name: 'login',
     component: () => import('@/views/Login.vue'),
-    meta: guestOnlyMeta,
+    meta: { ...guestOnlyMeta, breadcrumbLabel: '登录' },
   },
   {
     path: '/register',
     name: 'register',
     component: () => import('@/views/Register.vue'),
-    meta: guestOnlyMeta,
+    meta: { ...guestOnlyMeta, breadcrumbLabel: '注册' },
   },
   {
     path: '/forgot-password',
     name: 'forgotPassword',
     component: () => import('@/views/ForgotPassword.vue'),
-    meta: guestOnlyMeta,
+    meta: { ...guestOnlyMeta, breadcrumbLabel: '找回密码' },
   },
   {
     path: '/user/me',
@@ -64,13 +72,6 @@ const routes = [
     component: () => import('@/views/UserProfile.vue'),
     props: true,
   },
-  /**
-   * 通用异常页面
-   * /error/:code?message=... ，例如：
-   * - /error/404
-   * - /error/403?message=当前账号无权限
-   * - /error/biz?message=当前梗图已下架
-   */
   {
     path: '/error/:code?',
     name: 'error',
@@ -80,9 +81,6 @@ const routes = [
       message: route.query.message || '',
     }),
   },
-  /**
-   * 兜底 404：未匹配到的路径统一落到 404 页面
-   */
   {
     path: '/:pathMatch(.*)*',
     name: 'notFound',
@@ -90,6 +88,7 @@ const routes = [
     props: {
       code: 404,
     },
+    meta: { hideBreadcrumb: true },
   },
 ]
 
@@ -113,7 +112,15 @@ function dispatchRouteLoading(loading) {
   }
 }
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to, from, next) => {
+  const routeIdentity = (r) => `${String(r.name || '')}::${JSON.stringify(r.params || {})}`
+  if (routeIdentity(to) !== routeIdentity(from)) {
+    try {
+      useBreadcrumbStore().clearPatch()
+    } catch (_) {
+      // Pinia 尚未挂载时忽略
+    }
+  }
   const authStore = useAuthStore()
   if (to.meta?.requiresAuth && !authStore.isLoggedIn) {
     next({

@@ -54,7 +54,7 @@ export default {
   margin: 0;
   padding: 8px 0 4px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   letter-spacing: 0.02em;
 }
 </style>

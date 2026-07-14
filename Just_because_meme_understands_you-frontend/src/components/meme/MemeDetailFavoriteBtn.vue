@@ -95,9 +95,9 @@ export default {
   min-height: 44px;
   padding: 0 18px 0 14px;
   border-radius: 999px;
-  border: 1px solid rgba(49, 138, 239, 0.28);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  color: var(--meme-primary, #318aef);
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-gradient-card);
+  color: var(--meme-primary);
   cursor: pointer;
   transition:
     transform 0.15s ease,
@@ -105,17 +105,13 @@ export default {
     border-color 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 6px 18px rgba(49, 138, 239, 0.1);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .meme-favorite-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(49, 138, 239, 0.45);
-  box-shadow:
-    0 2px 6px rgba(15, 23, 42, 0.06),
-    0 10px 24px rgba(49, 138, 239, 0.16);
+  border-color: var(--meme-primary);
+  box-shadow: var(--meme-shadow-card);
 }
 
 .meme-favorite-btn:active:not(:disabled) {
@@ -124,8 +120,8 @@ export default {
 
 .meme-favorite-btn.is-active {
   border-color: rgba(245, 158, 11, 0.45);
-  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 52%, #fef3c7 100%);
-  color: #b45309;
+  background: linear-gradient(135deg, var(--meme-warning-soft) 0%, color-mix(in srgb, var(--meme-warning-soft) 70%, var(--meme-bg-card)) 100%);
+  color: var(--meme-warning);
   box-shadow:
     0 1px 2px rgba(180, 83, 9, 0.08),
     0 8px 22px rgba(245, 158, 11, 0.22);
@@ -140,9 +136,9 @@ export default {
 
 .meme-favorite-btn.is-preview,
 .meme-favorite-btn.is-disabled {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-  color: #94a3b8;
+  border-color: var(--meme-border);
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-muted);
   box-shadow: none;
   cursor: not-allowed;
 }

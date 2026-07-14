@@ -4,6 +4,7 @@ import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
+import com.sakana.just_because_meme_understands_you.vo.AccountProfileVO;
 import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
@@ -66,14 +67,14 @@ public class UserProfileController {
 
     @PostMapping("/avatar/upload")
     public Result<UploadAvatarVO> uploadAvatar(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
-        Long userId = AuthContext.currentUserId(request);
+        Long userId = AuthContext.requireCurrentUserId(request);
         return Result.success(userProfileService.uploadAvatar(userId, file));
     }
 
     @PutMapping("/profile")
-    public Result<Void> updateProfile(@RequestBody UserProfileUpdateRequestDTO request, HttpServletRequest httpServletRequest) {
-        Long userId = AuthContext.currentUserId(httpServletRequest);
-        userProfileService.updateProfile(userId, request);
-        return Result.success();
+    public Result<AccountProfileVO> updateProfile(@RequestBody UserProfileUpdateRequestDTO request,
+                                                  HttpServletRequest httpServletRequest) {
+        Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
+        return Result.success(userProfileService.updateProfile(userId, request));
     }
 }

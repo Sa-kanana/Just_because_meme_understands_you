@@ -1,0 +1,185 @@
+/**
+ * 全局基础样式：只消费 Token，不写暗色分支。
+ * Element Plus 挂到 body 的浮层同样用变量兜底，避免主题切换后仍显浅色。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--meme-bg);
+  color: var(--meme-text);
+}
+
+#app {
+  font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--meme-text);
+  background: var(--meme-gradient-page);
+  background-color: var(--meme-bg);
+  min-height: 100vh;
+}
+
+/* —— 品牌按钮 / 卡片 / 输入框 —— */
+#app .el-button--primary:not(.is-plain) {
+  --el-button-text-color: var(--meme-text-inverse);
+  --el-button-hover-text-color: var(--meme-text-inverse);
+  background-color: var(--meme-primary);
+  border-color: var(--meme-primary);
+  color: var(--meme-text-inverse);
+  box-shadow: 0 2px 6px var(--meme-focus-ring);
+}
+
+#app .el-button--primary:not(.is-plain):hover,
+#app .el-button--primary:not(.is-plain):focus {
+  background-color: var(--meme-primary-dark);
+  border-color: var(--meme-primary-dark);
+  color: var(--meme-text-inverse);
+  box-shadow: 0 4px 12px var(--meme-focus-ring);
+}
+
+/* plain 主按钮：保留描边浅底 + 可读文字，避免被实心覆盖导致蓝底蓝字 */
+#app .el-button--primary.is-plain {
+  --el-button-bg-color: var(--meme-primary-soft);
+  --el-button-text-color: var(--meme-primary);
+  --el-button-border-color: var(--meme-border-accent);
+  --el-button-hover-bg-color: var(--meme-primary-soft);
+  --el-button-hover-text-color: var(--meme-primary-dark);
+  --el-button-hover-border-color: var(--meme-primary);
+  background-color: var(--meme-primary-soft);
+  border-color: var(--meme-border-accent);
+  color: var(--meme-primary);
+  box-shadow: none;
+}
+
+#app .el-button--primary.is-plain:hover,
+#app .el-button--primary.is-plain:focus {
+  background-color: var(--meme-primary-soft);
+  border-color: var(--meme-primary);
+  color: var(--meme-primary-dark);
+  filter: brightness(1.05);
+}
+
+#app .el-card {
+  border: 1px solid var(--meme-border);
+  border-radius: var(--meme-radius-lg);
+  box-shadow: var(--meme-shadow-card);
+  background-color: var(--meme-bg-card);
+  color: var(--meme-text);
+}
+
+#app .el-input__wrapper,
+#app .el-textarea__inner {
+  box-shadow: 0 0 0 1px var(--meme-border) inset;
+  background-color: var(--meme-bg-elevated);
+  color: var(--meme-text);
+}
+
+#app .el-input__wrapper:hover,
+#app .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--meme-primary) inset;
+}
+
+#app .el-badge__content.is-dot {
+  background-color: #ef4444;
+}
+
+#app .el-empty__description p,
+#app .el-pagination button,
+#app .el-pagination .el-pager li {
+  color: var(--meme-text-secondary);
+}
+
+#app .el-tabs__item {
+  color: var(--meme-text-secondary);
+}
+
+#app .el-tabs__item.is-active {
+  color: var(--meme-primary);
+}
+
+#app .el-divider {
+  border-color: var(--meme-border);
+}
+
+/* —— 挂载在 body 的浮层：下拉 / 弹出 / 对话框 —— */
+.el-popper.is-light,
+.el-dropdown__popper,
+.el-select__popper,
+.el-autocomplete__popper,
+.el-popover.el-popper {
+  background: var(--meme-bg-elevated) !important;
+  border: 1px solid var(--meme-border) !important;
+  color: var(--meme-text) !important;
+}
+
+.el-dropdown-menu {
+  background: var(--meme-bg-elevated) !important;
+  border-color: var(--meme-border) !important;
+}
+
+.el-dropdown-menu__item {
+  color: var(--meme-text) !important;
+}
+
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-dropdown-menu__item:focus {
+  background: var(--meme-primary-soft) !important;
+  color: var(--meme-primary) !important;
+}
+
+.el-select-dropdown__item {
+  color: var(--meme-text);
+}
+
+.el-select-dropdown__item.is-hovering,
+.el-select-dropdown__item:hover {
+  background: var(--meme-bg-muted);
+}
+
+.el-select-dropdown__item.is-selected {
+  color: var(--meme-primary);
+  font-weight: 600;
+}
+
+.el-dialog,
+.el-message-box {
+  --el-dialog-bg-color: var(--meme-bg-card);
+  --el-bg-color: var(--meme-bg-card);
+  background: var(--meme-bg-card) !important;
+  border: 1px solid var(--meme-border);
+  color: var(--meme-text);
+}
+
+.el-dialog__title,
+.el-message-box__title {
+  color: var(--meme-text);
+}
+
+.el-dialog__body,
+.el-message-box__message {
+  color: var(--meme-text-secondary);
+}
+
+.el-overlay {
+  background-color: var(--meme-overlay) !important;
+}
+
+.el-loading-mask {
+  background-color: color-mix(in srgb, var(--meme-bg) 72%, transparent);
+}
+
+/* 页面通用表面 */
+.meme-page-surface {
+  min-height: calc(100vh - 56px);
+  background: var(--meme-gradient-page);
+  color: var(--meme-text);
+}

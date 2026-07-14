@@ -8,7 +8,7 @@
       <router-link
         v-for="item in memes"
         :key="item.id"
-        :to="{ name: 'memeDetail', params: { id: item.id } }"
+        :to="detailLocation(item.id)"
         class="home-hot-rail__card"
       >
         <div class="home-hot-rail__cover">
@@ -42,6 +42,7 @@
 
 <script>
 import MemeCardStats from '@/components/meme/MemeCardStats.vue'
+import { buildMemeDetailLocation } from '@/utils/pageBreadcrumb'
 
 export default {
   name: 'HomeHotMemeRail',
@@ -52,6 +53,11 @@ export default {
     memes: {
       type: Array,
       default: () => [],
+    },
+  },
+  methods: {
+    detailLocation(id) {
+      return buildMemeDetailLocation(id, { from: 'hot' })
     },
   },
 }
@@ -74,12 +80,12 @@ export default {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .home-hot-rail__hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .home-hot-rail__scroll {
@@ -95,7 +101,7 @@ export default {
 }
 
 .home-hot-rail__scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--meme-border-strong);
   border-radius: 999px;
 }
 
@@ -110,7 +116,7 @@ export default {
   height: 94px;
   border-radius: 14px;
   overflow: hidden;
-  background: #eef2f7;
+  background: var(--meme-bg-cover);
 }
 
 .home-hot-rail__img,
@@ -143,14 +149,14 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .home-hot-rail__name {
   margin: 8px 0 0;
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--meme-text);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;

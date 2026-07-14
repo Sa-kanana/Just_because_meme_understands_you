@@ -170,7 +170,7 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--meme-gradient-page, radial-gradient(circle at top left, #e8f2fd 0%, #f9fafb 42%, #ffffff 100%));
+  background: var(--meme-gradient-page);
 }
 
 .login-hero {
@@ -184,21 +184,22 @@ export default {
   font-size: 32px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .login-subtitle {
   margin: 0;
   font-size: 14px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .login-card {
   width: 100%;
   max-width: 420px;
-  border-radius: var(--meme-radius-lg, 16px);
-  box-shadow: var(--meme-shadow-card, 0 4px 12px rgba(49, 138, 239, 0.08)), 0 8px 24px rgba(15, 23, 42, 0.06);
-  border: 1px solid var(--meme-border, #e5e7eb);
+  border-radius: var(--meme-radius-lg);
+  box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
 }
 
 .login-card :deep(.el-card__body) {
@@ -216,13 +217,13 @@ export default {
   margin: 0 0 4px;
   font-size: 22px;
   font-weight: 600;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .login-card-subtitle {
   margin: 0 0 12px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .login-card-switch {
@@ -230,18 +231,18 @@ export default {
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   white-space: nowrap;
 }
 
 .link-button {
-  color: var(--meme-primary, #318AEF);
+  color: var(--meme-primary);
   font-weight: 500;
   text-decoration: none;
   transition: color 0.2s ease;
 }
 .link-button:hover {
-  color: var(--meme-primary-dark, #2872d4);
+  color: var(--meme-primary-dark);
 }
 
 .login-card-switch-text {
@@ -259,15 +260,15 @@ export default {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .forgot-link {
-  color: var(--meme-primary, #318AEF);
+  color: var(--meme-primary);
   text-decoration: none;
 }
 .forgot-link:hover {
-  color: var(--meme-primary-dark, #2872d4);
+  color: var(--meme-primary-dark);
 }
 
 .login-actions {
@@ -283,7 +284,7 @@ export default {
 .login-hint {
   margin: 16px 0 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   text-align: center;
 }
 

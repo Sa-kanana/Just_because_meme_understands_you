@@ -144,11 +144,18 @@ public class AuthServiceImpl implements IAuthService {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
         }
 
+        if (!userSessionRevoker.isTokenVersionValid(userIdStr, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
+            userSessionRevoker.revokeRefreshToken(refreshToken, userIdStr);
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "会话已失效，请重新登录");
+        }
+
         String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
         String cachedUserId = stringRedisTemplate.opsForValue().getAndDelete(refreshKey);
         if (!StringUtils.hasText(cachedUserId) || !userIdStr.equals(cachedUserId)) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已失效，请重新登录");
         }
+        // 旋转：从会话集合摘掉旧 refresh
+        userSessionRevoker.revokeRefreshToken(refreshToken, userIdStr);
 
         User user = userService.getById(userId);
         if (user == null) {
@@ -320,6 +327,7 @@ public class AuthServiceImpl implements IAuthService {
         }
 
         userAuth.setCredential(passwordEncoder.encode(newPassword));
+        userAuth.setPasswordChangedAt(java.time.LocalDateTime.now());
         userAuthMapper.updateById(userAuth);
         stringRedisTemplate.delete(resetKey);
         userSessionRevoker.revokeAllByUserId(userIdStr);
@@ -432,6 +440,7 @@ public class AuthServiceImpl implements IAuthService {
         claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS);
         claims.put(AuthConstants.CLAIM_ROLE, user.getRole());
         claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_VERSION, userSessionRevoker.currentTokenVersion(String.valueOf(user.getId())));
         return jwtUtil.generateToken(String.valueOf(user.getId()), claims, accessTokenExpirationMillis);
     }
 
@@ -439,32 +448,13 @@ public class AuthServiceImpl implements IAuthService {
         Map<String, Object> claims = new HashMap<>(4);
         claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH);
         claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_VERSION, userSessionRevoker.currentTokenVersion(userId));
         claims.put("tokenId", UUID.randomUUID().toString());
         return jwtUtil.generateToken(userId, claims, refreshTokenExpirationMillis);
     }
 
     private void storeRefreshToken(String refreshToken, String userId) {
-        String refreshMd5 = DigestUtil.md5Hex(refreshToken);
-        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + refreshMd5;
-        String userIndexKey = AuthConstants.USER_REFRESH_INDEX_PREFIX + userId;
-
-        String previousMd5 = stringRedisTemplate.opsForValue().get(userIndexKey);
-        if (StringUtils.hasText(previousMd5) && !previousMd5.equals(refreshMd5)) {
-            stringRedisTemplate.delete(AuthConstants.REFRESH_TOKEN_PREFIX + previousMd5);
-        }
-
-        stringRedisTemplate.opsForValue().set(
-                refreshKey,
-                userId,
-                refreshTokenExpirationMillis,
-                TimeUnit.MILLISECONDS
-        );
-        stringRedisTemplate.opsForValue().set(
-                userIndexKey,
-                refreshMd5,
-                refreshTokenExpirationMillis,
-                TimeUnit.MILLISECONDS
-        );
+        userSessionRevoker.registerSession(refreshToken, userId, refreshTokenExpirationMillis);
     }
 
     private AuthTokenBundleVO buildTokenBundle(String accessToken, String refreshToken, User user) {

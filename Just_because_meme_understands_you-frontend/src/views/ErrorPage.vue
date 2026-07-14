@@ -258,15 +258,15 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top left, #e0f2fe 0, #eff6ff 35%, #f9fafb 100%);
+  background: var(--meme-gradient-page);
 }
 
 .error-card {
   width: 100%;
   max-width: 980px;
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+  border-radius: var(--meme-radius-xl);
+  background: var(--meme-bg-card);
+  box-shadow: var(--meme-shadow-dialog);
   padding: 32px 36px;
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -279,8 +279,7 @@ export default {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 10% 0%, rgba(56, 189, 248, 0.15), transparent 60%),
-    radial-gradient(circle at 90% 100%, rgba(129, 140, 248, 0.18), transparent 60%);
+  background: var(--meme-gradient-dialog);
   opacity: 0.85;
   pointer-events: none;
 }
@@ -296,8 +295,8 @@ export default {
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.04);
-  color: #4b5563;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
   font-size: 12px;
   margin-bottom: 12px;
   backdrop-filter: blur(6px);
@@ -314,28 +313,28 @@ export default {
   font-size: 44px;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .error-code-label {
   font-size: 13px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(49, 138, 239, 0.08);
-  color: #2563eb;
+  background: var(--meme-primary-soft);
+  color: var(--meme-accent-text);
 }
 
 .error-title {
   margin: 8px 0 12px;
   font-size: 26px;
   line-height: 1.32;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .error-subtitle {
   margin: 0 0 16px;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--meme-text-secondary);
 }
 
 .error-tips {
@@ -345,7 +344,7 @@ export default {
 .error-tip-item {
   margin: 0;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .error-actions {
@@ -365,8 +364,8 @@ export default {
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.08);
-  color: #374151;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
   margin-bottom: 10px;
   backdrop-filter: blur(6px);
 }
@@ -375,9 +374,9 @@ export default {
   width: 100%;
   max-width: 320px;
   aspect-ratio: 4 / 3;
-  border-radius: 24px;
+  border-radius: var(--meme-radius-xl);
   background: radial-gradient(circle at 20% 0%, #38bdf8, #1d4ed8 45%, #020617 100%);
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.6);
+  box-shadow: var(--meme-shadow-dialog);
   position: relative;
   overflow: hidden;
   padding: 18px 18px 16px;
@@ -429,7 +428,7 @@ export default {
   max-width: 180px;
   border-radius: 18px;
   background: rgba(15, 23, 42, 0.86);
-  color: #e5e7eb;
+  color: var(--meme-text-inverse);
   font-size: 12px;
   padding: 8px 10px;
   line-height: 1.5;

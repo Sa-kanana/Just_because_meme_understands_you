@@ -16,7 +16,7 @@ export function resolveQuickActionTarget(action, ctx = {}) {
   const key = action.key != null ? String(action.key).trim() : ''
   switch (key) {
     case 'publish':
-      return { kind: 'route', route: { name: 'publishMeme' } }
+      return { kind: 'route', route: { name: 'publishMeme', query: { from: 'home' } } }
     case 'search':
       return {
         kind: 'route',

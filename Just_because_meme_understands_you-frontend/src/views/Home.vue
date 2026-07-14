@@ -51,7 +51,7 @@
             class="meme-col"
           >
             <MemeCard
-              :to="{ name: 'memeDetail', params: { id: item.id } }"
+              :to="memeDetailFromFeed(item.id)"
               :name="item.name"
               :image="item.image"
               :page-views="item.pageViews"
@@ -59,6 +59,7 @@
               :comments="item.comments"
               :release-time="item.releaseTime"
               :update-time="item.updateTime"
+              :author="item.author"
             />
           </el-col>
         </el-row>
@@ -96,6 +97,11 @@ import { useAuthStore } from '@/stores/auth'
 import { resolvePageHasMore } from '@/utils/pagination'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { pushQuickActionTarget, resolveQuickActionTarget } from '@/utils/homeQuickAction'
+import {
+  buildMemeDetailLocation,
+  buildSearchLocation,
+  buildToolPageLocation,
+} from '@/utils/pageBreadcrumb'
 
 const DEFAULT_QUICK_ACTIONS = [
   { key: 'publish', label: '发布梗', route: '/publish', requireLogin: true },
@@ -166,6 +172,9 @@ export default {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
     },
+    memeDetailFromFeed(id) {
+      return buildMemeDetailLocation(id, { from: 'feed' })
+    },
     goPublish() {
       if (!this.isLoggedIn) {
         this.$router.push({
@@ -174,7 +183,7 @@ export default {
         })
         return
       }
-      this.$router.push({ name: 'publishMeme' })
+      this.$router.push(buildToolPageLocation('publishMeme', { from: 'home' }))
     },
     async loadBootstrap() {
       this.bootstrapLoading = true
@@ -303,10 +312,7 @@ export default {
     handleTagSelect(tag) {
       const name = tag && tag.name ? String(tag.name).trim() : ''
       if (!name) return
-      this.$router.push({
-        name: 'search',
-        query: { keyword: name },
-      })
+      this.$router.push(buildSearchLocation({ keyword: name, from: 'home' }))
     },
   },
 }
@@ -339,7 +345,7 @@ export default {
 .meme-empty {
   text-align: center;
   padding: 24px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
 }
 
@@ -358,8 +364,8 @@ export default {
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 2px solid #e5e7eb;
-  border-top-color: #52c7b8;
+  border: 2px solid var(--meme-border);
+  border-top-color: var(--meme-primary);
   border-radius: 50%;
   animation: meme-spin 0.8s linear infinite;
 }

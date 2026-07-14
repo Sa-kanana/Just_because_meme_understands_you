@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -7,6 +7,25 @@
     <link rel="icon" type="image/jpeg" sizes="32x32" href="<%= BASE_URL %>icon.jpg">
     <link rel="shortcut icon" type="image/jpeg" href="<%= BASE_URL %>icon.jpg">
     <link rel="apple-touch-icon" href="<%= BASE_URL %>icon.jpg">
+    <!-- 主题防闪：在 Vue 挂载前同步 html.dark，避免浅色白闪 -->
+    <script>
+      (function () {
+        try {
+          var MODE = { light: 'light', dark: 'dark', system: 'system' }
+          var mode = localStorage.getItem('meme_theme_mode') || MODE.system
+          var dark =
+            mode === MODE.dark ||
+            (mode === MODE.system &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var root = document.documentElement
+          if (dark) root.classList.add('dark')
+          else root.classList.remove('dark')
+          root.setAttribute('data-theme', dark ? 'dark' : 'light')
+          root.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (e) {}
+      })()
+    </script>
     <!-- Remix Icon 图标库，用于头像下拉菜单等位置的图标展示 -->
     <link
       rel="stylesheet"

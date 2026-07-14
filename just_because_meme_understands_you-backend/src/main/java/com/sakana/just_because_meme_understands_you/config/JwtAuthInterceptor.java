@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
+import com.sakana.just_because_meme_understands_you.service.auth.UserSessionRevoker;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,13 +24,16 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final UserSessionRevoker userSessionRevoker;
 
     public JwtAuthInterceptor(JwtUtil jwtUtil,
                               StringRedisTemplate stringRedisTemplate,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              UserSessionRevoker userSessionRevoker) {
         this.jwtUtil = jwtUtil;
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
+        this.userSessionRevoker = userSessionRevoker;
     }
 
     @Override
@@ -51,7 +55,12 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
                 writeUnauthorized(response, "无效的访问令牌");
                 return false;
             }
-            request.setAttribute(AuthContext.ATTR_USER_ID, claims.getSubject());
+            String userId = claims.getSubject();
+            if (!userSessionRevoker.isTokenVersionValid(userId, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
+                writeUnauthorized(response, "登录已失效，请重新登录");
+                return false;
+            }
+            request.setAttribute(AuthContext.ATTR_USER_ID, userId);
             request.setAttribute(AuthConstants.CLAIM_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
             return true;
         } catch (Exception ignored) {

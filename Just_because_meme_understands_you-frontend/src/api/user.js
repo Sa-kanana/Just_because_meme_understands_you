@@ -71,7 +71,8 @@ export function getUserProfile(userId, token) {
 /**
  * 分页获取用户发布的梗
  * GET /user/{userId}/memes?page=&size=
- * 返回 { list, total, isOwner }，list 项含 status/statusDesc/tags
+ * 返回 { author, list, page, size, total, isOwner, hasMore }
+ * list 项含 id/memeId、status、author、releaseTime 等
  */
 export function pageUserMemes(userId, params = {}) {
   const id = userId != null ? String(userId).trim() : ''
@@ -181,9 +182,143 @@ export function updateUserProfile(payload = {}, token) {
     if (code !== 1) {
       throw new Error(res.message || '更新资料失败')
     }
+    const data = res.data && typeof res.data === 'object' ? res.data : null
     return {
       message: res.message || '资料更新成功',
-      data: res.data || null,
+      data,
+    }
+  })
+}
+
+/**
+ * 账号设置页聚合数据
+ * GET /user/me/settings → { profile, security }
+ */
+export function getAccountSettings(token) {
+  if (!token) {
+    return Promise.reject(new Error('未登录，无法获取账号设置'))
+  }
+  return request('/user/me/settings', {
+    method: 'GET',
+    headers: withAuthHeader(token),
+    withCredentials: true,
+  }).then((res) => {
+    if (!res || typeof res !== 'object') {
+      throw new Error('账号设置接口返回异常')
+    }
+    if (Number(res.code) !== 1) {
+      throw new Error(res.message || '获取账号设置失败')
+    }
+    const data = res.data && typeof res.data === 'object' ? res.data : {}
+    const profile = data.profile && typeof data.profile === 'object' ? data.profile : {}
+    const security = data.security && typeof data.security === 'object' ? data.security : {}
+    return {
+      profile: {
+        userId: profile.userId != null ? String(profile.userId) : '',
+        nickname: profile.nickname || '',
+        avatar: profile.avatar || '',
+        signature: profile.signature || '',
+        gender: profile.gender != null ? Number(profile.gender) : 0,
+        birthday: profile.birthday || '',
+      },
+      security: {
+        emailMasked: security.emailMasked || '',
+        emailBound: !!security.emailBound,
+        passwordSet: !!security.passwordSet,
+        lastPasswordChangeTime: security.lastPasswordChangeTime || '',
+        hasOtherSessions: !!security.hasOtherSessions,
+      },
+    }
+  })
+}
+
+/**
+ * 账号安全概览
+ * GET /user/me/security
+ */
+export function getAccountSecurity(token) {
+  if (!token) {
+    return Promise.reject(new Error('未登录，无法获取安全概览'))
+  }
+  return request('/user/me/security', {
+    method: 'GET',
+    headers: withAuthHeader(token),
+    withCredentials: true,
+  }).then((res) => {
+    if (!res || typeof res !== 'object') {
+      throw new Error('安全概览接口返回异常')
+    }
+    if (Number(res.code) !== 1) {
+      throw new Error(res.message || '获取安全概览失败')
+    }
+    const security = res.data && typeof res.data === 'object' ? res.data : {}
+    return {
+      emailMasked: security.emailMasked || '',
+      emailBound: !!security.emailBound,
+      passwordSet: !!security.passwordSet,
+      lastPasswordChangeTime: security.lastPasswordChangeTime || '',
+      hasOtherSessions: !!security.hasOtherSessions,
+    }
+  })
+}
+
+/**
+ * 登录态修改密码
+ * PUT /user/me/password
+ */
+export function changeAccountPassword(payload = {}, token) {
+  if (!token) {
+    return Promise.reject(new Error('未登录，无法修改密码'))
+  }
+  const oldPassword = payload.oldPassword != null ? String(payload.oldPassword) : ''
+  const newPassword = payload.newPassword != null ? String(payload.newPassword) : ''
+  const confirmPassword = payload.confirmPassword != null ? String(payload.confirmPassword) : ''
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    return Promise.reject(new Error('请填写完整的密码信息'))
+  }
+  return request('/user/me/password', {
+    method: 'PUT',
+    headers: withAuthHeader(token),
+    body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
+    withCredentials: true,
+  }).then((res) => {
+    if (!res || typeof res !== 'object') {
+      throw new Error('修改密码接口返回异常')
+    }
+    if (Number(res.code) !== 1) {
+      throw new Error(res.message || '修改密码失败')
+    }
+    const data = res.data && typeof res.data === 'object' ? res.data : {}
+    return {
+      requireReLogin: data.requireReLogin !== false,
+      message: res.message || '密码已更新',
+    }
+  })
+}
+
+/**
+ * 退出所有设备
+ * POST /user/me/sessions/revoke-all
+ */
+export function revokeAllSessions(token) {
+  if (!token) {
+    return Promise.reject(new Error('未登录，无法退出设备'))
+  }
+  return request('/user/me/sessions/revoke-all', {
+    method: 'POST',
+    headers: withAuthHeader(token),
+    withCredentials: true,
+  }).then((res) => {
+    if (!res || typeof res !== 'object') {
+      throw new Error('退出设备接口返回异常')
+    }
+    if (Number(res.code) !== 1) {
+      throw new Error(res.message || '退出全部设备失败')
+    }
+    const data = res.data && typeof res.data === 'object' ? res.data : {}
+    return {
+      revokedCount: Number.isFinite(Number(data.revokedCount)) ? Number(data.revokedCount) : 0,
+      message: res.message || '已退出全部设备',
     }
   })
 }

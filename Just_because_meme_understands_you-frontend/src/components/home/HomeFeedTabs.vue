@@ -72,8 +72,8 @@ export default {
 
 .home-feed-tabs__tab {
   border: none;
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
   border-radius: 999px;
   padding: 8px 16px;
   font-size: 14px;
@@ -83,23 +83,24 @@ export default {
 }
 
 .home-feed-tabs__tab:hover {
-  color: #334155;
+  color: var(--meme-text);
 }
 
 .home-feed-tabs__tab.is-active {
-  background: var(--meme-primary, #318aef);
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(49, 138, 239, 0.24);
+  background: var(--meme-primary);
+  color: var(--meme-text-inverse);
+  box-shadow: 0 6px 16px var(--meme-focus-ring);
 }
 
 .home-feed-tabs__tab--following.is-active {
-  background: #0f172a;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+  background: var(--meme-text);
+  color: var(--meme-bg);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .home-feed-tabs__login-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   white-space: nowrap;
 }
 </style>

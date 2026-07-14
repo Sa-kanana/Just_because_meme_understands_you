@@ -5,7 +5,7 @@
     <!-- 按登录类型 + 标识精确查一条，替代 LambdaQueryWrapper + .last("LIMIT 1")。
          password 列需别名 credential 以匹配实体 @TableField("password") 的属性名 -->
     <select id="selectByIdentity" resultType="com.sakana.just_because_meme_understands_you.entity.UserAuth">
-        SELECT id, user_id, identity_type, identifier, password AS credential
+        SELECT id, user_id, identity_type, identifier, password AS credential, password_changed_at
         FROM user_auth
         WHERE identity_type = #{identityType}
           AND identifier = #{identifier}
@@ -14,7 +14,7 @@
 
     <!-- 按用户 id + 登录类型查一条，用于重置密码等场景 -->
     <select id="selectByUserIdAndType" resultType="com.sakana.just_because_meme_understands_you.entity.UserAuth">
-        SELECT id, user_id, identity_type, identifier, password AS credential
+        SELECT id, user_id, identity_type, identifier, password AS credential, password_changed_at
         FROM user_auth
         WHERE user_id = #{userId}
           AND identity_type = #{identityType}

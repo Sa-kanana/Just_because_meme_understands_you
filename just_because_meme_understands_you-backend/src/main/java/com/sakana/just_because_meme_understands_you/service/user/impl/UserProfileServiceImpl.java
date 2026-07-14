@@ -27,6 +27,9 @@ import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteFo
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.service.user.UserFavoriteCountService;
+import com.sakana.just_because_meme_understands_you.service.user.support.AuthorSupport;
+import com.sakana.just_because_meme_understands_you.vo.AccountProfileVO;
+import com.sakana.just_because_meme_understands_you.vo.AuthorVO;
 import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
@@ -70,6 +73,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
     @Resource
     private IUserService userService;
+
+    @Resource
+    private AuthorSupport authorSupport;
 
     @Resource
     private IMemeService memeService;
@@ -184,13 +190,22 @@ public class UserProfileServiceImpl implements IUserProfileService {
         }
         IPage<Meme> result = memeService.page(mpPage, wrapper);
 
+        User targetUser = userService.getById(targetUserId);
+        if (targetUser == null) {
+            throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+        }
+        AuthorVO author = authorSupport.toAuthorVO(targetUserId, targetUser, true);
+
         List<Meme> records = result.getRecords();
         List<UserPublishedMemeVO> list = records.isEmpty()
                 ? Collections.emptyList()
-                : buildPublishedMemeVOList(records);
+                : buildPublishedMemeVOList(records, author);
 
         UserMemePageVO pageVO = new UserMemePageVO();
+        pageVO.setAuthor(author);
         pageVO.setList(list);
+        pageVO.setPage(pageNo);
+        pageVO.setSize(pageSize);
         pageVO.setTotal(result.getTotal());
         pageVO.setOwner(isOwner);
         pageVO.setHasMore((long) pageNo * pageSize < result.getTotal());
@@ -200,13 +215,14 @@ public class UserProfileServiceImpl implements IUserProfileService {
     /**
      * 批量组装发布梗 VO：标签通过一次 JOIN 查询按 meme_id 分组，内存组装，避免 N+1 与笛卡尔积。
      */
-    private List<UserPublishedMemeVO> buildPublishedMemeVOList(List<Meme> memes) {
+    private List<UserPublishedMemeVO> buildPublishedMemeVOList(List<Meme> memes, AuthorVO author) {
         List<Integer> memeIds = memes.stream().map(Meme::getId).toList();
         Map<Integer, List<MemeTagBindDTO>> tagMap = loadTagsByMemeIds(memeIds);
 
         List<UserPublishedMemeVO> list = new ArrayList<>(memes.size());
         for (Meme meme : memes) {
             UserPublishedMemeVO vo = new UserPublishedMemeVO();
+            vo.setId(meme.getId());
             vo.setMemeId(meme.getId());
             vo.setName(meme.getName());
             vo.setIntroduction(meme.getIntroduction());
@@ -218,6 +234,8 @@ public class UserProfileServiceImpl implements IUserProfileService {
             vo.setStatusDesc(statusDesc(meme.getStatus()));
             vo.setTags(toUserMemeTagVOList(tagMap.get(meme.getId())));
             vo.setCreateTime(meme.getReleaseTime());
+            vo.setReleaseTime(meme.getReleaseTime());
+            vo.setAuthor(author);
             list.add(vo);
         }
         return list;
@@ -396,7 +414,10 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public void updateProfile(Long userId, UserProfileUpdateRequestDTO request) {
+    public AccountProfileVO updateProfile(Long userId, UserProfileUpdateRequestDTO request) {
+        if (userId == null || userId <= 0) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
+        }
         if (request == null) {
             throw new BizException(Result.CODE_BAD_REQUEST, "请求参数不能为空");
         }
@@ -453,6 +474,18 @@ public class UserProfileServiceImpl implements IUserProfileService {
         user.setUpdateTime(LocalDateTime.now());
         userService.updateById(user);
         clearUserCache(userId);
+
+        AccountProfileVO vo = new AccountProfileVO();
+        vo.setUserId(String.valueOf(user.getId()));
+        vo.setNickname(user.getNickname() == null ? "" : user.getNickname().trim());
+        vo.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
+        if (vo.getAvatar() == null) {
+            vo.setAvatar("");
+        }
+        vo.setSignature(user.getSignature() == null ? "" : user.getSignature().trim());
+        vo.setGender(user.getGender() == null ? 0 : user.getGender());
+        vo.setBirthday(user.getBirthday() == null ? "" : user.getBirthday().toString());
+        return vo;
     }
 
     @Override

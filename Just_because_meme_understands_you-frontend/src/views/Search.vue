@@ -1,7 +1,5 @@
 <template>
   <div class="page search-page">
-    <AppBreadcrumb :items="breadcrumbItems" />
-
     <!-- 排序筛选栏：参考 B 站式横向 tab -->
     <div class="search-toolbar">
       <div class="sort-tabs">
@@ -53,11 +51,7 @@
             class="meme-col"
           >
             <MemeCard
-              :to="{
-                name: 'memeDetail',
-                params: { id: item.id },
-                query: keyword ? { from: 'search', keyword } : { from: 'search' },
-              }"
+              :to="memeDetailLocation(item.id)"
               :name="item.name"
               :image="item.image"
               :page-views="item.pageViews"
@@ -65,6 +59,7 @@
               :comments="item.comments"
               :release-time="item.releaseTime"
               :update-time="item.updateTime"
+              :author="item.author"
             />
           </el-col>
         </el-row>
@@ -89,9 +84,8 @@
 
 <script>
 import { searchMeme } from '@/api/search'
-import AppBreadcrumb from '@/components/layout/AppBreadcrumb.vue'
 import MemeCard from '@/components/meme/MemeCard.vue'
-import { buildSearchBreadcrumbs } from '@/utils/pageBreadcrumb'
+import { buildMemeDetailLocation } from '@/utils/pageBreadcrumb'
 
 const SORT_TABS = [
   { label: '综合排序', value: '' },
@@ -105,7 +99,6 @@ const PAGE_SIZE = 8
 export default {
   name: 'SearchPage',
   components: {
-    AppBreadcrumb,
     MemeCard,
   },
   data() {
@@ -127,9 +120,6 @@ export default {
     },
     fromHome() {
       return String(this.$route.query.from || '').trim() === 'home'
-    },
-    breadcrumbItems() {
-      return buildSearchBreadcrumbs({ keyword: this.keyword })
     },
     noMore() {
       if (!this.fullList) return true
@@ -154,6 +144,12 @@ export default {
     this.observer?.disconnect()
   },
   methods: {
+    memeDetailLocation(id) {
+      return buildMemeDetailLocation(id, {
+        from: 'search',
+        keyword: this.keyword,
+      })
+    },
     initObserver() {
       this.observer = new IntersectionObserver(
         (entries) => {
@@ -245,20 +241,20 @@ export default {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
   cursor: pointer;
   transition: color 0.2s ease, background-color 0.2s ease;
 }
 
 .sort-tab:hover {
-  color: #111827;
-  background-color: #f3f4f6;
+  color: var(--meme-text);
+  background-color: var(--meme-bg-muted);
 }
 
 .sort-tab.active {
-  color: #318AEF;
-  background-color: #e8f2fd;
+  color: var(--meme-primary);
+  background-color: var(--meme-primary-soft);
   font-weight: 600;
 }
 
@@ -271,28 +267,28 @@ export default {
   margin: 0 auto;
   padding: 28px 24px;
   border-radius: 16px;
-  border: 1px solid rgba(49, 138, 239, 0.14);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-gradient-card);
 }
 
 .search-entry__title {
   margin: 0 0 10px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .search-entry__desc {
   margin: 0 0 14px;
   font-size: 14px;
   line-height: 1.7;
-  color: #64748b;
+  color: var(--meme-text-secondary);
 }
 
 .search-entry__tips {
   margin: 0;
   padding-left: 18px;
-  color: #64748b;
+  color: var(--meme-text-secondary);
   font-size: 13px;
   line-height: 1.8;
 }
@@ -311,7 +307,7 @@ export default {
 .meme-nomore {
   text-align: center;
   padding: 24px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
 }
 
@@ -328,7 +324,7 @@ export default {
 .meme-empty {
   text-align: center;
   padding: 24px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
 }
 
@@ -343,8 +339,8 @@ export default {
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 2px solid #e5e7eb;
-  border-top-color: #318AEF;
+  border: 2px solid var(--meme-border);
+  border-top-color: var(--meme-primary);
   border-radius: 50%;
   animation: search-spin 0.8s linear infinite;
 }

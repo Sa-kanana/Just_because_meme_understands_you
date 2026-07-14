@@ -46,7 +46,13 @@
         <slot name="title-extra" />
       </div>
       <slot name="footer">
-        <p v-if="footerText" class="meme-card__meta">{{ footerText }}</p>
+        <div v-if="hasAuthor" class="meme-card__author" @click.stop.prevent="goAuthor">
+          <el-avatar :size="20" :src="authorAvatar" class="meme-card__author-avatar">
+            {{ authorFallback }}
+          </el-avatar>
+          <span class="meme-card__author-name">{{ authorNickname }}</span>
+        </div>
+        <p v-else-if="footerText" class="meme-card__meta">{{ footerText }}</p>
       </slot>
     </div>
   </component>
@@ -56,6 +62,7 @@
 import MemeCardStats from '@/components/meme/MemeCardStats.vue'
 import MemeStatIcon from '@/components/meme/MemeStatIcon.vue'
 import { formatDateShort } from '@/utils/formatDate'
+import { buildUserProfileLocation } from '@/utils/pageBreadcrumb'
 
 export default {
   name: 'MemeCard',
@@ -96,6 +103,15 @@ export default {
       type: String,
       default: '',
     },
+    /** 作者信息 { userId, nickname, avatar } */
+    author: {
+      type: Object,
+      default: null,
+    },
+    showAuthor: {
+      type: Boolean,
+      default: true,
+    },
     /** 覆盖底部默认日期文案 */
     metaText: {
       type: String,
@@ -125,6 +141,21 @@ export default {
       const text = this.name != null ? String(this.name).trim() : ''
       return text || '未命名梗'
     },
+    hasAuthor() {
+      if (!this.showAuthor || !this.author || typeof this.author !== 'object') return false
+      const id = this.author.userId != null ? String(this.author.userId).trim() : ''
+      return !!id
+    },
+    authorNickname() {
+      const name = this.author?.nickname != null ? String(this.author.nickname).trim() : ''
+      return name || '匿名用户'
+    },
+    authorAvatar() {
+      return this.author?.avatar != null ? String(this.author.avatar).trim() : ''
+    },
+    authorFallback() {
+      return this.authorNickname.charAt(0).toUpperCase()
+    },
     footerText() {
       if (this.metaText) return this.metaText
       return formatDateShort(this.releaseTime || this.updateTime)
@@ -133,6 +164,15 @@ export default {
   methods: {
     handleClick(event) {
       this.$emit('click', event)
+    },
+    goAuthor() {
+      const userId = this.author?.userId != null ? String(this.author.userId).trim() : ''
+      if (!userId || !/^\d+$/.test(userId)) return
+      this.$router.push(
+        buildUserProfileLocation(userId, {
+          fromRoute: this.$route,
+        })
+      )
     },
   },
 }
@@ -158,7 +198,7 @@ export default {
 }
 
 .meme-card--link:hover .meme-card__title {
-  color: var(--meme-primary, #318aef);
+  color: var(--meme-primary);
 }
 
 .meme-card__cover {
@@ -168,8 +208,8 @@ export default {
   border-radius: 6px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 22%, rgba(49, 138, 239, 0.06), transparent 42%),
-    #eef2f7;
+    radial-gradient(circle at 18% 22%, var(--meme-primary-soft), transparent 42%),
+    var(--meme-bg-cover);
 }
 
 .meme-card__img,
@@ -191,14 +231,14 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
   font-size: 12px;
 }
 
 .meme-card__placeholder-icon {
   width: 28px;
   height: 28px;
-  color: #cbd5e1;
+  color: var(--meme-border-strong);
   opacity: 0.7;
 }
 
@@ -245,7 +285,7 @@ export default {
   font-size: 14px;
   font-weight: 500;
   line-height: 1.45;
-  color: #18191c;
+  color: var(--meme-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -259,6 +299,38 @@ export default {
   margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.4;
-  color: #9499a0;
+  color: var(--meme-text-muted);
+}
+
+.meme-card__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  max-width: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.meme-card__author:hover .meme-card__author-name {
+  color: var(--meme-primary);
+}
+
+.meme-card__author-avatar {
+  flex-shrink: 0;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font-size: 10px;
+}
+
+.meme-card__author-name {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--meme-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s ease;
 }
 </style>

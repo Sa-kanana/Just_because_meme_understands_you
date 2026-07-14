@@ -421,24 +421,22 @@ function goBack() {
   font-size: 28px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--meme-text, #111827);
+  color: var(--meme-text);
 }
 
 .publish-hero-sub {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   max-width: 520px;
   margin-inline: auto;
 }
 
 .publish-card {
   border-radius: var(--meme-radius-xl, 20px);
-  border: 1px solid var(--meme-border, #e5e7eb);
-  box-shadow:
-    0 4px 16px rgba(49, 138, 239, 0.06),
-    0 8px 32px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--meme-border);
+  box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
 }
 
 .publish-card :deep(.el-card__body) {
@@ -447,7 +445,7 @@ function goBack() {
 
 .publish-form :deep(.el-form-item__label) {
   font-weight: 600;
-  color: #374151;
+  color: var(--meme-text-secondary);
   padding-bottom: 6px;
 }
 
@@ -459,7 +457,7 @@ function goBack() {
 
 .form-section {
   padding: 20px 0;
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid var(--meme-border);
 }
 
 .form-section--last {
@@ -496,46 +494,46 @@ function goBack() {
   justify-content: center;
   border-radius: 10px;
   font-size: 16px;
-  background: #f3f4f6;
+  background: var(--meme-bg-muted);
 }
 
 .section-icon--primary {
-  background: rgba(49, 138, 239, 0.12);
-  color: var(--meme-primary, #318aef);
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
   font-size: 14px;
 }
 
 .section-icon--cover,
 .section-icon--link,
 .section-icon--media {
-  background: #f9fafb;
+  background: var(--meme-bg);
 }
 
 .section-title {
   margin: 0 0 2px;
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .section-hint {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   line-height: 1.5;
 }
 
 .section-add-btn {
   flex-shrink: 0;
-  border-color: var(--meme-primary, #318aef);
-  color: var(--meme-primary, #318aef);
-  background: rgba(49, 138, 239, 0.06);
+  border-color: var(--meme-primary);
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
 }
 
 .section-add-btn:hover {
-  background: rgba(49, 138, 239, 0.12);
-  border-color: var(--meme-primary-dark, #2872d4);
-  color: var(--meme-primary-dark, #2872d4);
+  background: var(--meme-primary-soft);
+  border-color: var(--meme-primary-dark);
+  color: var(--meme-primary-dark);
 }
 
 /* 上传区域 */
@@ -569,22 +567,22 @@ function goBack() {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1.5px dashed #d1d5db;
-  background: linear-gradient(180deg, #fafbfc 0%, #f5f7fa 100%);
+  border: 1.5px dashed var(--meme-border-strong);
+  background: var(--meme-gradient-card);
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 .upload-tile--empty:hover {
-  border-color: var(--meme-primary, #318aef);
-  color: var(--meme-primary, #318aef);
-  box-shadow: 0 4px 12px rgba(49, 138, 239, 0.12);
+  border-color: var(--meme-primary);
+  color: var(--meme-primary);
+  box-shadow: 0 4px 12px var(--meme-focus-ring);
   transform: translateY(-1px);
 }
 
 .upload-tile--filled {
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--meme-border);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .upload-preview {
@@ -604,7 +602,7 @@ function goBack() {
 
 .upload-tip {
   font-size: 11px;
-  color: #b0b8c4;
+  color: var(--meme-text-muted);
   text-align: center;
   padding: 0 8px;
   line-height: 1.3;
@@ -618,7 +616,7 @@ function goBack() {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
-  color: #fff;
+  color: var(--meme-text-inverse);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
 }
@@ -635,7 +633,7 @@ function goBack() {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--meme-text-inverse);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -665,14 +663,14 @@ function goBack() {
   gap: 12px;
   padding: 14px 14px 14px 12px;
   border-radius: 12px;
-  border: 1px solid #e8ecf1;
-  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  border: 1px solid var(--meme-border);
+  background: var(--meme-gradient-card);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .link-card:hover {
-  border-color: rgba(49, 138, 239, 0.35);
-  box-shadow: 0 4px 14px rgba(49, 138, 239, 0.08);
+  border-color: var(--meme-border-accent);
+  box-shadow: 0 4px 14px var(--meme-focus-ring);
 }
 
 .link-card-index {
@@ -685,8 +683,8 @@ function goBack() {
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: var(--meme-primary, #318aef);
-  background: rgba(49, 138, 239, 0.1);
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
   margin-top: 4px;
 }
 
@@ -715,7 +713,7 @@ function goBack() {
 }
 
 .link-url-prefix {
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 .link-card-remove {
@@ -729,33 +727,33 @@ function goBack() {
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
 
 .link-card-remove:hover {
-  background: #fef2f2;
-  color: #ef4444;
+  background: var(--meme-danger-soft);
+  color: var(--meme-danger);
 }
 
 .link-empty {
   padding: 28px 20px;
   border-radius: 12px;
-  border: 1.5px dashed #e0e4ea;
-  background: #fafbfc;
+  border: 1.5px dashed var(--meme-border-strong);
+  background: var(--meme-bg);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
 
 .link-empty:hover {
-  border-color: rgba(49, 138, 239, 0.4);
-  background: rgba(49, 138, 239, 0.04);
+  border-color: var(--meme-border-accent);
+  background: var(--meme-primary-soft);
 }
 
 .link-empty-icon {
-  color: #c4cad4;
+  color: var(--meme-text-muted);
   margin-bottom: 8px;
 }
 
@@ -763,20 +761,20 @@ function goBack() {
   margin: 0 0 4px;
   font-size: 14px;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .link-empty-desc {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 /* 底部操作 */
 .publish-footer {
   margin-top: 8px;
   padding-top: 20px;
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--meme-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -787,7 +785,7 @@ function goBack() {
 .publish-footer-hint {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 .publish-actions {
@@ -799,7 +797,7 @@ function goBack() {
 .publish-submit-btn {
   min-width: 120px;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(49, 138, 239, 0.35);
+  box-shadow: 0 4px 14px var(--meme-focus-ring);
 }
 
 @media (max-width: 640px) {

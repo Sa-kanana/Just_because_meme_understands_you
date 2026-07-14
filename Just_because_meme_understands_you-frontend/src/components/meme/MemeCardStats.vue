@@ -219,7 +219,7 @@ export default {
 .meme-card-stats--inline .meme-card-stats__chip {
   padding: 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--meme-text-secondary);
   background: transparent;
   border: none;
 }
@@ -227,7 +227,7 @@ export default {
 .meme-card-stats--inline .meme-card-stats__icon {
   width: 14px;
   height: 14px;
-  color: #94a3b8;
+  color: var(--meme-text-muted);
 }
 
 .meme-card-stats--inline .meme-card-stats__chip.is-likes .meme-card-stats__icon {
@@ -236,6 +236,6 @@ export default {
 
 .meme-card-stats--inline .meme-card-stats__value {
   font-weight: 600;
-  color: #475569;
+  color: var(--meme-text-secondary);
 }
 </style>

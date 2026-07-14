@@ -93,7 +93,7 @@
                     <h3 class="published-panel-title">我整的梗</h3>
                     <p class="published-panel-hint">点击卡片看详情；想下架时点右上角 ⋮，公域刷不到后可在「已下架」里翻黑历史</p>
                   </div>
-                  <router-link to="/publish" class="published-create-btn">
+                  <router-link :to="publishLocation" class="published-create-btn">
                     <span class="published-create-btn-icon">+</span>
                     发布新梗
                   </router-link>
@@ -130,9 +130,10 @@
                       :page-views="item.pageViews"
                       :likes="item.likes"
                       :comments="item.comments"
-                      :release-time="item.releaseTime"
+                      :release-time="item.releaseTime || item.createTime"
                       :update-time="item.updateTime"
                       :show-stats="item.status !== 3"
+                      :show-author="false"
                       :meta-text="item.status === 3 ? '已下架' : ''"
                     >
                       <template #cover-extra>
@@ -815,9 +816,11 @@ import {
 } from '@/api/favoriteFolder'
 import { batchMoveFavorites, removeMemeFavorite, deletePublishedMeme, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { useAuthStore } from '@/stores/auth'
+import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import ListLoadFooter from '@/components/layout/ListLoadFooter.vue'
 import MemeCard from '@/components/meme/MemeCard.vue'
 import { resolvePageHasMore } from '@/utils/pagination'
+import { buildMemeDetailLocation, buildToolPageLocation } from '@/utils/pageBreadcrumb'
 
 export default {
   name: 'UserProfilePage',
@@ -920,6 +923,12 @@ export default {
     },
     authToken() {
       return useAuthStore().token
+    },
+    publishLocation() {
+      return buildToolPageLocation('publishMeme', {
+        fromRoute: this.$route,
+        profileName: this.profile?.nickname || '',
+      })
     },
     routeUserId() {
       return this.$route.params.userId != null
@@ -1090,13 +1099,16 @@ export default {
     async loadProfile() {
       if (!this.requestUserId) {
         this.errorMessage = '无效的用户ID'
+        this.syncBreadcrumb()
         return
       }
       if (!this.isRequestUserIdValid) {
         this.errorMessage = '用户ID格式错误'
+        this.syncBreadcrumb()
         return
       }
       this.loading = true
+      this.syncBreadcrumb()
       this.errorMessage = ''
       try {
         const data = await getUserProfile(this.requestUserId, this.authToken)
@@ -1118,7 +1130,14 @@ export default {
         this.errorMessage = error && error.message ? error.message : '个人主页加载失败'
       } finally {
         this.loading = false
+        this.syncBreadcrumb()
       }
+    },
+    syncBreadcrumb() {
+      useBreadcrumbStore().setPatch({
+        nickname: this.profile?.nickname || '',
+        loading: this.loading,
+      })
     },
     openAvatarViewer() {
       if (!this.profile.avatar) return
@@ -1126,21 +1145,21 @@ export default {
     },
     goMemeDetail(id) {
       if (id == null || id === '') return
-      const query = {}
+      let options = {}
       if (this.isOwnProfile) {
         if (this.activeTab === 'published') {
-          query.from = 'published'
+          options = { from: 'published' }
         } else if (this.activeTab === 'favorite') {
-          query.from = 'favorite'
+          options = { from: 'favorite' }
         }
       } else {
-        query.from = 'profile'
-        query.userId = this.routeUserId
-        if (this.profile.nickname) {
-          query.profileName = this.profile.nickname
+        options = {
+          from: 'profile',
+          userId: this.routeUserId,
+          profileName: this.profile.nickname || '',
         }
       }
-      this.$router.push({ name: 'memeDetail', params: { id }, query })
+      this.$router.push(buildMemeDetailLocation(id, options))
     },
     handlePublishedCardClick(item) {
       if (!item) return
@@ -1259,8 +1278,12 @@ export default {
           size: this.publishedPageSize,
         })
         const list = Array.isArray(data.list) ? data.list : []
-        // 新接口字段为 memeId，统一映射到组件内部用的 id
-        const normalized = list.map((it) => ({ ...it, id: it.memeId }))
+        // 新接口字段为 memeId / id，统一映射到组件内部用的 id
+        const normalized = list.map((it) => ({
+          ...it,
+          id: it.id ?? it.memeId,
+          author: it.author || data.author || null,
+        }))
         if (this.publishedPageNo === 1) {
           this.publishedPage = {
             list: normalized,
@@ -1787,7 +1810,7 @@ export default {
   margin: -16px -32px -32px;
   padding: 16px 24px 24px;
   min-height: calc(100vh - 56px);
-  background: var(--meme-bg, #f9fafb);
+  background: var(--meme-bg);
   width: calc(100% + 64px);
 }
 
@@ -1797,7 +1820,7 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .profile-layout {
@@ -1824,26 +1847,26 @@ export default {
 .sidebar-header {
   text-align: center;
   padding-bottom: 14px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--meme-border);
 }
 
 .sidebar-avatar {
   cursor: zoom-in;
-  border: 3px solid #e8f2fd;
-  background: linear-gradient(135deg, var(--meme-primary, #318aef), var(--meme-primary-dark, #2872d4));
+  border: 3px solid var(--el-color-primary-light-9);
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
 }
 
 .sidebar-name {
   margin: 14px 0 8px;
   font-size: 30px;
   line-height: 1.25;
-  color: #111827;
+  color: var(--meme-text);
   word-break: break-all;
 }
 
 .sidebar-signature {
   margin: 0;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
   line-height: 1.6;
   word-break: break-word;
@@ -1858,9 +1881,9 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 10px 0;
-  border-bottom: 1px dashed #edf2f7;
+  border-bottom: 1px dashed var(--meme-border);
   font-size: 14px;
-  color: #4b5563;
+  color: var(--meme-text-secondary);
 }
 
 .sidebar-meta-item:last-child {
@@ -1897,7 +1920,7 @@ export default {
 .overview-value {
   font-size: 26px;
   font-weight: 700;
-  color: #111827;
+  color: var(--meme-text);
   line-height: 1.2;
   text-align: center;
 }
@@ -1905,7 +1928,7 @@ export default {
 .overview-label {
   margin-top: 6px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   text-align: center;
 }
 
@@ -1941,23 +1964,23 @@ export default {
 
 .meme-card-item {
   position: relative;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--meme-border);
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: var(--meme-bg-card);
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .meme-card-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .meme-cover {
   width: 100%;
   height: 140px;
-  background: #f3f4f6;
+  background: var(--meme-bg-muted);
 }
 
 .meme-cover-error {
@@ -1966,7 +1989,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
   font-size: 13px;
 }
 
@@ -2019,9 +2042,9 @@ export default {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #318aef 0%, #2563eb 100%);
-  box-shadow: 0 4px 14px rgba(49, 138, 239, 0.35);
+  color: var(--meme-text-inverse);
+  background: linear-gradient(135deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%);
+  box-shadow: 0 4px 14px var(--meme-focus-ring);
   text-decoration: none;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   flex-shrink: 0;
@@ -2029,8 +2052,8 @@ export default {
 
 .published-create-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(49, 138, 239, 0.42);
-  color: #fff;
+  box-shadow: 0 6px 18px var(--meme-focus-ring);
+  color: var(--meme-text-inverse);
 }
 
 .published-create-btn-icon {
@@ -2051,7 +2074,7 @@ export default {
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--el-border-color-lighter);
-  background: #fff;
+  background: var(--meme-bg-card);
   font-size: 13px;
   color: var(--el-text-color-regular);
   cursor: pointer;
@@ -2075,14 +2098,14 @@ export default {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--meme-bg-muted);
   font-size: 11px;
   line-height: 18px;
   text-align: center;
 }
 
 .published-filter-chip.is-active .published-filter-count {
-  background: rgba(49, 138, 239, 0.15);
+  background: var(--meme-primary-soft);
 }
 
 .published-meme-grid .meme-card-item--published {
@@ -2114,7 +2137,7 @@ export default {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
-  color: #fff;
+  color: var(--meme-text-inverse);
   backdrop-filter: blur(4px);
 }
 
@@ -2133,7 +2156,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--meme-overlay);
   pointer-events: none;
 }
 
@@ -2142,7 +2165,7 @@ export default {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
+  color: var(--meme-text-inverse);
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
@@ -2156,7 +2179,7 @@ export default {
   justify-content: center;
   gap: 10px;
   padding: 12px;
-  background: rgba(15, 23, 42, 0.52);
+  background: var(--meme-overlay);
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -2169,8 +2192,8 @@ export default {
   padding: 7px 14px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.95);
-  color: #1f2937;
+  background: var(--meme-surface-ghost);
+  color: var(--meme-text);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -2178,18 +2201,18 @@ export default {
 }
 
 .published-action-btn:hover {
-  background: #fff;
+  background: var(--meme-bg-card);
   transform: translateY(-1px);
 }
 
 .published-action-btn--danger {
   background: rgba(239, 68, 68, 0.92);
   border-color: rgba(239, 68, 68, 0.5);
-  color: #fff;
+  color: var(--meme-text-inverse);
 }
 
 .published-action-btn--danger:hover {
-  background: #dc2626;
+  background: var(--meme-danger);
 }
 
 .published-cover-stats {
@@ -2252,8 +2275,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fef3c7;
-  color: #d97706;
+  background: var(--meme-warning-soft);
+  color: var(--meme-warning);
   font-size: 16px;
 }
 
@@ -2283,7 +2306,7 @@ export default {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
-  background: #f9fafb;
+  background: var(--meme-bg);
 }
 
 .delete-published-preview-img {
@@ -2303,7 +2326,7 @@ export default {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
-  color: #fff;
+  color: var(--meme-text-inverse);
   background: rgba(245, 158, 11, 0.9);
 }
 
@@ -2312,17 +2335,17 @@ export default {
 }
 
 .restore-published-dialog-icon {
-  background: rgba(49, 138, 239, 0.12);
-  color: var(--meme-primary, #318aef);
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
 }
 
 .purge-published-dialog-icon {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  background: var(--meme-danger-soft);
+  color: var(--meme-danger);
 }
 
 .purge-published-notes {
-  color: #b45309;
+  color: var(--meme-warning);
 }
 
 .purge-confirm-input {
@@ -2336,7 +2359,7 @@ export default {
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 12px;
-  color: #fff;
+  color: var(--meme-text-inverse);
   background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
@@ -2360,7 +2383,7 @@ export default {
 .meme-title {
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--meme-text);
   line-height: 1.35;
   margin-bottom: 8px;
   overflow: hidden;
@@ -2373,11 +2396,11 @@ export default {
   gap: 8px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .profile-card {
-  border-radius: var(--meme-radius-xl, 24px);
+  border-radius: var(--meme-radius-xl);
 }
 
 .profile-card :deep(.el-card__body) {
@@ -2390,7 +2413,7 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .profile-error {
@@ -2414,9 +2437,9 @@ export default {
 .profile-avatar {
   flex-shrink: 0;
   cursor: zoom-in;
-  border: 3px solid #e8f2fd;
-  background: linear-gradient(135deg, var(--meme-primary, #318aef), var(--meme-primary-dark, #2872d4));
-  color: #fff;
+  border: 3px solid var(--el-color-primary-light-9);
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
+  color: var(--meme-text-inverse);
   font-size: 40px;
   font-weight: 700;
 }
@@ -2429,12 +2452,12 @@ export default {
   margin: 0 0 8px;
   font-size: 28px;
   line-height: 1.2;
-  color: #111827;
+  color: var(--meme-text);
 }
 
 .profile-signature {
   margin: 0;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 15px;
   line-height: 1.6;
 }
@@ -2471,7 +2494,7 @@ export default {
 }
 
 .avatar-edit-preview {
-  border: 2px solid #e8f2fd;
+  border: 2px solid var(--el-color-primary-light-9);
 }
 
 .avatar-edit-actions {
@@ -2482,7 +2505,7 @@ export default {
 
 .avatar-edit-tip {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--meme-text-muted);
 }
 
 .avatar-file-input {
@@ -2498,8 +2521,8 @@ export default {
   height: 420px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg);
 }
 
 .avatar-cropper {
@@ -2529,7 +2552,7 @@ export default {
 
 .cropper-step-label {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 
 .cropper-preview-wrap {
@@ -2540,15 +2563,15 @@ export default {
 }
 
 .cropper-preview-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--meme-border);
   border-radius: 10px;
   padding: 10px;
-  background: #fff;
+  background: var(--meme-bg-card);
 }
 
 .cropper-preview-title {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   margin-bottom: 8px;
 }
 
@@ -2556,7 +2579,7 @@ export default {
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 8px;
-  background: #f3f4f6;
+  background: var(--meme-bg-muted);
 }
 
 .cropper-preview-empty {
@@ -2565,21 +2588,21 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
-  background: #f9fafb;
+  color: var(--meme-text-muted);
+  background: var(--meme-bg);
   font-size: 12px;
 }
 
 .stats-value {
   font-size: 28px;
   font-weight: 700;
-  color: #111827;
+  color: var(--meme-text);
   line-height: 1.2;
 }
 
 .stats-label {
   margin-top: 6px;
-  color: #6b7280;
+  color: var(--meme-text-secondary);
   font-size: 14px;
 }
 
@@ -2587,8 +2610,8 @@ export default {
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 2px solid #e5e7eb;
-  border-top-color: var(--meme-primary, #318aef);
+  border: 2px solid var(--meme-border);
+  border-top-color: var(--meme-primary);
   border-radius: 50%;
   animation: meme-spin 0.8s linear infinite;
 }
@@ -2675,17 +2698,17 @@ export default {
   padding: 8px 16px;
   border: none;
   border-radius: 10px;
-  background: #d6e8ff;
-  color: #1677ff;
+  background: var(--el-color-primary-light-7);
+  color: var(--meme-primary);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.18s ease, box-shadow 0.18s ease;
-  box-shadow: 0 1px 2px rgba(22, 119, 255, 0.08);
+  box-shadow: 0 1px 2px var(--meme-focus-ring);
 }
 .favorite-create-btn:hover {
-  background: #c4ddff;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.14);
+  background: var(--el-color-primary-light-5);
+  box-shadow: 0 2px 8px var(--meme-focus-ring);
 }
 .favorite-create-btn-icon {
   font-size: 16px;
@@ -2699,8 +2722,8 @@ export default {
   min-height: 120px;
 }
 .folder-card {
-  background: #fff;
-  border: 1px solid #e8eaed;
+  background: var(--meme-bg-card);
+  border: 1px solid var(--meme-border);
   border-radius: 14px;
   padding: 16px 18px;
   cursor: pointer;
@@ -2711,8 +2734,8 @@ export default {
   min-height: 108px;
 }
 .folder-card:hover {
-  border-color: #c8d8f0;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  border-color: var(--meme-border-accent);
+  box-shadow: var(--meme-shadow-soft);
   transform: translateY(-1px);
 }
 .folder-card-top {
@@ -2725,7 +2748,7 @@ export default {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  color: #4b5563;
+  color: var(--meme-text-secondary);
 }
 .folder-card-name {
   flex: 1;
@@ -2773,10 +2796,10 @@ export default {
   color: #e91e8c;
 }
 .folder-card-status-public {
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 .folder-card-status-default {
-  color: #6b7280;
+  color: var(--meme-text-secondary);
 }
 .folder-card-empty {
   grid-column: 1 / -1;
@@ -2828,12 +2851,12 @@ export default {
   margin-bottom: 14px;
   border-radius: 10px;
   border: 1px solid var(--el-border-color-lighter);
-  background: #fafbfd;
+  background: var(--meme-bg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .folder-batch-bar.is-active {
-  border-color: #c8daf8;
-  box-shadow: 0 2px 10px rgba(22, 119, 255, 0.06);
+  border-color: var(--meme-border-accent);
+  box-shadow: 0 2px 10px var(--meme-focus-ring);
 }
 .folder-batch-check :deep(.el-checkbox__label) {
   font-size: 14px;
@@ -2871,9 +2894,9 @@ export default {
   flex-wrap: wrap;
   padding: 12px 16px;
   border-radius: 14px;
-  background: #fff;
+  background: var(--meme-bg-card);
   border: 1px solid var(--el-border-color-lighter);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--meme-shadow-dialog);
 }
 .folder-batch-dock-left {
   display: flex;
@@ -2917,22 +2940,22 @@ export default {
   border: 1px solid transparent;
 }
 .folder-batch-dock-btn-move {
-  background: #eef4ff;
-  color: #1677ff;
-  border-color: #d6e4ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--meme-primary);
+  border-color: var(--el-color-primary-light-7);
 }
 .folder-batch-dock-btn-move:hover {
-  background: #dbeafe;
-  border-color: #b9d0ff;
+  background: var(--el-color-primary-light-7);
+  border-color: var(--el-color-primary-light-5);
 }
 .folder-batch-dock-btn-remove {
-  background: #fff5f5;
-  color: #e11d48;
-  border-color: #fecdd3;
+  background: var(--meme-danger-soft);
+  color: var(--meme-danger);
+  border-color: var(--meme-danger);
 }
 .folder-batch-dock-btn-remove:hover {
-  background: #ffe4e6;
-  border-color: #fda4af;
+  background: var(--meme-danger-soft);
+  border-color: var(--meme-danger);
 }
 .folder-batch-dock-enter-active,
 .folder-batch-dock-leave-active {
@@ -2973,7 +2996,7 @@ export default {
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 .meme-select-toggle:hover {
-  border-color: #fff;
+  border-color: var(--meme-text-inverse);
   transform: scale(1.05);
 }
 .meme-select-toggle.is-checked {
@@ -2987,7 +3010,7 @@ export default {
   top: 1px;
   width: 5px;
   height: 9px;
-  border: 2px solid #fff;
+  border: 2px solid var(--meme-text-inverse);
   border-top: 0;
   border-left: 0;
   transform: rotate(45deg);
@@ -3006,7 +3029,7 @@ export default {
 }
 .meme-cover-stat {
   font-size: 12px;
-  color: #fff;
+  color: var(--meme-text-inverse);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .folder-meme-grid .meme-info {
@@ -3034,22 +3057,22 @@ export default {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #9499a0;
+  color: var(--meme-text-muted);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .meme-more-btn:hover {
-  background: #f1f2f3;
-  color: #61666d;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
 }
 .folder-meme-grid .meme-meta {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--meme-text-muted);
 }
 .meme-meta-time {
-  color: #9499a0;
+  color: var(--meme-text-muted);
   font-size: 12px;
 }
 
@@ -3133,18 +3156,18 @@ export default {
 .meme-action-popper.el-popper {
   border-radius: 12px !important;
   border: none !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12) !important;
+  box-shadow: var(--meme-shadow-soft) !important;
   padding: 6px 0 !important;
   min-width: 120px;
 }
 .meme-action-popper .el-dropdown-menu__item {
   padding: 10px 20px;
   font-size: 14px;
-  color: #61666d;
+  color: var(--meme-text-secondary);
   line-height: 1.2;
 }
 .meme-action-popper .el-dropdown-menu__item:not(.is-disabled):hover {
-  background: #f6f7f8;
-  color: #18191c;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text);
 }
 </style>

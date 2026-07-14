@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.service.user;
 
 import com.sakana.just_because_meme_understands_you.dto.UserProfileUpdateRequestDTO;
+import com.sakana.just_because_meme_understands_you.vo.AccountProfileVO;
 import com.sakana.just_because_meme_understands_you.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.vo.PageVO;
 import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
@@ -30,7 +31,10 @@ public interface IUserProfileService {
 
     UploadAvatarVO uploadAvatar(Long userId, MultipartFile file);
 
-    void updateProfile(Long userId, UserProfileUpdateRequestDTO request);
+    /**
+     * 更新个人资料，返回最新资料快照（对齐 Apifox Author）。
+     */
+    AccountProfileVO updateProfile(Long userId, UserProfileUpdateRequestDTO request);
 
     void evictUserCache(Long userId);
 

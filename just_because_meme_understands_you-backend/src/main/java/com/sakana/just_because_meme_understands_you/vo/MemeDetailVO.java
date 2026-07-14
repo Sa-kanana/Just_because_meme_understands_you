@@ -64,6 +64,9 @@ public class MemeDetailVO {
     /** 状态描述 */
     private String statusDesc;
 
+    /** 发布者信息 */
+    private AuthorVO author;
+
     /** 当前登录用户是否为发布者 */
     private Boolean owner;
 

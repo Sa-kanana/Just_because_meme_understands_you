@@ -135,25 +135,17 @@ export default {
 .preview-banner {
   position: relative;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: var(--meme-radius-lg);
   padding: 16px 18px;
-  border: 1px solid rgba(49, 138, 239, 0.14);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(49, 138, 239, 0.08), transparent 42%),
-    linear-gradient(135deg, #f8fbff 0%, #ffffff 55%, #fffdf8 100%);
-  box-shadow:
-    0 10px 28px rgba(49, 138, 239, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-gradient-hero);
+  box-shadow: var(--meme-shadow-card);
 }
 
 .preview-banner--offline {
-  border-color: rgba(100, 116, 139, 0.16);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(100, 116, 139, 0.06), transparent 42%),
-    linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-  box-shadow:
-    0 10px 28px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  border-color: var(--meme-border);
+  background: var(--meme-gradient-card);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .preview-banner-accent {
@@ -162,11 +154,11 @@ export default {
   top: 0;
   bottom: 0;
   width: 4px;
-  background: linear-gradient(180deg, var(--meme-primary, #318aef), #60a5fa);
+  background: linear-gradient(180deg, var(--meme-primary), var(--el-color-primary-light-3));
 }
 
 .preview-banner--offline .preview-banner-accent {
-  background: linear-gradient(180deg, #64748b, #94a3b8);
+  background: linear-gradient(180deg, var(--meme-text-secondary), var(--meme-text-muted));
 }
 
 .preview-banner-top {
@@ -196,21 +188,21 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(49, 138, 239, 0.12);
-  box-shadow: 0 4px 14px rgba(49, 138, 239, 0.1);
+  background: var(--meme-surface-ghost);
+  border: 1px solid var(--meme-border-accent);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .preview-banner--offline .preview-banner-icon {
-  border-color: rgba(100, 116, 139, 0.14);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  border-color: var(--meme-border);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .preview-banner-pulse {
   position: absolute;
   inset: -4px;
   border-radius: 18px;
-  border: 2px solid rgba(49, 138, 239, 0.22);
+  border: 2px solid var(--meme-border-accent);
   animation: preview-pulse 2.2s ease-out infinite;
 }
 
@@ -248,27 +240,27 @@ export default {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #1d4ed8;
-  background: rgba(49, 138, 239, 0.12);
+  color: var(--meme-accent-text);
+  background: var(--meme-primary-soft);
 }
 
 .preview-banner--offline .preview-banner-badge {
-  color: #475569;
-  background: rgba(100, 116, 139, 0.14);
+  color: var(--meme-text-secondary);
+  background: var(--meme-bg-muted);
 }
 
 .preview-banner-title {
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .preview-banner-desc {
   margin: 0;
   font-size: 13px;
   line-height: 1.65;
-  color: #64748b;
+  color: var(--meme-text-secondary);
 }
 
 .preview-banner-top-actions {
@@ -277,8 +269,8 @@ export default {
 
 .preview-banner-toggle {
   border: none;
-  background: rgba(255, 255, 255, 0.72);
-  color: #64748b;
+  background: var(--meme-surface-ghost);
+  color: var(--meme-text-secondary);
   font-size: 12px;
   padding: 6px 10px;
   border-radius: 999px;
@@ -290,8 +282,8 @@ export default {
 }
 
 .preview-banner-toggle:hover {
-  background: rgba(49, 138, 239, 0.08);
-  color: var(--meme-primary, #318aef);
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
 }
 
 .preview-banner-toggle-arrow {
@@ -308,11 +300,11 @@ export default {
 .preview-banner-content {
   margin-top: 14px;
   padding-top: 14px;
-  border-top: 1px dashed rgba(49, 138, 239, 0.16);
+  border-top: 1px dashed var(--meme-border-accent);
 }
 
 .preview-banner--offline .preview-banner-content {
-  border-top-color: rgba(148, 163, 184, 0.22);
+  border-top-color: var(--meme-border-strong);
 }
 
 .preview-banner.is-collapsed .preview-banner-content {
@@ -333,26 +325,26 @@ export default {
   border-radius: 10px;
   font-size: 12px;
   line-height: 1.45;
-  color: #334155;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(49, 138, 239, 0.1);
+  color: var(--meme-text-secondary);
+  background: var(--meme-surface-ghost);
+  border: 1px solid var(--meme-border-accent);
 }
 
 .preview-banner-chip.is-disabled {
-  color: #94a3b8;
-  background: rgba(248, 250, 252, 0.9);
-  border-color: rgba(148, 163, 184, 0.18);
+  color: var(--meme-text-muted);
+  background: var(--meme-bg-muted);
+  border-color: var(--meme-border);
 }
 
 .preview-banner-chip-mark {
   flex-shrink: 0;
   width: 14px;
   font-weight: 700;
-  color: var(--meme-primary, #318aef);
+  color: var(--meme-primary);
 }
 
 .preview-banner-chip.is-disabled .preview-banner-chip-mark {
-  color: #cbd5e1;
+  color: var(--meme-text-muted);
 }
 
 .preview-banner-actions {

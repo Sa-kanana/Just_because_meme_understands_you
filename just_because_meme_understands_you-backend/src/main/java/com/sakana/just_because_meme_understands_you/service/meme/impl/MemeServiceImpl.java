@@ -11,6 +11,7 @@ import com.sakana.just_because_meme_understands_you.entity.Meme;
 import com.sakana.just_because_meme_understands_you.common.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.entity.MemeResource;
 import com.sakana.just_because_meme_understands_you.entity.MemeTag;
+import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserRelation;
 import com.sakana.just_because_meme_understands_you.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
@@ -21,6 +22,8 @@ import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentC
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport.ViewAccess;
+import com.sakana.just_because_meme_understands_you.service.user.support.AuthorSupport;
+import com.sakana.just_because_meme_understands_you.vo.AuthorVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeResourceVO;
@@ -77,6 +80,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
 
     @Resource
     private UserRelationMapper userRelationMapper;
+
+    @Resource
+    private AuthorSupport authorSupport;
 
     @Override
     public List<MemeListItemVO> pageMemeList(int page) {
@@ -150,6 +156,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
 
         List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
         Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        Map<Long, User> authorMap = loadAuthorMap(memeList);
 
         List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
@@ -163,6 +170,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             vo.setReleaseTime(meme.getReleaseTime());
             vo.setUpdateTime(meme.getUpdateTime());
             vo.setStatus(meme.getStatus());
+            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
             List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
             vo.setMemeTag(toMemeTagVOList(tags));
             vo.setLabel(tags);
@@ -186,6 +194,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
 
         List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
         Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        Map<Long, User> authorMap = loadAuthorMap(memeList);
 
         List<SimpleMemeVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
@@ -198,7 +207,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             vo.setComments(meme.getComments());
             vo.setReleaseTime(meme.getReleaseTime());
             vo.setUpdateTime(meme.getUpdateTime());
-             vo.setStatus(meme.getStatus());
+            vo.setStatus(meme.getStatus());
+            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, true));
             List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
             vo.setMemeTag(toMemeTagVOList(tags));
             voList.add(vo);
@@ -229,6 +239,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
                     MemeDetailVO cached = objectMapper.readValue(json, new TypeReference<>() {});
                     if (cached != null && Objects.equals(cached.getStatus(), STATUS_NORMAL)) {
                         applyViewMeta(cached, meme, currentUserId, access);
+                        ensureDetailAuthor(cached, meme);
                         ossUrlHelper.refreshMemeDetailUrls(cached);
                         return cached;
                     }
@@ -311,9 +322,40 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         vo.setReleaseTime(meme.getReleaseTime());
         vo.setUpdateTime(meme.getUpdateTime());
         vo.setStatus(meme.getStatus());
+        vo.setAuthor(buildAuthor(meme.getUserId(), true));
         vo.setMemeTag(toMemeTagVOList(tags));
         vo.setLinks(toMemeResourceVOList(links));
         return vo;
+    }
+
+    private void ensureDetailAuthor(MemeDetailVO vo, Meme meme) {
+        if (vo == null || meme == null) {
+            return;
+        }
+        AuthorVO author = vo.getAuthor();
+        if (author == null || !StringUtils.hasText(author.getUserId())) {
+            vo.setAuthor(buildAuthor(meme.getUserId(), true));
+        } else if (StringUtils.hasText(author.getAvatar())) {
+            author.setAvatar(ossUrlHelper.toPublicUrl(author.getAvatar()));
+        }
+    }
+
+    private AuthorVO buildAuthor(Long userId, boolean includeSignature) {
+        Map<Long, User> map = authorSupport.loadUserMap(
+                userId == null ? Collections.emptyList() : Collections.singletonList(userId));
+        return authorSupport.toAuthorVO(userId, map, includeSignature);
+    }
+
+    private Map<Long, User> loadAuthorMap(List<Meme> memeList) {
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> userIds = memeList.stream()
+                .map(Meme::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        return authorSupport.loadUserMap(userIds);
     }
 
     /**
@@ -414,6 +456,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         }
         List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
         Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        Map<Long, User> authorMap = loadAuthorMap(memeList);
 
         List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
@@ -427,6 +470,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             vo.setReleaseTime(meme.getReleaseTime());
             vo.setUpdateTime(meme.getUpdateTime());
             vo.setStatus(meme.getStatus());
+            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
             List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
             vo.setMemeTag(toMemeTagVOList(tags));
             vo.setLabel(tags);

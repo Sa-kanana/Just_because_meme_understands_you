@@ -161,6 +161,9 @@ public class OssUrlHelper {
             return;
         }
         vo.setImage(toPublicUrl(vo.getImage()));
+        if (vo.getAuthor() != null) {
+            vo.getAuthor().setAvatar(toPublicUrl(vo.getAuthor().getAvatar()));
+        }
         if (vo.getLinks() == null) {
             return;
         }

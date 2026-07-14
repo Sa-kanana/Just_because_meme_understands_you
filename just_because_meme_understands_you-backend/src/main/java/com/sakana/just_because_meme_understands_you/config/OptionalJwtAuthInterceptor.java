@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.config;
 
 import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
+import com.sakana.just_because_meme_understands_you.service.auth.UserSessionRevoker;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,10 +20,14 @@ public class OptionalJwtAuthInterceptor implements HandlerInterceptor {
 
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate stringRedisTemplate;
+    private final UserSessionRevoker userSessionRevoker;
 
-    public OptionalJwtAuthInterceptor(JwtUtil jwtUtil, StringRedisTemplate stringRedisTemplate) {
+    public OptionalJwtAuthInterceptor(JwtUtil jwtUtil,
+                                      StringRedisTemplate stringRedisTemplate,
+                                      UserSessionRevoker userSessionRevoker) {
         this.jwtUtil = jwtUtil;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.userSessionRevoker = userSessionRevoker;
     }
 
     @Override
@@ -44,7 +49,11 @@ public class OptionalJwtAuthInterceptor implements HandlerInterceptor {
             if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
                 return true;
             }
-            request.setAttribute(AuthContext.ATTR_USER_ID, claims.getSubject());
+            String userId = claims.getSubject();
+            if (!userSessionRevoker.isTokenVersionValid(userId, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
+                return true;
+            }
+            request.setAttribute(AuthContext.ATTR_USER_ID, userId);
             request.setAttribute(AuthConstants.CLAIM_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
         } catch (Exception ignored) {
             // 无效 token 按匿名处理

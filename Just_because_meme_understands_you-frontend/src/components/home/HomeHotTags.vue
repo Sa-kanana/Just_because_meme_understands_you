@@ -46,7 +46,7 @@ export default {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--meme-text);
 }
 
 .home-hot-tags__scroll {
@@ -62,15 +62,15 @@ export default {
 }
 
 .home-hot-tags__scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--meme-border-strong);
   border-radius: 999px;
 }
 
 .home-hot-tags__chip {
   flex: 0 0 auto;
-  border: 1px solid rgba(49, 138, 239, 0.16);
-  background: rgba(49, 138, 239, 0.06);
-  color: #1d4ed8;
+  border: 1px solid var(--meme-border-accent);
+  background: var(--meme-primary-soft);
+  color: var(--meme-accent-text);
   border-radius: 999px;
   padding: 8px 14px;
   font-size: 13px;
@@ -81,7 +81,8 @@ export default {
 }
 
 .home-hot-tags__chip:hover {
-  background: rgba(49, 138, 239, 0.12);
-  border-color: rgba(49, 138, 239, 0.28);
+  background: var(--meme-primary-soft);
+  border-color: var(--meme-primary);
+  filter: brightness(1.08);
 }
 </style>
