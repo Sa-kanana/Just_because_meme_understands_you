@@ -95,6 +95,11 @@ user-favorite:
   # 收藏总数 Redis -> DB 同步间隔（毫秒）
   count-sync-interval-ms: 120000
 
+user:
+  follow:
+    # 单用户关注/取消关注每分钟上限（防刷）
+    rate-limit-per-minute: 60
+
 meme-comment:
   # Redis 评论计数 -> meme.comments 批量回写间隔（毫秒）
   count-sync-interval-ms: 120000

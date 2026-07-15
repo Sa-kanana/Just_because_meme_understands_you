@@ -519,6 +519,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         LambdaQueryWrapper<UserRelation> wrapper = new LambdaQueryWrapper<UserRelation>()
                 .eq(UserRelation::getFromUserId, currentUserId)
                 .eq(UserRelation::getToUserId, targetUserId)
+                .eq(UserRelation::getIsDeleted, 0)
                 .last("LIMIT 1");
         return userRelationMapper.selectCount(wrapper) > 0;
     }

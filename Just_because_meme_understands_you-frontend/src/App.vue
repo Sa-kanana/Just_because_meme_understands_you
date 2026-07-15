@@ -3,7 +3,7 @@
     <header class="site-header">
       <div class="header-left">
         <router-link to="/" class="logo-wrap">
-          <img class="logo-img" alt="网站 logo" src="@/assets/icon.jpg" />
+          <img class="logo-img" alt="网站 logo" src="/icon.svg?v=4" />
           <span class="logo-text">只因“梗”懂你</span>
         </router-link>
         <nav class="nav-links">
@@ -545,8 +545,9 @@ export default {
 .logo-img {
   width: 40px;
   height: 40px;
-  border-radius: 6px;
-  background-color: #000;
+  border-radius: 0;
+  background: transparent;
+  display: block;
 }
 
 .logo-text {

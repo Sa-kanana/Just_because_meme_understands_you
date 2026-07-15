@@ -503,7 +503,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             return Collections.emptyList();
         }
         List<UserRelation> relations = userRelationMapper.selectList(new LambdaQueryWrapper<UserRelation>()
-                .eq(UserRelation::getFromUserId, userId));
+                .eq(UserRelation::getFromUserId, userId)
+                .eq(UserRelation::getIsDeleted, 0)
+                .select(UserRelation::getToUserId));
         if (relations == null || relations.isEmpty()) {
             return Collections.emptyList();
         }

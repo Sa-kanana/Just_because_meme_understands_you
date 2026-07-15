@@ -95,6 +95,17 @@
                     </el-avatar>
                     <span class="detail-author-name">{{ authorNickname }}</span>
                   </button>
+                  <FollowButton
+                    v-if="authorUserId && !isAuthorSelf"
+                    :key="`detail-follow-${authorUserId}`"
+                    v-model="authorFollowed"
+                    :user-id="authorUserId"
+                    :mutual="authorMutual"
+                    size="sm"
+                    class="detail-follow-btn"
+                    fetch-on-mount
+                    @change="onAuthorFollowChange"
+                  />
                 </div>
                 <div class="detail-meta-actions">
                   <MemeDetailLikeBtn
@@ -522,6 +533,7 @@ import { isAuthErrorHandled } from '@/utils/authSession'
 import MemeDetailPreviewBanner from '@/components/meme/MemeDetailPreviewBanner.vue'
 import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
+import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -580,6 +592,27 @@ const authorAvatar = computed(() => {
   return avatar != null ? String(avatar).trim() : ''
 })
 const authorAvatarFallback = computed(() => authorNickname.value.charAt(0).toUpperCase())
+
+const authorFollowed = ref(false)
+const authorMutual = ref(false)
+const isAuthorSelf = computed(() => {
+  const me = authStore.currentUser
+  if (!me || !authorUserId.value) return false
+  const mid = me.id != null ? String(me.id) : me.userId != null ? String(me.userId) : ''
+  return !!mid && mid === authorUserId.value
+})
+
+watch(authorUserId, () => {
+  authorFollowed.value = false
+  authorMutual.value = false
+})
+
+function onAuthorFollowChange(payload) {
+  if (!payload) return
+  authorFollowed.value = Boolean(payload.followed)
+  authorMutual.value = Boolean(payload.mutual)
+}
+
 const commentsEnabled = computed(() => {
   if (!meme.value) return false
   if (meme.value.viewMode === 'owner_preview') return false
@@ -1470,8 +1503,13 @@ function goSearchByTag(tag) {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.detail-title-block .detail-title {
+  flex: 1 1 100%;
 }
 
 .detail-title {
@@ -1494,6 +1532,11 @@ function goSearchByTag(tag) {
   background: transparent;
   cursor: pointer;
   text-align: left;
+}
+
+.detail-follow-btn {
+  margin: 2px 0 0;
+  flex-shrink: 0;
 }
 
 .detail-author:hover .detail-author-name {

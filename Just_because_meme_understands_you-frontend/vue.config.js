@@ -7,7 +7,7 @@ module.exports = defineConfig({
   transpileDependencies: true,
   chainWebpack: (config) => {
     config.plugin('html').tap((args) => {
-      args[0].favicon = path.resolve(__dirname, 'public/icon.jpg')
+      args[0].favicon = path.resolve(__dirname, 'public/icon.svg')
       return args
     })
   },
@@ -21,9 +21,9 @@ module.exports = defineConfig({
   devServer: {
     port: 80,
     setupMiddlewares(middlewares, devServer) {
-      const iconPath = path.resolve(__dirname, 'public/icon.jpg')
+      const iconPath = path.resolve(__dirname, 'public/icon.svg')
       devServer.app.get('/favicon.ico', (_req, res) => {
-        res.type('image/jpeg')
+        res.type('image/svg+xml')
         fs.createReadStream(iconPath).pipe(res)
       })
       return middlewares

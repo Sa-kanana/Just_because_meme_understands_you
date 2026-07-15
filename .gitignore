@@ -1,6 +1,15 @@
 # Compiled class file
 *.class
 
+# Dependencies
+node_modules/
+
+# Build outputs
+target/
+dist/
+build/
+out/
+
 # Log file
 *.log
 
@@ -22,3 +31,27 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.apt_generated/
+.factorypath/
+.springBeans
+.sts4-cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+.env.*.local

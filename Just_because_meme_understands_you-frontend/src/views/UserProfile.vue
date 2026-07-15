@@ -28,18 +28,18 @@
             <p class="sidebar-signature">{{ profile.signature || '这个人很懒，什么都没留下~' }}</p>
           </div>
 
-          <div class="sidebar-meta">
-            <div class="sidebar-meta-item">
-              <span>用户ID</span>
-              <span>#{{ profile.userId || '-' }}</span>
-            </div>
-            <div class="sidebar-meta-item">
+          <div class="sidebar-stats">
+            <button type="button" class="sidebar-stat" @click="openRelationDrawer('following')">
+              <strong>{{ formatNum(profile.stats.followCount) }}</strong>
               <span>关注</span>
-              <span>{{ formatNum(profile.stats.followCount) }}</span>
-            </div>
-            <div class="sidebar-meta-item">
+            </button>
+            <button type="button" class="sidebar-stat" @click="openRelationDrawer('followers')">
+              <strong>{{ formatNum(profile.stats.fansCount) }}</strong>
               <span>粉丝</span>
-              <span>{{ formatNum(profile.stats.fansCount) }}</span>
+            </button>
+            <div class="sidebar-stat sidebar-stat--static">
+              <strong>#{{ profile.userId || '-' }}</strong>
+              <span>UID</span>
             </div>
           </div>
 
@@ -52,6 +52,15 @@
             >
               编辑信息
             </el-button>
+            <FollowButton
+              v-else-if="profile.userId"
+              v-model="profile.isFollow"
+              :user-id="profile.userId"
+              :mutual="followMutual"
+              size="lg"
+              class="sidebar-follow-btn"
+              @change="onProfileFollowChange"
+            />
           </div>
         </el-card>
       </aside>
@@ -600,6 +609,17 @@
       @close="avatarViewerVisible = false"
     />
 
+    <FollowRelationDrawer
+      :visible="relationDrawerVisible"
+      :owner-user-id="profile.userId"
+      :owner-nickname="profile.nickname"
+      :follow-count="profile.stats.followCount"
+      :fans-count="profile.stats.fansCount"
+      :initial-tab="relationDrawerTab"
+      @update:visible="relationDrawerVisible = $event"
+      @counts-change="onRelationCountsChange"
+    />
+
     <!-- 删除发布梗确认弹窗 -->
     <el-dialog
       v-model="deletePublishedDialogVisible"
@@ -821,6 +841,9 @@ import ListLoadFooter from '@/components/layout/ListLoadFooter.vue'
 import MemeCard from '@/components/meme/MemeCard.vue'
 import { resolvePageHasMore } from '@/utils/pagination'
 import { buildMemeDetailLocation, buildToolPageLocation } from '@/utils/pageBreadcrumb'
+import FollowButton from '@/components/user/FollowButton.vue'
+import FollowRelationDrawer from '@/components/user/FollowRelationDrawer.vue'
+import { getFollowStatus } from '@/api/follow'
 
 export default {
   name: 'UserProfilePage',
@@ -829,6 +852,8 @@ export default {
     ElImageViewer,
     ListLoadFooter,
     MemeCard,
+    FollowButton,
+    FollowRelationDrawer,
   },
   data() {
     return {
@@ -864,6 +889,7 @@ export default {
         gender: 0,
         birthday: '',
         isSelf: false,
+        isFollow: false,
         memes: [],
         favorites: [],
         stats: {
@@ -874,6 +900,10 @@ export default {
           fansCount: 0,
         },
       },
+      followMutual: false,
+      relationDrawerVisible: false,
+      relationDrawerTab: 'following',
+      followStatusEpoch: 0,
       publishedPage: {
         list: [],
         total: 0,
@@ -1115,14 +1145,17 @@ export default {
         this.profile = {
           ...this.profile,
           ...data,
+          isFollow: Boolean(data.isFollow),
           stats: {
             ...this.profile.stats,
             ...(data.stats || {}),
           },
         }
+        this.followMutual = false
         this.publishedPageNo = 1
         this.loadPublishedMemes()
         this.applyRouteTab()
+        this.refreshFollowMutual()
         if (this.activeTab === 'favorite') {
           this.loadFolders()
         }
@@ -1490,6 +1523,64 @@ export default {
       if (n >= 1e8) return `${(n / 1e8).toFixed(1)}亿`
       if (n >= 1e4) return `${(n / 1e4).toFixed(1)}万`
       return String(Math.floor(n))
+    },
+    async refreshFollowMutual() {
+      if (!this.authToken || this.isOwnProfile || !this.profile.userId) {
+        this.followMutual = false
+        return
+      }
+      const userId = String(this.profile.userId)
+      const epoch = ++this.followStatusEpoch
+      try {
+        const status = await getFollowStatus(userId, this.authToken)
+        if (epoch !== this.followStatusEpoch) return
+        if (String(this.profile.userId) !== userId) return
+        this.profile.isFollow = Boolean(status.followed)
+        this.followMutual = Boolean(status.mutual)
+        if (status.fansCount != null) {
+          this.profile.stats.fansCount = Number(status.fansCount) || 0
+        }
+        if (status.followCount != null) {
+          this.profile.stats.followCount = Number(status.followCount) || 0
+        }
+      } catch (_) {
+        // 状态刷新失败不影响主页展示
+      }
+    },
+    openRelationDrawer(tab) {
+      if (!this.profile.userId) return
+      this.relationDrawerTab = tab === 'followers' ? 'followers' : 'following'
+      this.relationDrawerVisible = true
+    },
+    onProfileFollowChange(payload) {
+      if (!payload) return
+      // 作废在途的状态同步，避免把刚关注的结果冲掉
+      this.followStatusEpoch += 1
+      this.profile.isFollow = Boolean(payload.followed)
+      this.followMutual = Boolean(payload.mutual)
+      if (payload.fansCount != null) {
+        this.profile.stats.fansCount = Number(payload.fansCount) || 0
+      }
+    },
+    onRelationCountsChange(payload) {
+      if (!payload) return
+      const targetId = payload.targetUserId != null ? String(payload.targetUserId) : ''
+      const tab = payload.tab || this.relationDrawerTab
+      // 在本人「关注」列表里关注/取消别人 → 更新自己的关注数
+      if (this.isOwnProfile && tab === 'following' && targetId) {
+        const delta = payload.followed ? 1 : -1
+        this.profile.stats.followCount = Math.max(
+          0,
+          (Number(this.profile.stats.followCount) || 0) + delta
+        )
+        return
+      }
+      // 操作的是主页主人本人 → 同步粉丝数
+      if (targetId && targetId === String(this.profile.userId) && payload.fansCount != null) {
+        this.profile.stats.fansCount = Number(payload.fansCount) || 0
+        this.profile.isFollow = Boolean(payload.followed)
+        this.followMutual = Boolean(payload.mutual)
+      }
     },
     formatFavoriteTime(t) {
       if (!t) return ''
@@ -1872,29 +1963,64 @@ export default {
   word-break: break-word;
 }
 
-.sidebar-meta {
-  margin-top: 14px;
+.sidebar-stats {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 4px 0 2px;
 }
 
-.sidebar-meta-item {
+.sidebar-stat {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px dashed var(--meme-border);
-  font-size: 14px;
+  gap: 4px;
+  padding: 10px 6px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.15s ease;
+}
+
+.sidebar-stat:hover:not(.sidebar-stat--static) {
+  background: var(--meme-primary-soft);
+}
+
+.sidebar-stat strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--meme-text);
+  line-height: 1.2;
+}
+
+.sidebar-stat span {
+  font-size: 12px;
+  color: var(--meme-text-muted);
+}
+
+.sidebar-stat--static {
+  cursor: default;
+}
+
+.sidebar-stat--static strong {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--meme-text-secondary);
 }
 
-.sidebar-meta-item:last-child {
-  border-bottom: none;
-}
-
 .sidebar-actions {
-  margin-top: 12px;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }
 
-.sidebar-edit-btn {
+.sidebar-edit-btn,
+.sidebar-follow-btn {
   width: 100%;
 }
 
