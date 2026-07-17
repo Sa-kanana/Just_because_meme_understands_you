@@ -447,8 +447,9 @@ export function getMemeRootComments(memeId, params = {}) {
 }
 
 /**
- * 获取子评论
+ * 分页获取子评论
  * GET /detail/comments/{rootId}/replies
+ * @returns {Promise<{list: Array, page: number, size: number, total: number, hasMore: boolean}>}
  */
 export function getMemeCommentReplies(rootId, params = {}) {
   const id = rootId != null ? String(rootId).trim() : ''
@@ -456,8 +457,24 @@ export function getMemeCommentReplies(rootId, params = {}) {
   const { page = 1, size = 10 } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
   return request(`/detail/comments/${encodeURIComponent(id)}/replies?${query}`, { method: 'GET' }).then((res) => {
-    if (res && Number(res.code) === 1 && Array.isArray(res.data)) {
-      return res.data
+    if (res && Number(res.code) === 1 && res.data) {
+      // 兼容旧版直接返回数组
+      if (Array.isArray(res.data)) {
+        return {
+          list: res.data,
+          page: Number(page) || 1,
+          size: Number(size) || 10,
+          total: res.data.length,
+          hasMore: false,
+        }
+      }
+      return {
+        list: Array.isArray(res.data.list) ? res.data.list : [],
+        page: Number(res.data.page) || Number(page) || 1,
+        size: Number(res.data.size) || Number(size) || 10,
+        total: Number(res.data.total) || 0,
+        hasMore: Boolean(res.data.hasMore),
+      }
     }
     throw new Error((res && (res.message || res.msg)) || '加载回复失败')
   })
@@ -491,6 +508,74 @@ export function addMemeComment(payload = {}) {
   }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '发表评论失败')
+  })
+}
+
+/**
+ * 删除评论
+ * DELETE /detail/comments/{commentId}
+ */
+export function deleteMemeComment(commentId) {
+  const id = commentId != null ? String(commentId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少评论 id'))
+  return request(`/detail/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '删除评论失败')
+  })
+}
+
+/**
+ * 评论点赞
+ * POST /detail/comments/{commentId}/likes
+ */
+export function likeMemeComment(commentId) {
+  const id = commentId != null ? String(commentId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少评论 id'))
+  return request(`/detail/comments/${encodeURIComponent(id)}/likes`, { method: 'POST' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '点赞失败')
+  })
+}
+
+/**
+ * 取消评论点赞
+ * DELETE /detail/comments/{commentId}/likes
+ */
+export function unlikeMemeComment(commentId) {
+  const id = commentId != null ? String(commentId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少评论 id'))
+  return request(`/detail/comments/${encodeURIComponent(id)}/likes`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '取消点赞失败')
+  })
+}
+
+/**
+ * 单条评论点赞状态
+ * GET /detail/comments/{commentId}/likes/status
+ */
+export function getMemeCommentLikeStatus(commentId) {
+  const id = commentId != null ? String(commentId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少评论 id'))
+  return request(`/detail/comments/${encodeURIComponent(id)}/likes/status`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '查询点赞状态失败')
+  })
+}
+
+/**
+ * 批量评论点赞状态
+ * GET /detail/comments/likes/status?commentIds=1,2,3
+ */
+export function batchMemeCommentLikeStatus(commentIds = []) {
+  const ids = (Array.isArray(commentIds) ? commentIds : [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean)
+  if (!ids.length) return Promise.resolve({ items: [] })
+  const query = new URLSearchParams({ commentIds: ids.join(',') })
+  return request(`/detail/comments/likes/status?${query}`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '批量查询点赞状态失败')
   })
 }
 

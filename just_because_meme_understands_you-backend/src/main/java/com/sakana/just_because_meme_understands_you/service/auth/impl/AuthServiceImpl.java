@@ -3,6 +3,7 @@ package com.sakana.just_because_meme_understands_you.service.auth.impl;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
+import com.sakana.just_because_meme_understands_you.common.constant.UserStatusConstants;
 import com.sakana.just_because_meme_understands_you.config.JwtUtil;
 import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserAuth;
@@ -213,7 +214,7 @@ public class AuthServiceImpl implements IAuthService {
         User user = new User();
         user.setNickname(nickname);
         user.setRole("ROLE_USER");
-        user.setStatus(1);
+        user.setStatus(UserStatusConstants.ACTIVE);
         userService.save(user);
         long userId = user.getId();
 
@@ -373,7 +374,7 @@ public class AuthServiceImpl implements IAuthService {
      * 校验用户状态，status 为 0 视为禁用。
      */
     private void ensureUserActive(User user) {
-        if ("0".equals(String.valueOf(user.getStatus()))) {
+        if (user.getStatus() == null || user.getStatus() == UserStatusConstants.DISABLED) {
             throw new BizException(Result.CODE_ERROR, "账号已被禁用");
         }
     }

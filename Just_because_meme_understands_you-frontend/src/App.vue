@@ -184,6 +184,7 @@ import { Search, Bell, ArrowUp } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
+import { useNotificationStore } from '@/stores/notification'
 import {
   buildUserProfileLocation,
   buildSearchLocation,
@@ -201,8 +202,6 @@ export default {
       progressPercent: 0,
       progressTimer: null,
       progressTweenTimer: null,
-      /** 是否有未读通知（可后续对接接口） */
-      hasNotification: true,
       logoutConfirmVisible: false,
       logoutLoading: false,
     }
@@ -219,6 +218,9 @@ export default {
     },
     themeBtnTitle() {
       return this.themeIsDark ? '切换到浅色' : '切换到深色'
+    },
+    hasNotification() {
+      return useNotificationStore().hasUnread
     },
     helpNavLocation() {
       const patch = useBreadcrumbStore().patch || {}
@@ -250,6 +252,7 @@ export default {
     window.addEventListener('route-loading', this.handleRouteLoading)
     this.startProgress()
     setTimeout(() => this.finishProgress(), 500)
+    this.refreshNotificationBadge()
   },
   beforeUnmount() {
     window.removeEventListener('route-loading', this.handleRouteLoading)
@@ -267,6 +270,17 @@ export default {
           delete query.focus
           this.$router.replace({ name: 'search', query })
         })
+      }
+      if (useAuthStore().isLoggedIn) {
+        this.refreshNotificationBadge()
+      }
+    },
+    currentUser(val, oldVal) {
+      if (val && !oldVal) {
+        this.refreshNotificationBadge()
+      }
+      if (!val) {
+        useNotificationStore().reset()
       }
     },
   },
@@ -377,8 +391,26 @@ export default {
       useThemeStore().toggleLightDark()
     },
     goNotifications() {
-      // 可跳转通知页或打开通知列表
-      this.$router.push({ path: '/' })
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) {
+        this.$router.push({ name: 'login', query: { redirect: '/notifications' } })
+        return
+      }
+      const patch = useBreadcrumbStore().patch || {}
+      this.$router.push(
+        buildToolPageLocation('notifications', {
+          fromRoute: this.$route,
+          memeName: patch.meme?.name || '',
+          profileName: patch.nickname || '',
+        })
+      )
+    },
+    refreshNotificationBadge() {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) return
+      useNotificationStore()
+        .refreshUnreadCount()
+        .catch(() => {})
     },
     handleLogout() {
       this.logoutConfirmVisible = true

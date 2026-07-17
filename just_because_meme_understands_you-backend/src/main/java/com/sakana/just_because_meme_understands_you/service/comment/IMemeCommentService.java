@@ -11,7 +11,7 @@ public interface IMemeCommentService {
 
     MemeCommentPageVO pageRootComments(Long memeId, Integer page, Integer size, String sortType, Long currentUserId);
 
-    List<MemeReplyCommentVO> pageReplies(Long rootId, Integer page, Integer size);
+    List<MemeReplyCommentVO> pageReplies(Long rootId, Integer page, Integer size, Long currentUserId);
 
     MemeCommentCreateResponseVO createComment(Long userId, MemeCommentCreateRequestDTO request);
 }

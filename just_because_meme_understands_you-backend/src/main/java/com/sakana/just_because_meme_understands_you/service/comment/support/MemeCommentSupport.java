@@ -101,6 +101,8 @@ public class MemeCommentSupport {
         vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
         vo.setReplyCount(defaultInt(comment.getReplyCount()));
         vo.setLikes(defaultInt(comment.getLikes()));
+        vo.setLiked(Boolean.FALSE);
+        vo.setOwner(Boolean.FALSE);
         vo.setCreateTime(comment.getCreateTime());
         return vo;
     }
@@ -130,6 +132,9 @@ public class MemeCommentSupport {
         }
         vo.setContent(comment.getContent());
         vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
+        vo.setLikes(defaultInt(comment.getLikes()));
+        vo.setLiked(Boolean.FALSE);
+        vo.setOwner(Boolean.FALSE);
         vo.setCreateTime(comment.getCreateTime());
         return vo;
     }

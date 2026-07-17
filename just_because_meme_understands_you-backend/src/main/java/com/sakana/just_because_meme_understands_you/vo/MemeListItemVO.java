@@ -1,6 +1,5 @@
 package com.sakana.just_because_meme_understands_you.vo;
 
-import com.sakana.just_because_meme_understands_you.entity.MemeTag;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -68,8 +67,8 @@ public class MemeListItemVO {
     private List<MemeTagVO> memeTag;
 
     /**
-     * 兼容旧字段：标签列表
+     * 兼容旧字段：标签列表（与 memeTag 同形，避免回传实体）
      */
-    private List<MemeTag> label;
+    private List<MemeTagVO> label;
 }
 

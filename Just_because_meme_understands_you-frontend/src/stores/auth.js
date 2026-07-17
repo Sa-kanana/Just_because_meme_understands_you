@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia'
 import { logout as apiLogout, renewLogin as apiRenewLogin } from '@/api/auth'
 import { useMemeDetailStore } from './memeDetail'
+import { useNotificationStore } from './notification'
 
 const STORAGE_KEY = 'meme_auth'
 const STORAGE_MODE_KEY = 'meme_auth_mode'
@@ -99,6 +100,12 @@ export const useAuthStore = defineStore('auth', {
         if (memeDetailStore.clearDetail) {
           memeDetailStore.clearDetail()
         }
+      } catch (_) {
+        // ignore
+      }
+
+      try {
+        useNotificationStore().reset()
       } catch (_) {
         // ignore
       }

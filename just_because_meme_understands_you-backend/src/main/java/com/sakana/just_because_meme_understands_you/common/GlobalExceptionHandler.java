@@ -63,7 +63,7 @@ public class GlobalExceptionHandler {
         if (log.isDebugEnabled()) {
             log.debug("参数校验异常: {}", msg);
         }
-        return Result.fail(Result.CODE_ERROR, msg);
+        return Result.fail(Result.CODE_BAD_REQUEST, msg);
     }
 
     /**

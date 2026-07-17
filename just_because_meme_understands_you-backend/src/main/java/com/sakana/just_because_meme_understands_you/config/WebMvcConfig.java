@@ -31,6 +31,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/detail/views",
                         "/detail/*/comments",
                         "/detail/comments/*/replies",
+                        "/detail/comments/*/likes/status",
                         "/list"
                 );
         registry.addInterceptor(jwtAuthInterceptor)
@@ -56,6 +57,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/views/**",
                         "/detail/*/comments",
                         "/detail/comments/*/replies",
+                        "/detail/comments/*/likes/status",
                         "/",
                         "/image",
                         "/error"

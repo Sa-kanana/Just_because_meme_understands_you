@@ -267,81 +267,110 @@
         <template v-else>
         <div v-if="authStore.isLoggedIn" class="comment-composer">
           <div class="comment-editor">
-          <div class="comment-editor-row">
-            <el-avatar
-              :size="40"
-              :src="currentUserAvatar"
-              class="comment-editor-avatar"
-              @click="goCurrentUserProfile"
-            >
-              {{ commentAvatarFallback }}
-            </el-avatar>
-            <div class="comment-editor-input-wrap">
-              <el-input
-                v-model="commentDraft"
-                type="textarea"
-                :autosize="{ minRows: 1, maxRows: 6 }"
-                maxlength="2000"
-                class="comment-editor-input"
-                placeholder="只是一直在等你而已，才不是想被评论呢～"
-                @focus="commentEditorFocused = true"
-                @blur="onCommentEditorBlur"
-                @keydown.ctrl.enter.prevent="submitRootComment"
-                @keydown.meta.enter.prevent="submitRootComment"
-              />
-            </div>
-          </div>
-          <div
-            v-if="commentEditorFocused || commentDraft.trim() || commentImages.length"
-            class="comment-editor-actions"
-          >
-            <div class="comment-editor-images">
-              <div
-                v-for="(img, idx) in commentImages"
-                :key="`comment-draft-${idx}`"
-                class="comment-editor-image-item"
+            <div class="comment-editor-row">
+              <el-avatar
+                :size="40"
+                :src="currentUserAvatar"
+                class="comment-editor-avatar"
+                @click="goCurrentUserProfile"
               >
-                <el-image :src="img" fit="cover" class="comment-editor-image-thumb" />
-                <span class="comment-editor-image-remove" @click="removeCommentImage(idx)">×</span>
+                {{ commentAvatarFallback }}
+              </el-avatar>
+              <div class="comment-editor-main">
+                <div class="comment-editor-input-wrap">
+                  <el-input
+                    v-model="commentDraft"
+                    type="textarea"
+                    :autosize="{ minRows: 2, maxRows: 8 }"
+                    maxlength="2000"
+                    show-word-limit
+                    class="comment-editor-input"
+                    placeholder="只是一直在等你而已，才不是想被评论呢～"
+                    @focus="commentEditorFocused = true"
+                    @blur="onCommentEditorBlur"
+                    @keydown.ctrl.enter.prevent="submitRootComment"
+                    @keydown.meta.enter.prevent="submitRootComment"
+                  />
+                </div>
+                <div
+                  v-if="commentImages.length"
+                  class="comment-editor-images"
+                >
+                  <div
+                    v-for="(img, idx) in commentImages"
+                    :key="`comment-draft-${idx}`"
+                    class="comment-editor-image-item"
+                  >
+                    <el-image
+                      :src="img"
+                      :preview-src-list="commentImages"
+                      :initial-index="idx"
+                      fit="cover"
+                      class="comment-editor-image-thumb"
+                      preview-teleported
+                    />
+                    <button
+                      type="button"
+                      class="comment-editor-image-remove"
+                      aria-label="移除图片"
+                      @click="removeCommentImage(idx)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                <div class="comment-editor-toolbar">
+                  <div class="comment-editor-tools">
+                    <label class="comment-tool-btn" :class="{ 'is-disabled': commentImages.length >= 3 || commentImageUploading }">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        class="comment-image-file-input"
+                        :disabled="commentImages.length >= 3 || commentImageUploading"
+                        @change="onCommentImageChange"
+                      />
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke="currentColor" stroke-width="1.75" />
+                        <circle cx="9" cy="10" r="1.6" fill="currentColor" />
+                        <path d="M7 16.5 10.2 12.8a1 1 0 0 1 1.5 0L14 15l1.3-1.4a1 1 0 0 1 1.5.1L18.5 16.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      <span>{{ commentImageUploading ? '上传中' : '图片' }}</span>
+                    </label>
+                    <span class="comment-editor-hint">Ctrl + Enter 发送 · 最多 3 张图</span>
+                  </div>
+                  <el-button
+                    type="primary"
+                    class="comment-submit-btn"
+                    :loading="commentSubmitting"
+                    :disabled="commentSubmitting || (!commentDraft.trim() && !commentImages.length)"
+                    @click="submitRootComment"
+                  >
+                    发表评论
+                  </el-button>
+                </div>
               </div>
-              <label v-if="commentImages.length < 3" class="comment-editor-image-add">
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  class="comment-image-file-input"
-                  @change="onCommentImageChange"
-                />
-                <span class="comment-editor-image-add-inner">
-                  <span v-if="commentImageUploading">上传中…</span>
-                  <span v-else>＋ 图片</span>
-                </span>
-              </label>
             </div>
-            <el-button
-              type="primary"
-              :loading="commentSubmitting"
-              :disabled="commentSubmitting || (!commentDraft.trim() && !commentImages.length)"
-              @click="submitRootComment"
-            >
-              发表评论
-            </el-button>
-          </div>
           </div>
         </div>
         <div v-else class="comment-login-prompt">
-          <span class="comment-login-text">登录后可发表评论</span>
-          <el-button type="primary" @click="goToLogin">登录</el-button>
+          <div class="comment-login-copy">
+            <strong>登录后参与讨论</strong>
+            <span>说说你对这个梗的看法，或补充出处与用法</span>
+          </div>
+          <el-button type="primary" @click="goToLogin">去登录</el-button>
         </div>
 
         <div v-if="commentsLoading" class="comment-loading">
           <el-skeleton :rows="3" animated />
         </div>
-        <el-empty v-else-if="!rootComments.length" description="还没有评论，来做第一个吧" />
+        <div v-else-if="!rootComments.length" class="comment-empty">
+          <el-empty description="还没有评论，来做第一个吧" :image-size="72" />
+        </div>
         <div v-else class="comment-list">
-          <div v-for="item in rootComments" :key="item.id" class="comment-item">
+          <article v-for="item in rootComments" :key="item.id" class="comment-item">
             <div class="comment-item-body">
               <el-avatar
-                :size="36"
+                :size="40"
                 :src="getCommentAvatar(item)"
                 class="comment-item-avatar"
                 @click="goUserProfile(item.userId)"
@@ -350,94 +379,177 @@
               </el-avatar>
               <div class="comment-item-main">
                 <div class="comment-item-head">
-                  <span class="comment-user">{{ item.userName || '匿名用户' }}</span>
-                  <span class="comment-time">{{ formatDate(item.createTime) }}</span>
+                  <button type="button" class="comment-user" @click="goUserProfile(item.userId)">
+                    {{ item.userName || '匿名用户' }}
+                  </button>
+                  <time class="comment-time" :datetime="item.createTime">{{ formatCommentTime(item.createTime) }}</time>
                 </div>
-                <p class="comment-content">{{ item.content }}</p>
+                <p v-if="item.content" class="comment-content">{{ item.content }}</p>
                 <div v-if="item.images && item.images.length" class="comment-images">
                   <el-image
                     v-for="(img, idx) in item.images"
                     :key="`${item.id}-img-${idx}`"
                     :src="img"
+                    :preview-src-list="item.images"
+                    :initial-index="idx"
                     fit="cover"
                     class="comment-image"
+                    preview-teleported
                   />
                 </div>
                 <div class="comment-item-footer">
-                  <span v-if="item.likes != null" class="comment-meta">👍 {{ formatNum(item.likes) }}</span>
-              <el-button
-                v-if="item.replyCount > 0"
-                link
-                class="comment-reply-btn"
-                @click="toggleReplies(item)"
-              >
-                {{ expandedRoots.has(String(item.id)) ? '收起' : '展开' }}
-                {{ item.replyCount }} 条回复
-              </el-button>
-                  <el-button link class="comment-reply-btn" @click="startReply(item, item)">回复</el-button>
+                  <button
+                    type="button"
+                    class="comment-action"
+                    :class="{ 'is-liked': item.liked }"
+                    :disabled="commentLikeLoadingMap[String(item.id)]"
+                    @click="toggleCommentLike(item)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M7 10.5V20M7 10.5 10.5 4.5a1.5 1.5 0 0 1 2.6-.9L14 10.5h4.5a2 2 0 0 1 1.98 2.35l-1.2 6A2 2 0 0 1 17.32 20H7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    {{ formatNum(item.likes) }}
+                  </button>
+                  <button type="button" class="comment-action" @click="startReply(item, item)">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M7.5 8.5h9M7.5 12h6M7.5 15.5h4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+                      <path d="M6 5.5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9.5L6 20.5V7.5a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" />
+                    </svg>
+                    回复
+                  </button>
+                  <button
+                    v-if="item.replyCount > 0"
+                    type="button"
+                    class="comment-action"
+                    :class="{ 'is-active': expandedRoots.has(String(item.id)) }"
+                    @click="toggleReplies(item)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M8 9h12M4 15h12M10 6l-2 3 2 3M14 12l2 3-2 3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    {{ expandedRoots.has(String(item.id)) ? '收起' : '展开' }}
+                    {{ item.replyCount }} 条回复
+                  </button>
+                  <button
+                    v-if="item.owner"
+                    type="button"
+                    class="comment-action comment-action--danger"
+                    :disabled="commentDeleteLoadingMap[String(item.id)]"
+                    @click="removeComment(item)"
+                  >
+                    删除
+                  </button>
                 </div>
 
-                <div v-if="expandedRoots.has(String(item.id))" class="reply-list">
-                  <div v-if="repliesLoadingMap[String(item.id)]" class="comment-loading">
-                    <el-skeleton :rows="2" animated />
-                  </div>
-                  <template v-else>
-                    <div
-                      v-for="reply in repliesMap[String(item.id)] || []"
-                      :key="reply.id"
-                      class="reply-item"
-                    >
-                      <el-avatar
-                        :size="28"
-                        :src="getCommentAvatar(reply)"
-                        class="comment-item-avatar reply-item-avatar"
-                        @click="goUserProfile(reply.userId)"
+                <div
+                  v-if="expandedRoots.has(String(item.id)) || replyDraftRootId === String(item.id)"
+                  class="reply-thread"
+                >
+                  <div v-if="expandedRoots.has(String(item.id))" class="reply-list">
+                    <div v-if="repliesLoadingMap[String(item.id)]" class="comment-loading">
+                      <el-skeleton :rows="2" animated />
+                    </div>
+                    <template v-else>
+                      <div
+                        v-for="reply in repliesMap[String(item.id)] || []"
+                        :key="reply.id"
+                        class="reply-item"
                       >
-                        {{ getCommentAvatarFallback(reply.userName) }}
-                      </el-avatar>
-                      <div class="reply-item-main">
-                        <div class="reply-item-head">
-                          <span class="comment-user">{{ reply.userName || '匿名用户' }}</span>
-                          <span v-if="reply.replyToUserName" class="reply-target">回复 @{{ reply.replyToUserName }}</span>
-                          <span class="comment-time">{{ formatDate(reply.createTime) }}</span>
+                        <el-avatar
+                          :size="32"
+                          :src="getCommentAvatar(reply)"
+                          class="comment-item-avatar reply-item-avatar"
+                          @click="goUserProfile(reply.userId)"
+                        >
+                          {{ getCommentAvatarFallback(reply.userName) }}
+                        </el-avatar>
+                        <div class="reply-item-main">
+                          <div class="reply-item-head">
+                            <button type="button" class="comment-user" @click="goUserProfile(reply.userId)">
+                              {{ reply.userName || '匿名用户' }}
+                            </button>
+                            <span v-if="reply.replyToUserName" class="reply-target">
+                              回复 <em>@{{ reply.replyToUserName }}</em>
+                            </span>
+                            <time class="comment-time" :datetime="reply.createTime">{{ formatCommentTime(reply.createTime) }}</time>
+                          </div>
+                          <p class="comment-content">{{ reply.content }}</p>
+                          <div class="reply-item-footer">
+                            <button
+                              type="button"
+                              class="comment-action"
+                              :class="{ 'is-liked': reply.liked }"
+                              :disabled="commentLikeLoadingMap[String(reply.id)]"
+                              @click="toggleCommentLike(reply, item)"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M7 10.5V20M7 10.5 10.5 4.5a1.5 1.5 0 0 1 2.6-.9L14 10.5h4.5a2 2 0 0 1 1.98 2.35l-1.2 6A2 2 0 0 1 17.32 20H7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                              </svg>
+                              {{ formatNum(reply.likes) }}
+                            </button>
+                            <button type="button" class="comment-action" @click="startReply(item, reply)">
+                              回复
+                            </button>
+                            <button
+                              v-if="reply.owner"
+                              type="button"
+                              class="comment-action comment-action--danger"
+                              :disabled="commentDeleteLoadingMap[String(reply.id)]"
+                              @click="removeComment(reply, item)"
+                            >
+                              删除
+                            </button>
+                          </div>
                         </div>
-                        <p class="comment-content">{{ reply.content }}</p>
-                        <div class="reply-item-footer">
-                          <el-button link class="comment-reply-btn" @click="startReply(item, reply)">回复</el-button>
+                      </div>
+                    </template>
+                  </div>
+
+                  <div v-if="replyDraftRootId === String(item.id)" class="reply-editor">
+                    <el-avatar
+                      :size="28"
+                      :src="currentUserAvatar"
+                      class="reply-editor-avatar"
+                    >
+                      {{ commentAvatarFallback }}
+                    </el-avatar>
+                    <div class="reply-editor-main">
+                      <el-input
+                        v-model="replyDraft"
+                        type="textarea"
+                        :autosize="{ minRows: 2, maxRows: 6 }"
+                        maxlength="2000"
+                        show-word-limit
+                        class="reply-editor-input"
+                        :placeholder="`回复 ${replyToName || 'TA'}…`"
+                        @keydown.ctrl.enter.prevent="submitReply()"
+                        @keydown.meta.enter.prevent="submitReply()"
+                      />
+                      <div class="reply-editor-actions">
+                        <span class="comment-editor-hint">Ctrl + Enter 发送</span>
+                        <div class="reply-editor-btns">
+                          <el-button size="small" @click="cancelReply">取消</el-button>
+                          <el-button
+                            size="small"
+                            type="primary"
+                            :loading="replySubmitting"
+                            :disabled="replySubmitting || !replyDraft.trim()"
+                            @click="submitReply()"
+                          >
+                            发送回复
+                          </el-button>
                         </div>
                       </div>
                     </div>
-                  </template>
-                </div>
-
-                <div v-if="replyDraftRootId === String(item.id)" class="reply-editor">
-                  <el-input
-                    v-model="replyDraft"
-                    type="textarea"
-                    :rows="2"
-                    maxlength="2000"
-                    :placeholder="`回复 ${replyToName || 'TA'}…`"
-                  />
-                  <div class="comment-editor-actions">
-                    <el-button size="small" @click="cancelReply">取消</el-button>
-                    <el-button
-                      size="small"
-                      type="primary"
-                      :loading="replySubmitting"
-                      :disabled="replySubmitting || !replyDraft.trim()"
-                      @click="submitReply()"
-                    >
-                      发送回复
-                    </el-button>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </article>
         </div>
 
         <div v-if="commentHasMore" class="comment-load-more">
-          <el-button :loading="commentsLoading" @click="loadMoreComments">加载更多</el-button>
+          <el-button :loading="commentsLoading" @click="loadMoreComments">加载更多评论</el-button>
         </div>
         </template>
       </el-card>
@@ -526,7 +638,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment } from '@/api/meme'
+import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment } from '@/api/meme'
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
 import { isAuthErrorHandled } from '@/utils/authSession'
@@ -536,7 +648,7 @@ import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import { buildUserProfileLocation, buildSearchLocation } from '@/utils/pageBreadcrumb'
 
@@ -712,6 +824,8 @@ const commentSubmitting = ref(false)
 const expandedRoots = ref(new Set())
 const repliesMap = reactive({})
 const repliesLoadingMap = reactive({})
+const commentLikeLoadingMap = reactive({})
+const commentDeleteLoadingMap = reactive({})
 const replyDraftRootId = ref('')
 const replyDraft = ref('')
 const replyParentId = ref(null)
@@ -962,7 +1076,7 @@ function getCommentAvatarFallback(name) {
 
 function onCommentEditorBlur() {
   window.setTimeout(() => {
-    if (!commentDraft.value.trim()) {
+    if (!commentDraft.value.trim() && !commentImages.value.length) {
       commentEditorFocused.value = false
     }
   }, 150)
@@ -1019,18 +1133,19 @@ async function submitRootComment() {
       imageUrls: commentImages.value.slice(),
     })
     commentDraft.value = ''
-    const uploadedImages = commentImages.value.slice()
     commentImages.value = []
     commentEditorFocused.value = false
     rootComments.value.unshift({
       id: data.commentId,
-      userId: authStore.currentUser?.id,
-      userName: authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
-      userAvatar: currentUserAvatar.value,
+      userId: data.userId != null ? data.userId : authStore.currentUser?.id,
+      userName: data.userName || authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
+      userAvatar: data.userAvatar || currentUserAvatar.value,
       content: data.content,
-      images: uploadedImages,
-      replyCount: 0,
-      likes: 0,
+      images: Array.isArray(data.images) ? data.images : [],
+      replyCount: Number(data.replyCount) || 0,
+      likes: Number(data.likes) || 0,
+      liked: Boolean(data.liked),
+      owner: true,
       createTime: data.createTime,
     })
     commentTotal.value += 1
@@ -1048,10 +1163,14 @@ async function submitRootComment() {
 
 function startReply(rootItem, parentItem) {
   if (!requireLoginForComment()) return
-  replyDraftRootId.value = String(rootItem.id)
+  const rootId = String(rootItem.id)
+  replyDraftRootId.value = rootId
   replyParentId.value = parentItem.id
   replyToName.value = parentItem.userName || 'TA'
   replyDraft.value = ''
+  if ((Number(rootItem.replyCount) || 0) > 0 && !expandedRoots.value.has(rootId)) {
+    toggleReplies(rootItem)
+  }
 }
 
 function cancelReply() {
@@ -1082,12 +1201,16 @@ async function submitReply() {
     }
     repliesMap[rootId].push({
       id: data.commentId,
-      parentId,
-      userId: authStore.currentUser?.id,
-      userName: authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
-      userAvatar: currentUserAvatar.value,
+      parentId: data.parentId != null ? data.parentId : parentId,
+      userId: data.userId != null ? data.userId : authStore.currentUser?.id,
+      userName: data.userName || authStore.currentUser?.nickname || authStore.currentUser?.username || '我',
+      userAvatar: data.userAvatar || currentUserAvatar.value,
+      replyToUserName: replyToName.value,
       content: data.content,
-      images: [],
+      images: Array.isArray(data.images) ? data.images : [],
+      likes: Number(data.likes) || 0,
+      liked: Boolean(data.liked),
+      owner: true,
       createTime: data.createTime,
     })
     const root = rootComments.value.find((c) => String(c.id) === rootId)
@@ -1120,12 +1243,91 @@ async function toggleReplies(item) {
   }
   repliesLoadingMap[key] = true
   try {
-    repliesMap[key] = await getMemeCommentReplies(item.id, { page: 1, size: 50 })
+    const data = await getMemeCommentReplies(item.id, { page: 1, size: 50 })
+    repliesMap[key] = Array.isArray(data?.list) ? data.list : []
   } catch (e) {
     ElMessage.error(e.message || '加载回复失败')
     expandedRoots.value.delete(key)
   } finally {
     repliesLoadingMap[key] = false
+  }
+}
+
+async function toggleCommentLike(comment) {
+  if (!requireLoginForComment()) return
+  if (!comment?.id) return
+  const key = String(comment.id)
+  if (commentLikeLoadingMap[key]) return
+
+  const prevLiked = Boolean(comment.liked)
+  const prevCount = Number(comment.likes) || 0
+  const nextLiked = !prevLiked
+  comment.liked = nextLiked
+  comment.likes = Math.max(0, prevCount + (nextLiked ? 1 : -1))
+  commentLikeLoadingMap[key] = true
+  try {
+    const data = nextLiked
+      ? await likeMemeComment(comment.id)
+      : await unlikeMemeComment(comment.id)
+    comment.liked = Boolean(data.liked)
+    if (data.likeCount != null) {
+      comment.likes = Number(data.likeCount) || 0
+    }
+  } catch (e) {
+    comment.liked = prevLiked
+    comment.likes = prevCount
+    if (isAuthErrorHandled(e)) return
+    ElMessage.error(e.message || (nextLiked ? '点赞失败' : '取消点赞失败'))
+  } finally {
+    commentLikeLoadingMap[key] = false
+  }
+}
+
+async function removeComment(comment, rootItem = null) {
+  if (!requireLoginForComment()) return
+  if (!comment?.id || !comment.owner) return
+  const key = String(comment.id)
+  if (commentDeleteLoadingMap[key]) return
+
+  try {
+    await ElMessageBox.confirm('确认删除这条评论？删除后不可恢复。', '删除评论', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch (_) {
+    return
+  }
+
+  commentDeleteLoadingMap[key] = true
+  try {
+    const data = await deleteMemeComment(comment.id)
+    const isRoot = !rootItem
+    if (isRoot) {
+      rootComments.value = rootComments.value.filter((c) => String(c.id) !== key)
+      delete repliesMap[key]
+      expandedRoots.value.delete(key)
+      if (replyDraftRootId.value === key) cancelReply()
+    } else {
+      const rootId = String(rootItem.id)
+      repliesMap[rootId] = (repliesMap[rootId] || []).filter((r) => String(r.id) !== key)
+      rootItem.replyCount = Math.max(0, (Number(rootItem.replyCount) || 0) - 1)
+    }
+    if (data.memeCommentCount != null && meme.value) {
+      meme.value.comments = Number(data.memeCommentCount) || 0
+      commentTotal.value = Number(data.memeCommentCount) || commentTotal.value
+    } else {
+      commentTotal.value = Math.max(0, commentTotal.value - 1)
+      if (meme.value) {
+        meme.value.comments = Math.max(0, (Number(meme.value.comments) || 0) - 1)
+      }
+    }
+    ElMessage.success('已删除')
+  } catch (e) {
+    if (isAuthErrorHandled(e)) return
+    ElMessage.error(e.message || '删除失败')
+  } finally {
+    commentDeleteLoadingMap[key] = false
   }
 }
 
@@ -1307,6 +1509,32 @@ function formatDate(str) {
   const s = String(str).trim()
   const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
   return match ? match[1] : ''
+}
+
+function formatCommentTime(str) {
+  if (!str) return ''
+  const raw = String(str).trim().replace('T', ' ')
+  const parsed = new Date(raw.replace(/-/g, '/'))
+  if (Number.isNaN(parsed.getTime())) return formatDate(str)
+
+  const now = Date.now()
+  const diff = Math.max(0, now - parsed.getTime())
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (diff < minute) return '刚刚'
+  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`
+
+  const y = parsed.getFullYear()
+  const m = String(parsed.getMonth() + 1).padStart(2, '0')
+  const d = String(parsed.getDate()).padStart(2, '0')
+  const hh = String(parsed.getHours()).padStart(2, '0')
+  const mm = String(parsed.getMinutes()).padStart(2, '0')
+  if (y === new Date().getFullYear()) return `${m}-${d} ${hh}:${mm}`
+  return `${y}-${m}-${d}`
 }
 
 function linkTypeIcon(type) {
@@ -1974,10 +2202,10 @@ function goSearchByTag(tag) {
 }
 
 .comment-composer {
-  margin-bottom: 20px;
-  padding: 14px 16px;
-  border-radius: var(--meme-radius-lg);
-  background: var(--meme-gradient-card);
+  margin-bottom: 22px;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--meme-bg-muted);
   border: 1px solid var(--meme-border);
 }
 
@@ -1988,7 +2216,7 @@ function goSearchByTag(tag) {
 .comment-editor-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
 }
 
 .comment-editor-avatar {
@@ -2001,18 +2229,25 @@ function goSearchByTag(tag) {
   opacity: 0.85;
 }
 
-.comment-editor-input-wrap {
+.comment-editor-main {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-editor-input-wrap {
   min-width: 0;
 }
 
 .comment-editor-input :deep(.el-textarea__inner) {
-  min-height: 44px;
-  padding: 11px 16px;
-  line-height: 1.55;
+  min-height: 72px;
+  padding: 12px 14px;
+  line-height: 1.6;
   border: 1px solid var(--meme-border-strong);
-  border-radius: 14px;
-  box-shadow: var(--meme-shadow-soft);
+  border-radius: 12px;
+  box-shadow: none;
   resize: none;
   background: var(--meme-bg-card);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -2027,29 +2262,84 @@ function goSearchByTag(tag) {
   box-shadow: 0 0 0 3px var(--meme-focus-ring);
 }
 
-.comment-editor-actions {
-  margin-top: 8px;
-  padding-left: 52px;
+.comment-editor-input :deep(.el-input__count) {
+  background: transparent;
+  color: var(--meme-text-muted);
+}
+
+.comment-editor-toolbar {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.comment-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.comment-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--meme-border);
+  border-radius: 10px;
+  background: var(--meme-bg-card);
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.comment-tool-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.comment-tool-btn:hover:not(.is-disabled) {
+  border-color: var(--meme-border-accent);
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
+.comment-tool-btn.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.comment-editor-hint {
+  font-size: 12px;
+  color: var(--meme-text-muted);
+}
+
+.comment-submit-btn {
+  min-width: 108px;
+  border-radius: 10px !important;
 }
 
 .comment-editor-images {
-  flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .comment-editor-image-item {
   position: relative;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--meme-radius-sm);
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
 }
 
 .comment-editor-image-thumb {
@@ -2059,42 +2349,20 @@ function goSearchByTag(tag) {
 
 .comment-editor-image-remove {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 18px;
-  height: 18px;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  border-radius: 50%;
   background: var(--meme-overlay);
   color: var(--meme-text-inverse);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
-  border-bottom-left-radius: var(--meme-radius-sm);
-}
-
-.comment-editor-image-add {
-  width: 64px;
-  height: 64px;
-  border: 1px dashed var(--meme-border-strong);
-  border-radius: var(--meme-radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--meme-text-muted);
-  font-size: 12px;
-  transition: border-color 0.2s, color 0.2s;
-}
-
-.comment-editor-image-add:hover {
-  border-color: var(--meme-primary);
-  color: var(--meme-primary);
-}
-
-.comment-editor-image-add-inner {
-  pointer-events: none;
 }
 
 .comment-image-file-input {
@@ -2105,31 +2373,55 @@ function goSearchByTag(tag) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 16px 18px;
-  background: var(--meme-gradient-card);
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  background: var(--meme-bg-muted);
   border: 1px solid var(--meme-border);
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
-.comment-login-text {
-  font-size: 14px;
+.comment-login-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.comment-login-copy strong {
+  font-size: 15px;
+  color: var(--meme-text);
+}
+
+.comment-login-copy span {
+  font-size: 13px;
   color: var(--meme-text-secondary);
+  line-height: 1.5;
 }
 
 .comment-loading {
-  padding: 12px 0;
+  padding: 16px 0;
+}
+
+.comment-empty {
+  padding: 12px 0 4px;
 }
 
 .comment-list {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .comment-item {
-  padding: 18px 0;
-  border-bottom: 1px solid var(--meme-border);
+  padding: 16px 14px;
+  margin: 0 -6px;
+  border-radius: 14px;
+  transition: background 0.15s ease;
+}
+
+.comment-item:hover {
+  background: var(--meme-bg-muted);
 }
 
 .comment-item-head {
@@ -2137,13 +2429,22 @@ function goSearchByTag(tag) {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .comment-user {
+  padding: 0;
+  border: none;
+  background: transparent;
   font-size: 14px;
   font-weight: 700;
   color: var(--meme-text);
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.comment-user:hover {
+  color: var(--meme-primary);
 }
 
 .comment-time {
@@ -2152,21 +2453,12 @@ function goSearchByTag(tag) {
 }
 
 .comment-content {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 14px;
-  line-height: 1.65;
-  color: var(--meme-text-secondary);
+  line-height: 1.7;
+  color: var(--meme-text);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.comment-item:first-child {
-  padding-top: 0;
-}
-
-.comment-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
 }
 
 .comment-item-body {
@@ -2194,47 +2486,88 @@ function goSearchByTag(tag) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .comment-image {
-  width: 88px;
-  height: 88px;
-  border-radius: var(--meme-radius-sm);
+  width: 96px;
+  height: 96px;
+  border-radius: 10px;
+  border: 1px solid var(--meme-border);
+  overflow: hidden;
+  cursor: zoom-in;
 }
 
 .comment-item-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.comment-meta {
-  font-size: 12px;
-  color: var(--meme-text-muted);
-}
-
-.comment-reply-btn.el-button.is-link {
+.comment-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--meme-text-muted);
   font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
-.comment-reply-btn.el-button.is-link:hover,
-.comment-reply-btn.el-button.is-link:focus {
+.comment-action svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.comment-action:hover {
   color: var(--meme-primary);
+  background: var(--meme-primary-soft);
 }
 
-.reply-editor {
-  margin-top: 10px;
-  padding: 10px;
-  background: var(--meme-bg-muted);
-  border-radius: 10px;
+.comment-action.is-active {
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
+.comment-action.is-liked {
+  color: var(--meme-warning);
+  background: var(--meme-warning-soft);
+}
+
+.comment-action--danger {
+  color: var(--meme-text-muted);
+}
+
+.comment-action--danger:hover {
+  color: var(--meme-danger);
+  background: var(--meme-danger-soft);
+}
+
+.comment-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reply-thread {
+  margin-top: 12px;
+  padding: 12px 14px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--meme-border);
+  border-left: 3px solid var(--meme-primary);
+  background: var(--meme-bg-card);
 }
 
 .reply-list {
-  margin-top: 10px;
-  padding-left: 0;
-  border-left: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .reply-item {
@@ -2242,12 +2575,10 @@ function goSearchByTag(tag) {
   align-items: flex-start;
   gap: 10px;
   padding: 10px 0;
-  border-top: 1px solid var(--meme-border);
 }
 
-.reply-item:first-child {
-  border-top: none;
-  padding-top: 0;
+.reply-item + .reply-item {
+  border-top: 1px dashed var(--meme-border);
 }
 
 .reply-item-main {
@@ -2258,7 +2589,7 @@ function goSearchByTag(tag) {
 .reply-item-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   margin-top: 2px;
 }
 
@@ -2275,12 +2606,76 @@ function goSearchByTag(tag) {
   color: var(--meme-text-muted);
 }
 
+.reply-target em {
+  font-style: normal;
+  color: var(--meme-primary);
+  font-weight: 600;
+}
+
 .reply-item-avatar {
   margin-top: 2px;
 }
 
+.reply-editor {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--meme-border);
+}
+
+.reply-editor-avatar {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.reply-editor-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reply-editor-input :deep(.el-textarea__inner) {
+  padding: 10px 12px;
+  line-height: 1.55;
+  border: 1px solid var(--meme-border-strong);
+  border-radius: 10px;
+  background: var(--meme-bg-muted);
+  resize: none;
+  box-shadow: none;
+}
+
+.reply-editor-input :deep(.el-textarea__inner:focus) {
+  border-color: var(--meme-primary);
+  box-shadow: 0 0 0 3px var(--meme-focus-ring);
+  background: var(--meme-bg-card);
+}
+
+.reply-editor-input :deep(.el-input__count) {
+  background: transparent;
+  color: var(--meme-text-muted);
+}
+
+.reply-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reply-editor-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .comment-load-more {
-  margin-top: 12px;
+  margin-top: 16px;
+  padding-top: 4px;
   text-align: center;
 }
 
@@ -2295,6 +2690,36 @@ function goSearchByTag(tag) {
 
   .detail-cover-wrap {
     margin-bottom: 12px;
+  }
+
+  .comment-composer {
+    padding: 14px;
+  }
+
+  .comment-editor-row {
+    gap: 10px;
+  }
+
+  .comment-editor-avatar {
+    display: none;
+  }
+
+  .comment-item {
+    padding: 14px 8px;
+    margin: 0;
+  }
+
+  .reply-thread {
+    padding: 10px 10px 12px;
+  }
+
+  .comment-login-prompt {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .comment-editor-hint {
+    display: none;
   }
 }
 

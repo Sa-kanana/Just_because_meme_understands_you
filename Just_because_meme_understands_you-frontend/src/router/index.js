@@ -35,6 +35,12 @@ const routes = [
     meta: { requiresAuth: true, breadcrumbLabel: '发布梗' },
   },
   {
+    path: '/notifications',
+    name: 'notifications',
+    component: () => import('@/views/Notifications.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: '消息中心' },
+  },
+  {
     path: '/settings',
     name: 'accountSettings',
     component: () => import('@/views/AccountSettings.vue'),

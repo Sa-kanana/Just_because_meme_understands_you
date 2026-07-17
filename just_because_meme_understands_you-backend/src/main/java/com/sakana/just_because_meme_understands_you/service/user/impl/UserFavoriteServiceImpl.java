@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.support.AfterCommitExecutor;
 import com.sakana.just_because_meme_understands_you.dto.FavoriteMoveDTO;
 import com.sakana.just_because_meme_understands_you.dto.FavoriteReorderDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeFavoriteRequestDTO;
@@ -46,6 +47,9 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
 
     @Resource
     private MemeBloomFilterService memeBloomFilterService;
+
+    @Resource
+    private AfterCommitExecutor afterCommitExecutor;
 
     @Resource
     private UserFavoriteCountService userFavoriteCountService;
@@ -332,7 +336,11 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
     }
 
     private void evictCaches(Long userId) {
-        userFavoriteFolderService.evictFolderCache(userId);
-        userProfileService.evictUserCache(userId);
+        // Folder cache itself schedules after-commit delete; profile cache deletes sync.
+        // AfterCommitExecutor allows nested after-commit calls to run immediately.
+        afterCommitExecutor.execute(() -> {
+            userFavoriteFolderService.evictFolderCache(userId);
+            userProfileService.evictUserCache(userId);
+        });
     }
 }

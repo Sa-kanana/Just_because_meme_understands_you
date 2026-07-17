@@ -25,6 +25,10 @@ public class MemeRootCommentVO {
 
     private Integer likes;
 
+    private Boolean liked;
+
+    private Boolean owner;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 }

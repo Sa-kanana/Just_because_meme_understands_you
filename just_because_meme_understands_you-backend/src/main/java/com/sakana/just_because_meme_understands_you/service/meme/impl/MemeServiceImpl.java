@@ -171,9 +171,10 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             vo.setUpdateTime(meme.getUpdateTime());
             vo.setStatus(meme.getStatus());
             vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
-            List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
-            vo.setMemeTag(toMemeTagVOList(tags));
-            vo.setLabel(tags);
+            List<MemeTagVO> tagVos = toMemeTagVOList(
+                    memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList()));
+            vo.setMemeTag(tagVos);
+            vo.setLabel(tagVos);
             voList.add(vo);
         }
         return voList;
@@ -471,9 +472,10 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             vo.setUpdateTime(meme.getUpdateTime());
             vo.setStatus(meme.getStatus());
             vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
-            List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
-            vo.setMemeTag(toMemeTagVOList(tags));
-            vo.setLabel(tags);
+            List<MemeTagVO> tagVos = toMemeTagVOList(
+                    memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList()));
+            vo.setMemeTag(tagVos);
+            vo.setLabel(tagVos);
             voList.add(vo);
         }
         return voList;

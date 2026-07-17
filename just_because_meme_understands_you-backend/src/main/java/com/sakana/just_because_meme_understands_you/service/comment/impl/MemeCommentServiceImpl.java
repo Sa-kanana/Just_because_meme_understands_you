@@ -12,6 +12,7 @@ import com.sakana.just_because_meme_understands_you.entity.MemeComment;
 import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.service.comment.IMemeCommentService;
+import com.sakana.just_because_meme_understands_you.service.comment.IUserCommentLikeService;
 import com.sakana.just_because_meme_understands_you.service.comment.MemeCommentAsyncHandler;
 import com.sakana.just_because_meme_understands_you.service.comment.SensitiveWordFilterService;
 import com.sakana.just_because_meme_understands_you.common.support.PageParamNormalizer;
@@ -37,6 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class MemeCommentServiceImpl implements IMemeCommentService {
@@ -60,6 +62,9 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
 
     @Resource
     private MemeCommentSupport commentSupport;
+
+    @Resource
+    private IUserCommentLikeService userCommentLikeService;
 
     @Override
     public MemeCommentPageVO pageRootComments(Long memeId, Integer page, Integer size, String sortType, Long currentUserId) {
@@ -99,6 +104,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
                 list.add(commentSupport.toRootVO(comment, userMap, imageMap));
             }
         }
+        enrichRootInteraction(list, currentUserId);
 
         MemeCommentPageVO pageVO = new MemeCommentPageVO();
         pageVO.setList(list);
@@ -108,7 +114,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
     }
 
     @Override
-    public List<MemeReplyCommentVO> pageReplies(Long rootId, Integer page, Integer size) {
+    public List<MemeReplyCommentVO> pageReplies(Long rootId, Integer page, Integer size, Long currentUserId) {
         if (rootId == null || rootId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "rootId 不合法");
         }
@@ -140,6 +146,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         for (MemeComment comment : records) {
             list.add(commentSupport.toReplyVO(comment, userMap, parentMap, imageMap));
         }
+        enrichReplyInteraction(list, currentUserId);
         return list;
     }
 
@@ -227,6 +234,32 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             });
         } else {
             task.run();
+        }
+    }
+
+    private void enrichRootInteraction(List<MemeRootCommentVO> list, Long currentUserId) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        Set<Long> likedIds = userCommentLikeService.findLikedCommentIds(
+                currentUserId,
+                list.stream().map(MemeRootCommentVO::getId).toList());
+        for (MemeRootCommentVO vo : list) {
+            vo.setLiked(likedIds.contains(vo.getId()));
+            vo.setOwner(currentUserId != null && currentUserId > 0 && Objects.equals(currentUserId, vo.getUserId()));
+        }
+    }
+
+    private void enrichReplyInteraction(List<MemeReplyCommentVO> list, Long currentUserId) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        Set<Long> likedIds = userCommentLikeService.findLikedCommentIds(
+                currentUserId,
+                list.stream().map(MemeReplyCommentVO::getId).toList());
+        for (MemeReplyCommentVO vo : list) {
+            vo.setLiked(likedIds.contains(vo.getId()));
+            vo.setOwner(currentUserId != null && currentUserId > 0 && Objects.equals(currentUserId, vo.getUserId()));
         }
     }
 

@@ -42,8 +42,13 @@ public class MemeCommentController {
     @GetMapping("/detail/comments/{rootId}/replies")
     public Result<List<MemeReplyCommentVO>> pageReplies(@PathVariable("rootId") String rootId,
                                                         @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
-                                                        @RequestParam(value = "size", required = false, defaultValue = "10") Integer size) {
-        return Result.success(memeCommentService.pageReplies(AuthContext.parseLongId(rootId, "rootId"), page, size));
+                                                        @RequestParam(value = "size", required = false, defaultValue = "10") Integer size,
+                                                        HttpServletRequest httpServletRequest) {
+        return Result.success(memeCommentService.pageReplies(
+                AuthContext.parseLongId(rootId, "rootId"),
+                page,
+                size,
+                AuthContext.currentUserId(httpServletRequest)));
     }
 
     /**

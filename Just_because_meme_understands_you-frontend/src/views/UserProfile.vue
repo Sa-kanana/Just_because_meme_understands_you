@@ -37,9 +37,9 @@
               <strong>{{ formatNum(profile.stats.fansCount) }}</strong>
               <span>粉丝</span>
             </button>
-            <div class="sidebar-stat sidebar-stat--static">
-              <strong>#{{ profile.userId || '-' }}</strong>
+            <div class="sidebar-uid">
               <span>UID</span>
+              <strong>#{{ profile.userId || '-' }}</strong>
             </div>
           </div>
 
@@ -1964,57 +1964,82 @@ export default {
 }
 
 .sidebar-stats {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 4px 0 2px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .sidebar-stat {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
-  border: none;
-  border-radius: 12px;
-  background: transparent;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 13px 8px;
+  border: 1px solid var(--meme-border);
+  border-radius: 14px;
+  background: var(--meme-bg-muted);
   cursor: pointer;
   color: inherit;
-  transition: background 0.15s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
 }
 
-.sidebar-stat:hover:not(.sidebar-stat--static) {
+.sidebar-stat:hover {
+  border-color: var(--meme-border-accent);
   background: var(--meme-primary-soft);
+  transform: translateY(-1px);
 }
 
 .sidebar-stat strong {
-  font-size: 18px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--meme-text);
   line-height: 1.2;
 }
 
 .sidebar-stat span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--meme-text-muted);
 }
 
-.sidebar-stat--static {
-  cursor: default;
+.sidebar-uid {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--meme-border);
+  border-radius: 12px;
+  background: var(--meme-bg-muted);
 }
 
-.sidebar-stat--static strong {
-  font-size: 13px;
+.sidebar-uid span {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-uid strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
   font-weight: 600;
   color: var(--meme-text-secondary);
+  line-height: 1.4;
 }
 
 .sidebar-actions {
-  margin-top: 16px;
+  margin-top: 18px;
   display: flex;
   justify-content: center;
 }
