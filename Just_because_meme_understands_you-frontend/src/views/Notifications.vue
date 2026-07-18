@@ -1,44 +1,39 @@
 <template>
   <div class="notifications-page">
     <el-card class="notifications-card" shadow="never">
-      <div class="notifications-head">
-        <div class="notifications-head-copy">
+      <header class="notifications-head">
+        <div class="notifications-head__copy">
           <h1 class="notifications-title">消息中心</h1>
           <p class="notifications-subtitle">互动提醒与系统通知都会在这里汇总</p>
         </div>
-        <div class="notifications-head-actions">
-          <el-button
-            v-if="activeTab !== 'all'"
-            link
-            @click="activeTab = 'all'"
-          >
-            查看全部
+        <el-dropdown trigger="click" @command="handleBatchCommand">
+          <el-button class="notifications-manage-btn">
+            管理
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
-          <el-dropdown trigger="click" @command="handleBatchCommand">
-            <el-button :disabled="!list.length && !loading">
-              管理
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="clearRead">清空已读</el-dropdown-item>
-                <el-dropdown-item command="clearAll" divided>清空全部</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="readAll">全部已读</el-dropdown-item>
+              <el-dropdown-item command="clearRead">清空已读</el-dropdown-item>
+              <el-dropdown-item command="clearAll" divided>清空全部</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </header>
 
       <el-tabs v-model="activeTab" class="notifications-tabs" @tab-change="onTabChange">
         <el-tab-pane label="全部" name="all" />
         <el-tab-pane name="unread">
           <template #label>
-            <span>未读</span>
-            <el-badge
-              v-if="notificationStore.unreadTotal > 0"
-              :value="notificationStore.unreadTotal"
-              class="tab-badge"
-            />
+            <span class="tab-label">
+              未读
+              <el-badge
+                v-if="notificationStore.unreadTotal > 0"
+                :value="notificationStore.unreadTotal"
+                :max="99"
+                class="tab-badge"
+              />
+            </span>
           </template>
         </el-tab-pane>
         <el-tab-pane label="互动" name="interact" />
@@ -48,54 +43,19 @@
       <div v-if="loading && !list.length" class="notifications-loading">
         <el-skeleton :rows="4" animated />
       </div>
-      <el-empty
-        v-else-if="!list.length"
-        description="暂无消息"
-        :image-size="72"
-      />
+      <div v-else-if="!list.length" class="notifications-empty">
+        <el-empty description="暂无消息" :image-size="80" />
+      </div>
       <div v-else class="notification-list">
-        <article
+        <NotificationListItem
           v-for="item in list"
           :key="item.id"
-          class="notification-item"
-          :class="{ 'is-unread': !item.isRead }"
-          @click="openNotification(item)"
-        >
-          <el-avatar
-            :size="42"
-            :src="item.actor?.avatar || ''"
-            class="notification-avatar"
-          >
-            {{ avatarFallback(item) }}
-          </el-avatar>
-          <div class="notification-main">
-            <div class="notification-item-head">
-              <strong class="notification-title">{{ item.title || typeLabel(item.type) }}</strong>
-              <time class="notification-time">{{ formatTime(item.createTime) }}</time>
-            </div>
-            <p v-if="item.content" class="notification-content">{{ item.content }}</p>
-            <div v-if="item.extra?.memeCover || item.extra?.memeName" class="notification-extra">
-              <el-image
-                v-if="item.extra.memeCover"
-                :src="item.extra.memeCover"
-                fit="cover"
-                class="notification-cover"
-              />
-              <span v-if="item.extra.memeName" class="notification-meme-name">{{ item.extra.memeName }}</span>
-            </div>
-          </div>
-          <div class="notification-side">
-            <span v-if="!item.isRead" class="notification-dot" aria-label="未读" />
-            <el-button
-              link
-              type="danger"
-              class="notification-delete"
-              @click.stop="removeOne(item)"
-            >
-              删除
-            </el-button>
-          </div>
-        </article>
+          :item="item"
+          :time-text="formatTime(item.createTime)"
+          @open="openNotification"
+          @delete="removeOne"
+          @profile="goActorProfile"
+        />
       </div>
 
       <div v-if="hasMore" class="notifications-load-more">
@@ -111,6 +71,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getNotifications,
   markNotificationRead,
+  markAllNotificationsRead,
   deleteNotification,
   batchDeleteNotifications,
 } from '@/api/notification'
@@ -118,23 +79,11 @@ import { useNotificationStore } from '@/stores/notification'
 import { useAuthStore } from '@/stores/auth'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import { buildMemeDetailLocation, buildUserProfileLocation } from '@/utils/pageBreadcrumb'
-
-const TYPE_LABELS = {
-  like: '点赞',
-  comment: '评论',
-  reply: '回复',
-  favorite: '收藏',
-  follow: '关注',
-  comment_like: '评论点赞',
-  system: '系统通知',
-  audit: '审核通知',
-  review: '审核通知',
-  announcement: '公告',
-}
+import NotificationListItem from '@/components/notification/NotificationListItem.vue'
 
 export default {
   name: 'NotificationsPage',
-  components: { ArrowDown },
+  components: { ArrowDown, NotificationListItem },
   data() {
     return {
       activeTab: 'all',
@@ -152,17 +101,24 @@ export default {
       return useNotificationStore()
     },
   },
+  watch: {
+    '$route.query.tab'(val) {
+      const next = this.normalizeTab(val)
+      if (next === this.activeTab) return
+      this.activeTab = next
+      this.reloadList()
+    },
+  },
+  created() {
+    this.activeTab = this.normalizeTab(this.$route.query.tab)
+  },
   mounted() {
     this.reloadList()
   },
   methods: {
-    typeLabel(type) {
-      const key = String(type || '').trim().toLowerCase()
-      return TYPE_LABELS[key] || '消息'
-    },
-    avatarFallback(item) {
-      const name = item?.actor?.nickname || item?.title || '消'
-      return String(name).trim().slice(0, 1) || '消'
+    normalizeTab(raw) {
+      const tab = String(raw || '').trim().toLowerCase()
+      return ['all', 'unread', 'interact', 'system'].includes(tab) ? tab : 'all'
     },
     formatTime(str) {
       if (!str) return ''
@@ -186,7 +142,19 @@ export default {
       if (y === new Date().getFullYear()) return `${m}-${d} ${hh}:${mm}`
       return `${y}-${m}-${d}`
     },
-    onTabChange() {
+    onTabChange(tab) {
+      const next = this.normalizeTab(tab)
+      this.activeTab = next
+      const current = this.normalizeTab(this.$route.query.tab)
+      if (current !== next) {
+        const query = { ...this.$route.query }
+        if (next === 'all') {
+          delete query.tab
+        } else {
+          query.tab = next
+        }
+        this.$router.replace({ query }).catch(() => {})
+      }
       this.reloadList()
     },
     async reloadList() {
@@ -231,6 +199,15 @@ export default {
         this.loadingMore = false
       }
     },
+    goActorProfile(item) {
+      const userId = item?.actor?.userId
+      if (!userId) return
+      this.$router.push(
+        buildUserProfileLocation(userId, {
+          fromRoute: this.$route,
+        })
+      )
+    },
     async openNotification(item) {
       if (!item?.id) return
       if (!item.isRead) {
@@ -253,9 +230,16 @@ export default {
         const memeId = jump.params?.id || item.targetId
         if (!memeId) return
         const location = buildMemeDetailLocation(memeId, { from: 'header' })
-        const commentId = jump.query?.commentId
+        const commentId = jump.query?.commentId || item.refId
+        const rootId = jump.query?.rootId
         if (commentId) {
-          location.query = { ...location.query, commentId: String(commentId) }
+          location.query = {
+            ...location.query,
+            commentId: String(commentId),
+          }
+          if (rootId) {
+            location.query.rootId = String(rootId)
+          }
         }
         this.$router.push(location)
         return
@@ -298,6 +282,10 @@ export default {
       }
     },
     async handleBatchCommand(command) {
+      if (command === 'readAll') {
+        await this.markAllRead()
+        return
+      }
       const isClearAll = command === 'clearAll'
       const isClearRead = command === 'clearRead'
       if (!isClearAll && !isClearRead) return
@@ -331,6 +319,30 @@ export default {
         ElMessage.error(e.message || '操作失败')
       }
     },
+    async markAllRead() {
+      const tab =
+        this.activeTab === 'interact' || this.activeTab === 'system'
+          ? this.activeTab
+          : 'all'
+      try {
+        const data = await markAllNotificationsRead({ tab })
+        this.list = this.list.map((row) => ({ ...row, isRead: true }))
+        this.notificationStore.setUnreadCount({
+          total: data.unreadCount,
+          interact: data.interact,
+          system: data.system,
+        })
+        if (this.activeTab === 'unread') {
+          await this.reloadList()
+        }
+        ElMessage.success(
+          data.updatedCount > 0 ? `已标记 ${data.updatedCount} 条为已读` : '没有未读消息'
+        )
+      } catch (e) {
+        if (isAuthErrorHandled(e)) return
+        ElMessage.error(e.message || '全部已读失败')
+      }
+    },
   },
   beforeRouteLeave() {
     if (!useAuthStore().isLoggedIn) {
@@ -342,12 +354,19 @@ export default {
 
 <style scoped>
 .notifications-page {
-  padding: 24px 32px;
+  padding: 24px 32px 40px;
+  max-width: 960px;
+  margin: 0 auto;
 }
 
 .notifications-card {
-  border-radius: 16px;
+  border-radius: var(--meme-radius-lg);
   border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
+}
+
+.notifications-card :deep(.el-card__body) {
+  padding: 22px 24px 20px;
 }
 
 .notifications-head {
@@ -355,150 +374,75 @@ export default {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .notifications-title {
   margin: 0;
   font-size: 22px;
   font-weight: 800;
+  letter-spacing: 0.01em;
   color: var(--meme-text);
 }
 
 .notifications-subtitle {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--meme-text-secondary);
 }
 
-.notifications-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+.notifications-manage-btn {
+  border-radius: 10px;
+}
+
+.notifications-tabs {
+  margin-top: 8px;
 }
 
 .notifications-tabs :deep(.el-tabs__header) {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
+}
+
+.notifications-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background-color: var(--meme-border);
+}
+
+.notifications-tabs :deep(.el-tabs__item) {
+  font-weight: 600;
+  color: var(--meme-text-secondary);
+}
+
+.notifications-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--meme-primary);
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tab-badge {
-  margin-left: 6px;
+  transform: translateY(-1px);
 }
 
-.notifications-loading {
-  padding: 12px 0;
+.notifications-loading,
+.notifications-empty {
+  padding: 28px 0 16px;
 }
 
 .notification-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.notification-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 12px;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.notification-item:hover {
-  background: var(--meme-bg-muted);
-}
-
-.notification-item.is-unread {
-  background: var(--meme-primary-soft);
-}
-
-.notification-avatar {
-  flex-shrink: 0;
-}
-
-.notification-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.notification-item-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 4px;
-}
-
-.notification-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--meme-text);
-}
-
-.notification-time {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--meme-text-muted);
-}
-
-.notification-content {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--meme-text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.notification-extra {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.notification-cover {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  border: 1px solid var(--meme-border);
-  overflow: hidden;
-}
-
-.notification-meme-name {
-  font-size: 13px;
-  color: var(--meme-text);
-  font-weight: 600;
-}
-
-.notification-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.notification-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--meme-primary);
-}
-
-.notification-delete {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.notification-item:hover .notification-delete {
-  opacity: 1;
+  gap: 2px;
+  padding-top: 4px;
 }
 
 .notifications-load-more {
-  margin-top: 16px;
+  margin-top: 18px;
+  padding-top: 4px;
   text-align: center;
 }
 
@@ -507,8 +451,12 @@ export default {
     padding: 16px;
   }
 
+  .notifications-card :deep(.el-card__body) {
+    padding: 18px 16px 16px;
+  }
+
   .notifications-head {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 }
 </style>

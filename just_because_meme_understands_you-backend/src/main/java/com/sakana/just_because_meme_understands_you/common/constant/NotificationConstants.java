@@ -26,14 +26,23 @@ public final class NotificationConstants {
     public static final String JUMP_MEME_DETAIL = "memeDetail";
     public static final String JUMP_USER_PROFILE = "userProfile";
 
+    /** 消息 type 枚举值 */
+    public static final String TYPE_LIKE = "like";
+    public static final String TYPE_COMMENT = "comment";
+    public static final String TYPE_REPLY = "reply";
+    public static final String TYPE_FAVORITE = "favorite";
+    public static final String TYPE_FOLLOW = "follow";
+    public static final String TYPE_COMMENT_LIKE = "comment_like";
+    public static final String TYPE_SYSTEM = "system";
+
     /** 互动类消息类型 */
     public static final Set<String> INTERACT_TYPES = Set.of(
-            "like",
-            "comment",
-            "reply",
-            "favorite",
-            "follow",
-            "comment_like"
+            TYPE_LIKE,
+            TYPE_COMMENT,
+            TYPE_REPLY,
+            TYPE_FAVORITE,
+            TYPE_FOLLOW,
+            TYPE_COMMENT_LIKE
     );
 
     /** 系统类消息类型 */

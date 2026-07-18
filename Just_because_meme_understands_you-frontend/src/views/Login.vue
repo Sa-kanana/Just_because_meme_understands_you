@@ -51,7 +51,6 @@
         </el-form-item>
 
         <div class="login-extra-row">
-          <el-checkbox v-model="form.rememberMe">记住我（公共设备请勿勾选）</el-checkbox>
           <router-link to="/forgot-password" class="forgot-link">忘记密码？</router-link>
         </div>
 
@@ -90,7 +89,6 @@ export default {
         email: '',
         password: '',
         loginType: 'email',
-        rememberMe: true,
       },
       submitting: false,
       rules: {
@@ -135,7 +133,6 @@ export default {
             useAuthStore().setAuth({
               token,
               user,
-              rememberMe: this.form.rememberMe,
             })
             ElMessage.success('登录成功')
             const redirectFromQuery = this.$route.query.redirect
@@ -257,7 +254,7 @@ export default {
   margin-top: 8px;
   margin-bottom: 8px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   font-size: 13px;
   color: var(--meme-text-secondary);

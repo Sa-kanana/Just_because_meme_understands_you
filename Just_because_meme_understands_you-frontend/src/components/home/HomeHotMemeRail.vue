@@ -2,7 +2,6 @@
   <section class="home-hot-rail" aria-label="今日热梗">
     <div class="home-hot-rail__head">
       <h2 class="home-hot-rail__title">今日热梗</h2>
-      <span class="home-hot-rail__hint">横滑查看更多</span>
     </div>
     <div class="home-hot-rail__scroll">
       <router-link
@@ -69,10 +68,6 @@ export default {
 }
 
 .home-hot-rail__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
   margin-bottom: 14px;
 }
 
@@ -81,11 +76,6 @@ export default {
   font-size: 18px;
   font-weight: 700;
   color: var(--meme-text);
-}
-
-.home-hot-rail__hint {
-  font-size: 12px;
-  color: var(--meme-text-muted);
 }
 
 .home-hot-rail__scroll {
@@ -106,14 +96,15 @@ export default {
 }
 
 .home-hot-rail__card {
-  flex: 0 0 140px;
+  flex: 1 1 0;
+  min-width: 140px;
   text-decoration: none;
   color: inherit;
 }
 
 .home-hot-rail__cover {
   position: relative;
-  height: 94px;
+  aspect-ratio: 3 / 2;
   border-radius: 14px;
   overflow: hidden;
   background: var(--meme-bg-cover);

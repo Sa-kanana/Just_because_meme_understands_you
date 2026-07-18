@@ -1,107 +1,144 @@
-server:
-  port: 8080
+# =============================================================================
+# application.yml —— 公共配置（所有环境都会加载）
+#
+# 职责：
+#   1. 放各环境共用的业务默认值（限流、连接池、过期时间等）
+#   2. 敏感项只写 ${环境变量}，不写真实密码 / JWT / OSS Key
+#
+# 生效规则：
+#   - 本地：spring.profiles.default=dev → 自动叠加载 application-dev.yml
+#   - 生产 / Docker：SPRING_PROFILES_ACTIVE=prod → 叠加载 application-prod.yml
+#                   敏感项必须由环境变量（或 .env）注入
+#
+# 语法说明：
+#   ${NAME}        必须提供，缺了会启动失败（适合密钥）
+#   ${NAME:默认}   有默认值；未设置环境变量时用冒号后的值
+# =============================================================================
 
-#应用名
+server:
+  # HTTP 端口，可用 SERVER_PORT 覆盖
+  port: ${SERVER_PORT:8080}
+
 spring:
   application:
     name: just_because_meme_understands_you
-  #邮箱验证配置
+
+  profiles:
+    # 未显式指定 profile 时默认走开发配置；上线务必设 SPRING_PROFILES_ACTIVE=prod
+    default: dev
+
+  # ---------- 邮箱（验证码 / 找回密码）----------
   mail:
-    host: smtp.qq.com
-    port: 465
-    username: ${MAIL_USERNAME} # QQ邮箱
-    password: ${MAIL_PASSWORD}  # qq邮箱16位授权码
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    # 开发由 application-dev.yml 覆盖；生产由 MAIL_USERNAME / MAIL_PASSWORD 注入
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     default-encoding: UTF-8
     protocol: smtp
     properties:
       mail:
         smtp:
           auth: true
-          # 关键配置：QQ邮箱必须开启 SSL
+          # QQ 邮箱 SMTP 需开启 SSL
           ssl:
             enable: true
           socketFactory:
             port: 465
             class: javax.net.ssl.SSLSocketFactory
             fallback: false
-  #mysql数据库配置
+
+  # ---------- MySQL ----------
+  # 无弱默认值：开发写在 application-dev.yml，生产必须设 DB_* 环境变量
   datasource:
-    password: ${DB_PASSWORD:1234}
-    username: ${DB_USERNAME:root}
-    url: ${DB_URL:jdbc:mysql://192.168.100.128:3306/MemeLIst?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true}
-    # hikari数据库连接池配置
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    url: ${DB_URL}
     hikari:
-      # 设置为 30 分钟
+      # 连接最大存活时间（毫秒），建议小于 MySQL wait_timeout
       max-lifetime: 1800000
-      # 连接在池中保持空闲的最长时间
+      # 空闲连接保留时间（毫秒）
       idle-timeout: 600000
-      # 建议配置，确保连接在取出时是活的
+      # 取出连接前探活
       connection-test-query: SELECT 1
+
+  # ---------- Redis ----------
   data:
     redis:
-      host: ${REDIS_HOST:192.168.100.128}
+      host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
+      # 无密码可留空；有密码设 REDIS_PASSWORD 或在 dev 文件中填写
+      password: ${REDIS_PASSWORD:}
       timeout: 5000ms
       lettuce:
         pool:
-          max-active: 20 # 针对你提到的“高并发”模式进行扩展
+          max-active: 20
           max-wait: -1ms
           max-idle: 10
-# 阿里云OSS配置
+
+# ---------- 阿里云 OSS（上传 / 读图）----------
 oss:
-  endpoint: oss-cn-beijing.aliyuncs.com
+  # 地域 Endpoint，可按桶所在区域修改
+  endpoint: ${OSS_ENDPOINT:oss-cn-beijing.aliyuncs.com}
   accessKeyId: ${OSS_ACCESS_KEY_ID}
   accessKeySecret: ${OSS_ACCESS_KEY_SECRET}
   bucketName: ${OSS_BUCKET_NAME}
-  # 上传直连接口（PostObject），不配置则默认为 https://{bucketName}.{endpoint}
+  # PostObject 上传域名；空则默认 https://{bucket}.{endpoint}
   uploadHost: ${OSS_UPLOAD_HOST:}
-  # 读图访问域名：开发用 OSS 域名，生产改为 CDN 域名（如 https://img.example.com）
+  # 对外读图域名；生产建议填 CDN
   publicBaseUrl: ${OSS_PUBLIC_BASE_URL:}
-  # 上传凭证 /oss/policy 限流：每用户每 IP 每分钟最多次数
+  # 申请上传凭证限流：每用户每 IP 每分钟次数
   policy-rate-limit-per-minute: 10
 
+# ---------- JWT ----------
 jwt:
-  # 生产环境必须通过环境变量 JWT_SECRET 注入，长度至少 32 字节
-  secret: ${JWT_SECRET:just_because_meme_understands_you_jwt_secret_2026}
-  # access token 过期时间：2 小时
-  expiration: 7200000
-  # refresh token 过期时间：7 天
-  refresh-expiration: 604800000
-  # 本地开发可为 false，生产环境 HTTPS 下设为 true
+  # 签名密钥，至少 32 字节；生产必须用环境变量换掉开发值
+  secret: ${JWT_SECRET}
+  # access token 过期（毫秒），默认 2 小时
+  expiration: ${JWT_EXPIRATION:7200000}
+  # refresh token 过期（毫秒），默认 7 天
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+  # 是否给 refresh cookie 加 Secure；HTTPS 生产见 application-prod.yml
   cookie-secure: ${JWT_COOKIE_SECURE:false}
 
+# ---------- 登录 / 刷新限流 ----------
 auth:
-  # 刷新接口每秒允许请求次数（按 IP + refresh token 指纹限流）
+  # 刷新接口 QPS（按 IP + refresh 指纹）
   refresh-qps-limit: 5
-  # 登录：单 IP 每分钟最多次数
+  # 单 IP 每分钟登录次数上限
   login-rate-limit-per-minute: 10
-  # 登录：连续失败 N 次后锁定账号
+  # 连续失败几次后锁定账号
   login-lockout-after-failures: 5
-  # 登录：账号锁定时长（分钟）
+  # 锁定时长（分钟）
   login-lockout-minutes: 15
 
+# ---------- 安全头 / CORS / 反代 ----------
 app:
   security:
-    # 反向代理 IP 白名单（逗号分隔），配置后才信任 X-Forwarded-For
+    # 可信反向代理 IP（逗号分隔）；仅来自这些 IP 时才信任 X-Forwarded-For
     trusted-proxies: ${TRUSTED_PROXIES:}
     headers:
+      # 是否附加安全响应头
       enabled: ${SECURITY_HEADERS_ENABLED:true}
+      # HSTS（强制 HTTPS）；本地 HTTP 应关闭，生产见 prod 配置
       hsts-enabled: ${HSTS_ENABLED:false}
   cors:
     enabled: ${CORS_ENABLED:true}
+    # 允许的前端 Origin（逗号分隔）；生产必须改成正式域名
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://127.0.0.1}
 
+# ---------- 业务参数 ----------
 user-favorite:
-  # 收藏总数 Redis -> DB 同步间隔（毫秒）
+  # 收藏计数 Redis → DB 回写间隔（毫秒）
   count-sync-interval-ms: 120000
 
 user:
   follow:
-    # 单用户关注/取消关注每分钟上限（防刷）
+    # 单用户关注/取关每分钟上限
     rate-limit-per-minute: 60
 
 meme-comment:
-  # Redis 评论计数 -> meme.comments 批量回写间隔（毫秒）
+  # 评论计数 Redis → meme.comments 回写间隔（毫秒）
   count-sync-interval-ms: 120000
   async:
     core-pool-size: 4
@@ -109,12 +146,12 @@ meme-comment:
     queue-capacity: 500
 
 meme:
-  # 下架后允许恢复的天数
+  # 下架后可恢复天数
   restore-days: 30
-  # 下架后允许彻底删除的冷静期（天），0 表示不限制
+  # 彻底删除冷静期（天），0 表示不限制
   purge-cooldown-days: 0
   view:
-    # 同一访客对同一梗的去重窗口（小时）
+    # 同一访客对同一梗浏览去重窗口（小时）
     dedup-hours: 24
-    # 浏览上报限流：每访客每分钟最多次数
+    # 浏览上报限流：每访客每分钟次数
     report-rate-limit-per-minute: 30

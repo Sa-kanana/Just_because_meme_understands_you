@@ -21,6 +21,8 @@ import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
 import com.sakana.just_because_meme_understands_you.service.meme.MemeBloomFilterService;
 import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport.ViewAccess;
+import com.sakana.just_because_meme_understands_you.service.notification.NotificationPublisher;
+import com.sakana.just_because_meme_understands_you.vo.MemeCommentAnchorVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentPageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
@@ -56,6 +58,9 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
 
     @Resource
     private MemeCommentAsyncHandler memeCommentAsyncHandler;
+
+    @Resource
+    private NotificationPublisher notificationPublisher;
 
     @Resource
     private MemeBloomFilterService memeBloomFilterService;
@@ -185,6 +190,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         comment.setCreateTime(now);
         comment.setUpdateTime(now);
 
+        Long notifyReceiverUserId = null;
         if (isRootComment) {
             comment.setRootId(0L);
             comment.setParentId(0L);
@@ -207,6 +213,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             }
             comment.setRootId(rootId);
             comment.setParentId(resolvedParentId);
+            notifyReceiverUserId = parent.getUserId();
         }
 
         memeCommentMapper.insert(comment);
@@ -217,10 +224,59 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
                     .eq(MemeComment::getId, rootId)
                     .setSql("reply_count = reply_count + 1")
                     .set(MemeComment::getUpdateTime, now));
+            // 与评论同事务写入，避免 afterCommit 未触发/进程未热加载导致“没有通知”
+            notificationPublisher.publishCommentReply(
+                    notifyReceiverUserId,
+                    userId,
+                    meme,
+                    memeId,
+                    comment.getId(),
+                    rootId,
+                    comment.getContent());
+        } else if (meme.getUserId() != null) {
+            notificationPublisher.publishMemeComment(
+                    meme.getUserId(),
+                    userId,
+                    meme,
+                    memeId,
+                    comment.getId(),
+                    comment.getContent());
         }
 
         scheduleAfterCommentCommitted(memeId, userId);
         return commentSupport.toCreateResponseVO(comment);
+    }
+
+    @Override
+    public MemeCommentAnchorVO locateComment(Long commentId, Long currentUserId) {
+        if (commentId == null || commentId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "评论 id 不合法");
+        }
+        MemeComment comment = memeCommentMapper.selectById(commentId);
+        if (comment == null || !Objects.equals(comment.getIsDeleted(), MemeCommentSupport.NOT_DELETED)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+        Long memeId = comment.getMemeId();
+        if (memeId == null || memeId <= 0) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+        Meme meme = memeService.getById(memeId);
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可查看评论");
+        }
+
+        boolean isRoot = comment.getRootId() == null || Objects.equals(comment.getRootId(), 0L);
+        Long rootId = isRoot ? comment.getId() : comment.getRootId();
+        Long parentId = comment.getParentId() == null ? 0L : comment.getParentId();
+
+        MemeCommentAnchorVO vo = new MemeCommentAnchorVO();
+        vo.setMemeId(memeId);
+        vo.setCommentId(comment.getId());
+        vo.setRootId(rootId);
+        vo.setParentId(parentId);
+        vo.setRoot(isRoot);
+        return vo;
     }
 
     private void scheduleAfterCommentCommitted(Long memeId, Long userId) {

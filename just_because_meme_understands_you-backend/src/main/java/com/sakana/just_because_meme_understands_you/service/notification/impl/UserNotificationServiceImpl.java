@@ -18,6 +18,7 @@ import com.sakana.just_because_meme_understands_you.service.user.IUserService;
 import com.sakana.just_because_meme_understands_you.vo.NotificationBatchDeleteVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationDeleteVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationPageVO;
+import com.sakana.just_because_meme_understands_you.vo.NotificationReadAllVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationReadVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationUnreadCountVO;
 import jakarta.annotation.Resource;
@@ -109,6 +110,35 @@ public class UserNotificationServiceImpl implements IUserNotificationService {
         vo.setId(notificationId);
         vo.setIsRead(true);
         vo.setUnreadCount(countUnread(userId, Collections.emptySet(), false));
+        return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public NotificationReadAllVO markReadAll(Long userId, String tab) {
+        requireUserId(userId);
+        String normalizedTab = normalizeReadAllTab(tab);
+
+        LambdaUpdateWrapper<UserNotification> update = new LambdaUpdateWrapper<UserNotification>()
+                .eq(UserNotification::getUserId, userId)
+                .eq(UserNotification::getIsDeleted, DataStatusConstants.NOT_DELETED)
+                .eq(UserNotification::getIsRead, UNREAD)
+                .set(UserNotification::getIsRead, READ)
+                .set(UserNotification::getUpdateTime, LocalDateTime.now());
+
+        if (NotificationConstants.TAB_INTERACT.equals(normalizedTab)) {
+            update.in(UserNotification::getType, NotificationConstants.INTERACT_TYPES);
+        } else if (NotificationConstants.TAB_SYSTEM.equals(normalizedTab)) {
+            update.in(UserNotification::getType, NotificationConstants.SYSTEM_TYPES);
+        }
+
+        int updatedCount = userNotificationMapper.update(null, update);
+
+        NotificationReadAllVO vo = new NotificationReadAllVO();
+        vo.setUpdatedCount(updatedCount);
+        vo.setUnreadCount(toIntCount(countUnread(userId, Collections.emptySet(), false)));
+        vo.setInteract(toIntCount(countUnread(userId, NotificationConstants.INTERACT_TYPES, true)));
+        vo.setSystem(toIntCount(countUnread(userId, NotificationConstants.SYSTEM_TYPES, true)));
         return vo;
     }
 
@@ -292,6 +322,32 @@ public class UserNotificationServiceImpl implements IUserNotificationService {
         if (!NotificationConstants.knownTabs().contains(normalized)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "tab 参数不合法");
         }
+    }
+
+    /**
+     * 全部已读仅支持 all / interact / system；空值视为 all。
+     */
+    private String normalizeReadAllTab(String tab) {
+        if (!StringUtils.hasText(tab)) {
+            return NotificationConstants.TAB_ALL;
+        }
+        String normalized = tab.trim().toLowerCase(Locale.ROOT);
+        if (NotificationConstants.TAB_ALL.equals(normalized)
+                || NotificationConstants.TAB_INTERACT.equals(normalized)
+                || NotificationConstants.TAB_SYSTEM.equals(normalized)) {
+            return normalized;
+        }
+        throw new BizException(Result.CODE_BAD_REQUEST, "tab 仅支持 all / interact / system");
+    }
+
+    private int toIntCount(long count) {
+        if (count <= 0) {
+            return 0;
+        }
+        if (count > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) count;
     }
 
     private void requireUserId(Long userId) {

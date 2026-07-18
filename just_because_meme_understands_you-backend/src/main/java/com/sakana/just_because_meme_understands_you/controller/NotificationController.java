@@ -7,6 +7,7 @@ import com.sakana.just_because_meme_understands_you.service.notification.IUserNo
 import com.sakana.just_because_meme_understands_you.vo.NotificationBatchDeleteVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationDeleteVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationPageVO;
+import com.sakana.just_because_meme_understands_you.vo.NotificationReadAllVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationReadVO;
 import com.sakana.just_because_meme_understands_you.vo.NotificationUnreadCountVO;
 import jakarta.annotation.Resource;
@@ -63,6 +64,18 @@ public class NotificationController {
         Long userId = AuthContext.requireCurrentUserId(request);
         Long notificationId = AuthContext.parseLongId(id, "id");
         return Result.success(userNotificationService.markRead(userId, notificationId));
+    }
+
+    /**
+     * 全部已读
+     * POST /notifications/read-all?tab=all|interact|system
+     */
+    @PostMapping("/notifications/read-all")
+    public Result<NotificationReadAllVO> markReadAll(
+            @RequestParam(value = "tab", required = false, defaultValue = "all") String tab,
+            HttpServletRequest request) {
+        Long userId = AuthContext.requireCurrentUserId(request);
+        return Result.success(userNotificationService.markReadAll(userId, tab));
     }
 
     /**

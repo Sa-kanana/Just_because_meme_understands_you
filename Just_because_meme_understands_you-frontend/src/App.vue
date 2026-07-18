@@ -47,13 +47,9 @@
           <span class="header-auth-sep">/</span>
           <router-link to="/register" class="header-auth-link">注册</router-link>
         </template>
-        <!-- 已登录：通知图标（小红点）+ 用户头像（悬停下拉菜单） -->
+        <!-- 已登录：通知图标（悬停预览）+ 用户头像（悬停下拉菜单） -->
         <template v-else>
-          <el-badge :is-dot="hasNotification" class="header-notification-badge">
-            <el-icon class="header-notification-icon" :size="22" @click="goNotifications">
-              <Bell />
-            </el-icon>
-          </el-badge>
+          <HeaderNotificationDropdown />
           <el-dropdown
             trigger="hover"
             placement="bottom-end"
@@ -180,7 +176,7 @@
 </template>
 
 <script>
-import { Search, Bell, ArrowUp } from '@element-plus/icons-vue'
+import { Search, ArrowUp } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
@@ -191,10 +187,11 @@ import {
   buildToolPageLocation,
 } from '@/utils/pageBreadcrumb'
 import GlobalBreadcrumb from '@/components/layout/GlobalBreadcrumb.vue'
+import HeaderNotificationDropdown from '@/components/notification/HeaderNotificationDropdown.vue'
 
 export default {
   name: 'App',
-  components: { Search, Bell, ArrowUp, GlobalBreadcrumb },
+  components: { Search, ArrowUp, GlobalBreadcrumb, HeaderNotificationDropdown },
   data() {
     return {
       searchKeyword: '',
@@ -218,9 +215,6 @@ export default {
     },
     themeBtnTitle() {
       return this.themeIsDark ? '切换到浅色' : '切换到深色'
-    },
-    hasNotification() {
-      return useNotificationStore().hasUnread
     },
     helpNavLocation() {
       const patch = useBreadcrumbStore().patch || {}
@@ -390,21 +384,6 @@ export default {
     toggleTheme() {
       useThemeStore().toggleLightDark()
     },
-    goNotifications() {
-      const authStore = useAuthStore()
-      if (!authStore.isLoggedIn) {
-        this.$router.push({ name: 'login', query: { redirect: '/notifications' } })
-        return
-      }
-      const patch = useBreadcrumbStore().patch || {}
-      this.$router.push(
-        buildToolPageLocation('notifications', {
-          fromRoute: this.$route,
-          memeName: patch.meme?.name || '',
-          profileName: patch.nickname || '',
-        })
-      )
-    },
     refreshNotificationBadge() {
       const authStore = useAuthStore()
       if (!authStore.isLoggedIn) return
@@ -552,19 +531,6 @@ export default {
   font-weight: 400;
   user-select: none;
   margin: 0 2px;
-}
-
-.header-notification-badge {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-}
-.header-notification-icon {
-  color: var(--meme-text-secondary);
-  transition: color 0.2s ease;
-}
-.header-notification-icon:hover {
-  color: var(--meme-primary);
 }
 
 .logo-wrap {

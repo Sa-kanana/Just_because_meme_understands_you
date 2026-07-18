@@ -5,6 +5,7 @@ import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.dto.MemeCommentCreateRequestDTO;
 import com.sakana.just_because_meme_understands_you.service.comment.IMemeCommentService;
+import com.sakana.just_because_meme_understands_you.vo.MemeCommentAnchorVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentPageVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
@@ -48,6 +49,18 @@ public class MemeCommentController {
                 AuthContext.parseLongId(rootId, "rootId"),
                 page,
                 size,
+                AuthContext.currentUserId(httpServletRequest)));
+    }
+
+    /**
+     * 评论定位（消息跳转）
+     * GET /detail/comments/{commentId}/anchor
+     */
+    @GetMapping("/detail/comments/{commentId}/anchor")
+    public Result<MemeCommentAnchorVO> locateComment(@PathVariable("commentId") String commentId,
+                                                     HttpServletRequest httpServletRequest) {
+        return Result.success(memeCommentService.locateComment(
+                AuthContext.parseLongId(commentId, "commentId"),
                 AuthContext.currentUserId(httpServletRequest)));
     }
 

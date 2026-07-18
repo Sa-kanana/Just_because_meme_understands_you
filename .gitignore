@@ -51,7 +51,14 @@ replay_pid*
 .DS_Store
 Thumbs.db
 
-# Local env
 .env
 .env.local
 .env.*.local
+!.env.example
+
+# Local Spring profiles（含密钥，勿提交；保留 *.example）
+**/application-dev.yml
+**/application-local.yml
+!**/application-dev.yml.example
+!**/application-local.yml.example
+

@@ -31,6 +31,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/detail/views",
                         "/detail/*/comments",
                         "/detail/comments/*/replies",
+                        "/detail/comments/*/anchor",
                         "/detail/comments/*/likes/status",
                         "/list"
                 );
@@ -57,6 +58,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/views/**",
                         "/detail/*/comments",
                         "/detail/comments/*/replies",
+                        "/detail/comments/*/anchor",
                         "/detail/comments/*/likes/status",
                         "/",
                         "/image",

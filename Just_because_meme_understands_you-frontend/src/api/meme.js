@@ -481,6 +481,28 @@ export function getMemeCommentReplies(rootId, params = {}) {
 }
 
 /**
+ * 评论定位（消息跳转）
+ * GET /detail/comments/{commentId}/anchor
+ */
+export function getMemeCommentAnchor(commentId) {
+  const id = commentId != null ? String(commentId).trim() : ''
+  if (!id) return Promise.reject(new Error('缺少评论 id'))
+  return request(`/detail/comments/${encodeURIComponent(id)}/anchor`, { method: 'GET' }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) {
+      const data = res.data
+      return {
+        memeId: data.memeId != null ? String(data.memeId) : '',
+        commentId: data.commentId != null ? String(data.commentId) : id,
+        rootId: data.rootId != null ? String(data.rootId) : '',
+        parentId: data.parentId != null ? String(data.parentId) : '',
+        root: Boolean(data.root),
+      }
+    }
+    throw new Error((res && (res.message || res.msg)) || '定位评论失败')
+  })
+}
+
+/**
  * 发表评论（根评论 / 回复子评论）
  * POST /detail/comments
  * @param {Object} payload

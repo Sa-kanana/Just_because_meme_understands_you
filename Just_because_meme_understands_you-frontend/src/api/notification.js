@@ -130,6 +130,28 @@ export function markNotificationRead(notificationId) {
 }
 
 /**
+ * 全部已读
+ * POST /notifications/read-all?tab=all|interact|system
+ */
+export function markAllNotificationsRead(params = {}) {
+  const tabRaw = params.tab != null ? String(params.tab).trim().toLowerCase() : 'all'
+  const tab = ['all', 'interact', 'system'].includes(tabRaw) ? tabRaw : 'all'
+  const query = new URLSearchParams({ tab })
+  return request(`/notifications/read-all?${query}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).then((res) => {
+    const data = unwrap(res, '全部已读失败') || {}
+    return {
+      updatedCount: Number.isFinite(Number(data.updatedCount)) ? Number(data.updatedCount) : 0,
+      unreadCount: Number.isFinite(Number(data.unreadCount)) ? Number(data.unreadCount) : 0,
+      interact: Number.isFinite(Number(data.interact)) ? Number(data.interact) : 0,
+      system: Number.isFinite(Number(data.system)) ? Number(data.system) : 0,
+    }
+  })
+}
+
+/**
  * 删除单条消息
  * DELETE /notifications/{id}
  */

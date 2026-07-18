@@ -234,7 +234,12 @@
       </el-card>
 
       <!-- 评论区 -->
-      <el-card class="detail-section-card detail-comment-card" :class="{ 'detail-comment-card--preview': ownerPreview }" shadow="never">
+      <el-card
+        id="meme-comments"
+        class="detail-section-card detail-comment-card"
+        :class="{ 'detail-comment-card--preview': ownerPreview }"
+        shadow="never"
+      >
         <template #header>
           <div class="detail-section-header comment-header-row">
             <div>
@@ -367,7 +372,14 @@
           <el-empty description="还没有评论，来做第一个吧" :image-size="72" />
         </div>
         <div v-else class="comment-list">
-          <article v-for="item in rootComments" :key="item.id" class="comment-item">
+          <article
+            v-for="item in rootComments"
+            :key="item.id"
+            :id="`comment-${item.id}`"
+            class="comment-item"
+            :class="{ 'is-focus-target': String(focusedCommentId) === String(item.id) }"
+            :data-comment-id="item.id"
+          >
             <div class="comment-item-body">
               <el-avatar
                 :size="40"
@@ -453,7 +465,10 @@
                       <div
                         v-for="reply in repliesMap[String(item.id)] || []"
                         :key="reply.id"
+                        :id="`comment-${reply.id}`"
                         class="reply-item"
+                        :class="{ 'is-focus-target': String(focusedCommentId) === String(reply.id) }"
+                        :data-comment-id="reply.id"
                       >
                         <el-avatar
                           :size="32"
@@ -638,7 +653,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment } from '@/api/meme'
+import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment, getMemeCommentAnchor } from '@/api/meme'
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
 import { isAuthErrorHandled } from '@/utils/authSession'
@@ -647,7 +662,7 @@ import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
-import { watch, computed, ref, onUnmounted, reactive } from 'vue'
+import { watch, computed, ref, onUnmounted, reactive, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import { buildUserProfileLocation, buildSearchLocation } from '@/utils/pageBreadcrumb'
@@ -834,6 +849,10 @@ const replySubmitting = ref(false)
 const commentEditorFocused = ref(false)
 const commentImages = ref([])
 const commentImageUploading = ref(false)
+/** 消息跳转高亮的目标评论 id */
+const focusedCommentId = ref('')
+let commentFocusSeq = 0
+let commentFocusClearTimer = null
 
 const currentUserAvatar = computed(() => {
   const avatar = authStore.currentUser?.avatar
@@ -932,13 +951,26 @@ const commentBootstrapKey = computed(() => {
 watch(commentBootstrapKey, (key, prevKey) => {
   if (!key || key === prevKey) return
   resetCommentState()
-  loadComments(true)
+  loadComments(true).then(() => {
+    focusCommentFromRoute()
+  })
 })
+
+watch(
+  () => `${route.query.commentId || ''}:${route.query.rootId || ''}`,
+  (key, prevKey) => {
+    if (!key || key === prevKey || key === ':') return
+    if (!commentBootstrapKey.value) return
+    focusCommentFromRoute()
+  }
+)
 
 onUnmounted(() => {
   clearFavoriteDebounceTimer()
   clearViewReportTimer()
+  clearCommentFocusTimer()
   viewReportSeq += 1
+  commentFocusSeq += 1
 })
 
 function reload() {
@@ -973,10 +1005,142 @@ function resetCommentState() {
   commentDraft.value = ''
   commentEditorFocused.value = false
   commentImages.value = []
+  focusedCommentId.value = ''
+  clearCommentFocusTimer()
   expandedRoots.value = new Set()
   Object.keys(repliesMap).forEach((key) => delete repliesMap[key])
   Object.keys(repliesLoadingMap).forEach((key) => delete repliesLoadingMap[key])
   cancelReply()
+}
+
+function clearCommentFocusTimer() {
+  if (commentFocusClearTimer) {
+    clearTimeout(commentFocusClearTimer)
+    commentFocusClearTimer = null
+  }
+}
+
+async function focusCommentFromRoute() {
+  const commentId = route.query.commentId != null ? String(route.query.commentId).trim() : ''
+  if (!commentId || !commentsEnabled.value) return
+
+  const seq = ++commentFocusSeq
+  let rootId = route.query.rootId != null ? String(route.query.rootId).trim() : ''
+  let parentId = ''
+  let isRoot = false
+
+  try {
+    if (!rootId) {
+      const anchor = await getMemeCommentAnchor(commentId)
+      if (seq !== commentFocusSeq) return
+      rootId = anchor.rootId || ''
+      parentId = anchor.parentId || ''
+      isRoot = Boolean(anchor.root)
+      if (anchor.memeId && memeId.value && String(anchor.memeId) !== String(memeId.value)) {
+        return
+      }
+    } else {
+      isRoot = rootId === commentId
+    }
+
+    if (!rootId) return
+
+    // 根评论可能不在首页：最多再翻 5 页寻找
+    let attempts = 0
+    while (
+      !rootComments.value.some((c) => String(c.id) === rootId) &&
+      commentHasMore.value &&
+      attempts < 5
+    ) {
+      attempts += 1
+      commentPage.value += 1
+      await loadComments(false)
+      if (seq !== commentFocusSeq) return
+    }
+
+    const rootItem = rootComments.value.find((c) => String(c.id) === rootId)
+    if (!rootItem && !isRoot) {
+      // 根评论不在列表中时，仍尝试展开该楼层回复
+      expandedRoots.value.add(rootId)
+    }
+
+    if (!isRoot) {
+      const ensureKey = rootId
+      if (!expandedRoots.value.has(ensureKey)) {
+        expandedRoots.value.add(ensureKey)
+      }
+      if (!Array.isArray(repliesMap[ensureKey]) || !repliesMap[ensureKey].length) {
+        repliesLoadingMap[ensureKey] = true
+        try {
+          const data = await getMemeCommentReplies(ensureKey, { page: 1, size: 50 })
+          if (seq !== commentFocusSeq) return
+          repliesMap[ensureKey] = Array.isArray(data?.list) ? data.list : []
+        } catch (e) {
+          if (seq !== commentFocusSeq) return
+          ElMessage.error(e.message || '加载回复失败')
+          return
+        } finally {
+          repliesLoadingMap[ensureKey] = false
+        }
+      }
+    }
+
+    await nextTick()
+    if (seq !== commentFocusSeq) return
+
+    focusedCommentId.value = commentId
+    scrollToCommentEl(commentId)
+
+    // 自动打开回复框，方便直接回这条消息
+    const targetRoot = rootComments.value.find((c) => String(c.id) === rootId) || { id: rootId }
+    if (isRoot) {
+      const root = rootComments.value.find((c) => String(c.id) === commentId)
+      if (root && authStore.isLoggedIn) {
+        startReply(root, root)
+      }
+    } else {
+      const replies = repliesMap[rootId] || []
+      const reply = replies.find((r) => String(r.id) === commentId)
+      if (reply && authStore.isLoggedIn) {
+        startReply(targetRoot, reply)
+      } else if (authStore.isLoggedIn && parentId) {
+        const parent =
+          replies.find((r) => String(r.id) === parentId) ||
+          (String(parentId) === rootId ? targetRoot : null)
+        if (parent) {
+          startReply(targetRoot, parent)
+        }
+      }
+    }
+
+    clearCommentFocusTimer()
+    commentFocusClearTimer = setTimeout(() => {
+      if (String(focusedCommentId.value) === commentId) {
+        focusedCommentId.value = ''
+      }
+    }, 4500)
+
+    // 清掉 query，避免重复触发；保留其他溯源字段
+    if (route.query.commentId != null || route.query.rootId != null) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.commentId
+      delete nextQuery.rootId
+      router.replace({ query: nextQuery }).catch(() => {})
+    }
+  } catch (e) {
+    if (seq !== commentFocusSeq) return
+    // 定位失败不打断详情页
+  }
+}
+
+function scrollToCommentEl(commentId) {
+  const el = document.getElementById(`comment-${commentId}`)
+  if (!el) {
+    const section = document.getElementById('meme-comments')
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 async function loadComments(reset = false) {
@@ -2417,11 +2581,17 @@ function goSearchByTag(tag) {
   padding: 16px 14px;
   margin: 0 -6px;
   border-radius: 14px;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.2s ease;
 }
 
 .comment-item:hover {
   background: var(--meme-bg-muted);
+}
+
+.comment-item.is-focus-target,
+.reply-item.is-focus-target {
+  background: var(--meme-primary-soft);
+  box-shadow: 0 0 0 2px var(--meme-focus-ring);
 }
 
 .comment-item-head {
