@@ -1,0 +1,1 @@
+"""MemeAgent application package."""

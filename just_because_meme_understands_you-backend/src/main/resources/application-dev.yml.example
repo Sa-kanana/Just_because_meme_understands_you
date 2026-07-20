@@ -52,3 +52,15 @@ app:
   cors:
     enabled: true
     allowed-origins: http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:8080
+
+# ---------- MemeAgent（FastAPI AI 搜索）----------
+meme:
+  agent:
+    base-url: http://127.0.0.1:8000
+    api-key: # 请自行填写，与 MemeAgent INTERNAL_API_KEY 一致
+  ai:
+    max-history-tokens: 3000
+    max-output-tokens: 512
+    cache-ttl-seconds: 120
+    rate-limit-per-minute: 20
+    chars-per-token-estimate: 3

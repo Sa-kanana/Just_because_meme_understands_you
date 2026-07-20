@@ -155,3 +155,17 @@ meme:
     dedup-hours: 24
     # 浏览上报限流：每访客每分钟次数
     report-rate-limit-per-minute: 30
+  agent:
+    # FastAPI MemeAgent 内网地址（生产用环境变量覆盖）
+    base-url: ${MEME_AGENT_BASE_URL:http://127.0.0.1:8000}
+    api-key: ${MEME_AGENT_API_KEY:}
+    connect-timeout-ms: ${MEME_AGENT_CONNECT_TIMEOUT_MS:2000}
+    response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:60000}
+    stream-path: /stream
+    ingest-path: /ingest
+  ai:
+    max-history-tokens: ${MEME_AI_MAX_HISTORY_TOKENS:3000}
+    max-output-tokens: ${MEME_AI_MAX_OUTPUT_TOKENS:512}
+    cache-ttl-seconds: ${MEME_AI_CACHE_TTL_SECONDS:120}
+    rate-limit-per-minute: ${MEME_AI_RATE_LIMIT_PER_MINUTE:20}
+    chars-per-token-estimate: ${MEME_AI_CHARS_PER_TOKEN:3}

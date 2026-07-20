@@ -56,6 +56,15 @@ Thumbs.db
 .env.*.local
 !.env.example
 
+# Python / MemeAgent
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+MemeAgent/.env
+
 # Local Spring profiles（含密钥，勿提交；保留 *.example）
 **/application-dev.yml
 **/application-local.yml

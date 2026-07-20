@@ -1,0 +1,23 @@
+# conda env create -f environment.yml && conda activate memeagent
+name: memeagent
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - fastapi>=0.115,<0.116
+      - uvicorn[standard]>=0.32,<0.33
+      - pydantic>=2.10,<3
+      - pydantic-settings>=2.6,<3
+      - httpx>=0.28,<0.29
+      - asyncpg>=0.30,<0.31
+      - pgvector>=0.3,<0.4
+      - langchain>=1.0,<2
+      - langchain-core>=1.0,<2
+      - langchain-openai>=0.3,<1
+      - langsmith>=0.2,<0.4
+      - numpy>=2.0,<3
+      - pytest>=8.3,<9
+      - pytest-asyncio>=0.24,<0.25
