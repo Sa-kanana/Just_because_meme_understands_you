@@ -41,6 +41,12 @@ const routes = [
     meta: { requiresAuth: true, breadcrumbLabel: '消息中心' },
   },
   {
+    path: '/ai',
+    name: 'aiSearch',
+    component: () => import('@/views/AiSearch.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: 'AI 搜梗' },
+  },
+  {
     path: '/settings',
     name: 'accountSettings',
     component: () => import('@/views/AccountSettings.vue'),

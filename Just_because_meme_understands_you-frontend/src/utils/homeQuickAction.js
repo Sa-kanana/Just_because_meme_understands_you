@@ -17,6 +17,8 @@ export function resolveQuickActionTarget(action, ctx = {}) {
   switch (key) {
     case 'publish':
       return { kind: 'route', route: { name: 'publishMeme', query: { from: 'home' } } }
+    case 'ai':
+      return resolveAiSearchTarget(ctx)
     case 'search':
       return {
         kind: 'route',
@@ -26,6 +28,17 @@ export function resolveQuickActionTarget(action, ctx = {}) {
       return resolveFavoritesTarget(ctx)
     default:
       return resolveLegacyRoute(action.route, ctx)
+  }
+}
+
+function resolveAiSearchTarget(ctx) {
+  const { isLoggedIn = false } = ctx
+  if (!isLoggedIn) {
+    return { kind: 'login', redirect: '/ai' }
+  }
+  return {
+    kind: 'route',
+    route: { name: 'aiSearch', query: { from: 'home' } },
   }
 }
 

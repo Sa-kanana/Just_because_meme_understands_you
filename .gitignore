@@ -71,3 +71,6 @@ MemeAgent/.env
 !**/application-dev.yml.example
 !**/application-local.yml.example
 
+# Local scratch
+tmp-apifox/
+

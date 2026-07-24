@@ -105,6 +105,7 @@ import {
 
 const DEFAULT_QUICK_ACTIONS = [
   { key: 'publish', label: '发布梗', route: '/publish', requireLogin: true },
+  { key: 'ai', label: 'AI 搜梗', route: '/ai', requireLogin: true },
   { key: 'search', label: '搜梗', route: '/search', requireLogin: false },
   { key: 'favorites', label: '我的收藏', route: '/user/me?tab=favorite', requireLogin: true },
 ]
@@ -196,7 +197,15 @@ export default {
           feedSize: this.feedPageSize,
         })
         if (Array.isArray(data.quickActions) && data.quickActions.length) {
-          this.quickActions = data.quickActions
+          const fromApi = data.quickActions
+          const hasAi = fromApi.some((a) => a && String(a.key || '') === 'ai')
+          this.quickActions = hasAi
+            ? fromApi
+            : [
+                fromApi[0],
+                { key: 'ai', label: 'AI 搜梗', route: '/ai', requireLogin: true },
+                ...fromApi.slice(1),
+              ].filter(Boolean)
         }
         this.hotTags = data.hotTags || []
         this.hotMemes = data.hotMemes || []

@@ -44,6 +44,25 @@ const ICONS = {
       'stroke-linejoin': 'round',
     }),
   ]),
+  ai: () => h('svg', { viewBox: '0 0 24 24', fill: 'none' }, [
+    h('rect', {
+      x: '5',
+      y: '7',
+      width: '14',
+      height: '10',
+      rx: '3',
+      stroke: 'currentColor',
+      'stroke-width': '1.75',
+    }),
+    h('circle', { cx: '9.5', cy: '12', r: '1.2', fill: 'currentColor' }),
+    h('circle', { cx: '14.5', cy: '12', r: '1.2', fill: 'currentColor' }),
+    h('path', {
+      d: 'M12 4v3M9 19h6',
+      stroke: 'currentColor',
+      'stroke-width': '1.75',
+      'stroke-linecap': 'round',
+    }),
+  ]),
 }
 
 export default {
@@ -66,7 +85,7 @@ export default {
 <style scoped>
 .home-quick-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -106,7 +125,13 @@ export default {
   height: 100%;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 860px) {
+  .home-quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
   .home-quick-actions {
     grid-template-columns: 1fr;
   }

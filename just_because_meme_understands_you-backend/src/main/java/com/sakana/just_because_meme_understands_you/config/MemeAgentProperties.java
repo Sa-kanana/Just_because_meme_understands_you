@@ -33,5 +33,9 @@ public class MemeAgentProperties {
         private int rateLimitPerMinute = 20;
         /** 保守估算：每 token 约等于多少字符（中文场景） */
         private int charsPerTokenEstimate = 3;
+        /** 是否允许 POST /ai/ingest/backfill 回填向量库 */
+        private boolean backfillEnabled = true;
+        /** MySQL 关键词预检索写入 hint 的条数上限（由 Assembler 使用时可覆盖） */
+        private int mysqlHintLimit = 8;
     }
 }

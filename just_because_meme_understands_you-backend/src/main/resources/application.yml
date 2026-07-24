@@ -169,3 +169,4 @@ meme:
     cache-ttl-seconds: ${MEME_AI_CACHE_TTL_SECONDS:120}
     rate-limit-per-minute: ${MEME_AI_RATE_LIMIT_PER_MINUTE:20}
     chars-per-token-estimate: ${MEME_AI_CHARS_PER_TOKEN:3}
+    backfill-enabled: ${MEME_AI_BACKFILL_ENABLED:true}

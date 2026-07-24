@@ -6,15 +6,20 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-public class AiChatSessionVO {
+public class AiChatMessageVO {
 
     private Long id;
 
-    private String title;
+    private Long sessionId;
+
+    private String role;
+
+    private String content;
+
+    private String requestId;
+
+    private Integer tokenEstimate;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
-
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime updateTime;
 }

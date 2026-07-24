@@ -22,6 +22,8 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeResourceMapper;
 
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
 
+import com.sakana.just_because_meme_understands_you.service.ai.IAiIngestService;
+
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
 
 import com.sakana.just_because_meme_understands_you.vo.MemeDeleteResponseVO;
@@ -145,6 +147,12 @@ public class MemeDeleteService {
     @Resource
 
     private IMemeService memeService;
+
+
+
+    @Resource
+
+    private IAiIngestService aiIngestService;
 
 
 
@@ -488,6 +496,16 @@ public class MemeDeleteService {
 
         }
 
+        try {
+
+            aiIngestService.removeMeme(memeId);
+
+        } catch (Exception e) {
+
+            log.warn("AI 向量删除派发失败, memeId={}", memeId, e);
+
+        }
+
     }
 
 
@@ -521,6 +539,16 @@ public class MemeDeleteService {
         } catch (Exception e) {
 
             log.warn("OSS 清理异步任务派发失败, memeId={}", memeId, e);
+
+        }
+
+        try {
+
+            aiIngestService.removeMeme(memeId);
+
+        } catch (Exception e) {
+
+            log.warn("AI 向量删除派发失败(purge), memeId={}", memeId, e);
 
         }
 

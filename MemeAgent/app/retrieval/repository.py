@@ -109,6 +109,61 @@ async def similarity_search(query: str, top_k: int) -> list[RetrievedChunk]:
     return results
 
 
+async def fetch_chunks_by_meme_ids(meme_ids: list[str], per_meme: int = 1) -> list[RetrievedChunk]:
+    """按业务 meme_id 拉取向量片段（供 hint 融合）。"""
+    ids = [str(m).strip() for m in meme_ids if str(m).strip()]
+    if not ids:
+        return []
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (meme_id) meme_id, content, chunk_index
+            FROM meme_vector_chunk
+            WHERE meme_id = ANY($1::varchar[])
+            ORDER BY meme_id, chunk_index ASC
+            """,
+            ids,
+        )
+    # DISTINCT ON 已按 meme 取首块；若需多块可扩展
+    results: list[RetrievedChunk] = []
+    for row in rows[: max(1, per_meme) * len(ids)]:
+        results.append(
+            RetrievedChunk(
+                meme_id=row["meme_id"],
+                content=row["content"],
+                score=0.55,
+                title=_extract_title(row["content"]),
+            )
+        )
+    return results
+
+
+def merge_retrieved(
+    vector_hits: list[RetrievedChunk],
+    hint_hits: list[RetrievedChunk],
+    mysql_snippets: list[RetrievedChunk],
+    top_k: int,
+) -> list[RetrievedChunk]:
+    """向量检索优先，再合并 MySQL hint / snippet，按 meme_id 去重。"""
+    merged: dict[str, RetrievedChunk] = {}
+
+    def upsert(chunk: RetrievedChunk) -> None:
+        existing = merged.get(chunk.meme_id)
+        if existing is None or chunk.score > existing.score:
+            merged[chunk.meme_id] = chunk
+
+    for chunk in vector_hits:
+        upsert(chunk)
+    for chunk in hint_hits:
+        upsert(chunk)
+    for chunk in mysql_snippets:
+        upsert(chunk)
+
+    ordered = sorted(merged.values(), key=lambda c: c.score, reverse=True)
+    return ordered[: max(1, top_k)]
+
+
 def _extract_title(content: str) -> str | None:
     for line in content.splitlines():
         if line.startswith("标题:"):

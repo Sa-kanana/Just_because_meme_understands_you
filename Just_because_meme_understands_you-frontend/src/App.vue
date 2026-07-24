@@ -8,6 +8,13 @@
         </router-link>
         <nav class="nav-links">
           <router-link
+            :to="aiNavLocation"
+            class="nav-link"
+            :class="{ active: $route.name === 'aiSearch' }"
+          >
+            AI 搜梗
+          </router-link>
+          <router-link
             :to="helpNavLocation"
             class="nav-link"
             :class="{ active: $route.name === 'help' }"
@@ -69,6 +76,10 @@
                 <el-dropdown-item command="publish">
                   <i class="ri-add-line user-dropdown-icon"></i>
                   <span>发布梗</span>
+                </el-dropdown-item>
+                <el-dropdown-item command="ai">
+                  <i class="ri-robot-2-line user-dropdown-icon"></i>
+                  <span>AI 搜梗</span>
                 </el-dropdown-item>
                 <el-dropdown-item command="profile">
                   <i class="ri-user-3-line user-dropdown-icon"></i>
@@ -181,6 +192,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import { useNotificationStore } from '@/stores/notification'
+import { useAiChatStore } from '@/stores/aiChat'
 import {
   buildUserProfileLocation,
   buildSearchLocation,
@@ -222,6 +234,22 @@ export default {
         fromRoute: this.$route,
         memeName: patch.meme?.name || '',
         profileName: patch.nickname || '',
+      })
+    },
+    aiNavLocation() {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) {
+        return {
+          path: '/login',
+          query: { redirect: '/ai' },
+        }
+      }
+      const patch = useBreadcrumbStore().patch || {}
+      return buildToolPageLocation('aiSearch', {
+        fromRoute: this.$route,
+        memeName: patch.meme?.name || '',
+        profileName: patch.nickname || '',
+        from: 'header',
       })
     },
     loginRoute() {
@@ -275,6 +303,7 @@ export default {
       }
       if (!val) {
         useNotificationStore().reset()
+        useAiChatStore().reset()
       }
     },
   },
@@ -301,6 +330,9 @@ export default {
       switch (command) {
         case 'publish':
           this.goPublish()
+          break
+        case 'ai':
+          this.goAiSearch()
           break
         case 'profile':
           this.goProfile()
@@ -355,6 +387,21 @@ export default {
       const patch = useBreadcrumbStore().patch || {}
       this.$router.push(
         buildToolPageLocation('publishMeme', {
+          fromRoute: this.$route,
+          memeName: patch.meme?.name || '',
+          profileName: patch.nickname || '',
+        })
+      )
+    },
+    goAiSearch() {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) {
+        this.$router.push({ name: 'login', query: { redirect: '/ai' } })
+        return
+      }
+      const patch = useBreadcrumbStore().patch || {}
+      this.$router.push(
+        buildToolPageLocation('aiSearch', {
           fromRoute: this.$route,
           memeName: patch.meme?.name || '',
           profileName: patch.nickname || '',

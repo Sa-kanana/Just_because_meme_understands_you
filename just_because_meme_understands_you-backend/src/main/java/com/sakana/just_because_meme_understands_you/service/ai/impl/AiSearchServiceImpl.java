@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
 import com.sakana.just_because_meme_understands_you.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.dto.AiSearchStreamRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentStreamRequestDTO;
@@ -15,6 +16,7 @@ import com.sakana.just_because_meme_understands_you.mapper.AiChatSessionMapper;
 import com.sakana.just_because_meme_understands_you.service.ai.IAiSearchService;
 import com.sakana.just_because_meme_understands_you.service.ai.client.MemeAgentClient;
 import com.sakana.just_because_meme_understands_you.service.ai.support.AiAnswerCache;
+import com.sakana.just_because_meme_understands_you.service.ai.support.AiBusinessContextAssembler;
 import com.sakana.just_because_meme_understands_you.service.ai.support.AiRateLimiter;
 import com.sakana.just_because_meme_understands_you.service.ai.support.TokenBudgetTrimmer;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +42,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
     private final TokenBudgetTrimmer tokenBudgetTrimmer;
     private final AiAnswerCache aiAnswerCache;
     private final AiRateLimiter aiRateLimiter;
+    private final AiBusinessContextAssembler businessContextAssembler;
     private final ObjectMapper objectMapper;
 
     public AiSearchServiceImpl(MemeAgentClient memeAgentClient,
@@ -49,6 +52,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
                                TokenBudgetTrimmer tokenBudgetTrimmer,
                                AiAnswerCache aiAnswerCache,
                                AiRateLimiter aiRateLimiter,
+                               AiBusinessContextAssembler businessContextAssembler,
                                ObjectMapper objectMapper) {
         this.memeAgentClient = memeAgentClient;
         this.properties = properties;
@@ -57,6 +61,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
         this.tokenBudgetTrimmer = tokenBudgetTrimmer;
         this.aiAnswerCache = aiAnswerCache;
         this.aiRateLimiter = aiRateLimiter;
+        this.businessContextAssembler = businessContextAssembler;
         this.objectMapper = objectMapper;
     }
 
@@ -77,14 +82,20 @@ public class AiSearchServiceImpl implements IAiSearchService {
         AiChatSession session = resolveSession(userId, request.getSessionId(), query);
         Long sessionId = session.getId();
 
+        // 先读历史再写本轮 user，避免 messages 与 query 重复同一句
+        List<AiChatMessage> history = loadHistory(sessionId);
         saveMessage(sessionId, "user", query, requestId);
+
+        Flux<String> sessionEvent = Flux.just(formatSessionEvent(sessionId, requestId));
 
         Optional<String> cached = aiAnswerCache.get(userId, query);
         if (cached.isPresent()) {
-            return replayCachedAnswer(requestId, cached.get());
+            String answer = cached.get();
+            saveMessage(sessionId, "assistant", answer, requestId);
+            touchSession(sessionId);
+            return Flux.concat(sessionEvent, replayCachedAnswer(requestId, answer));
         }
 
-        List<AiChatMessage> history = loadHistory(sessionId);
         List<AiChatMessage> trimmed = tokenBudgetTrimmer.trim(history, properties.getAi().getMaxHistoryTokens());
 
         MemeAgentStreamRequestDTO agentRequest = buildAgentRequest(
@@ -92,17 +103,25 @@ public class AiSearchServiceImpl implements IAiSearchService {
 
         AtomicReference<StringBuilder> assistantBuffer = new AtomicReference<>(new StringBuilder());
 
-        return memeAgentClient.stream(agentRequest)
-                .doOnNext(chunk -> accumulateAssistant(chunk, assistantBuffer))
-                .doOnComplete(() -> {
-                    String answer = assistantBuffer.get().toString();
-                    if (StringUtils.hasText(answer)) {
-                        saveMessage(sessionId, "assistant", answer, requestId);
-                        aiAnswerCache.put(userId, query, answer);
-                    }
-                    touchSession(sessionId, query);
-                })
-                .doOnError(e -> log.error("AI stream error userId={} sessionId={}", userId, sessionId, e));
+        return Flux.concat(
+                sessionEvent,
+                memeAgentClient.stream(agentRequest)
+                        .doOnNext(chunk -> accumulateAssistant(chunk, assistantBuffer))
+                        .doOnComplete(() -> {
+                            String answer = assistantBuffer.get().toString();
+                            if (StringUtils.hasText(answer)) {
+                                saveMessage(sessionId, "assistant", answer, requestId);
+                                aiAnswerCache.put(userId, query, answer);
+                            }
+                            touchSession(sessionId);
+                        })
+                        .doOnError(e -> log.error("AI stream error userId={} sessionId={}", userId, sessionId, e)));
+    }
+
+    /** 告知前端本轮会话 id（新建会话时尤其重要） */
+    private static String formatSessionEvent(Long sessionId, String requestId) {
+        return "event: session\ndata: {\"session_id\":\"" + sessionId
+                + "\",\"request_id\":\"" + requestId + "\"}\n\n";
     }
 
     private Flux<String> replayCachedAnswer(String requestId, String answer) {
@@ -154,6 +173,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
                     .content(msg.getContent())
                     .build());
         }
+        AiBusinessContextAssembler.AssembledContext assembled = businessContextAssembler.assemble(query);
         return MemeAgentStreamRequestDTO.builder()
                 .requestId(requestId)
                 .sessionId(String.valueOf(sessionId))
@@ -162,6 +182,8 @@ public class AiSearchServiceImpl implements IAiSearchService {
                 .context(MemeAgentStreamRequestDTO.BusinessContext.builder()
                         .userId(String.valueOf(userId))
                         .locale("zh-CN")
+                        .hintMemeIds(assembled.hintMemeIds())
+                        .extra(assembled.extra())
                         .build())
                 .maxTokens(properties.getAi().getMaxOutputTokens())
                 .build();
@@ -169,18 +191,15 @@ public class AiSearchServiceImpl implements IAiSearchService {
 
     private AiChatSession resolveSession(Long userId, String sessionIdRaw, String query) {
         if (StringUtils.hasText(sessionIdRaw)) {
-            try {
-                Long sessionId = Long.parseLong(sessionIdRaw.trim());
-                AiChatSession existing = sessionMapper.selectOne(new LambdaQueryWrapper<AiChatSession>()
-                        .eq(AiChatSession::getId, sessionId)
-                        .eq(AiChatSession::getUserId, userId)
-                        .eq(AiChatSession::getIsDeleted, 0));
-                if (existing != null) {
-                    return existing;
-                }
-            } catch (NumberFormatException ignored) {
-                // fall through to create
+            Long sessionId = AuthContext.parseLongId(sessionIdRaw, "sessionId");
+            AiChatSession existing = sessionMapper.selectOne(new LambdaQueryWrapper<AiChatSession>()
+                    .eq(AiChatSession::getId, sessionId)
+                    .eq(AiChatSession::getUserId, userId)
+                    .eq(AiChatSession::getIsDeleted, 0));
+            if (existing != null) {
+                return existing;
             }
+            throw new BizException(Result.CODE_NOT_FOUND, "会话不存在或已删除");
         }
         AiChatSession session = new AiChatSession();
         session.setUserId(userId);
@@ -192,7 +211,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
         return session;
     }
 
-    private void touchSession(Long sessionId, String query) {
+    private void touchSession(Long sessionId) {
         AiChatSession patch = new AiChatSession();
         patch.setId(sessionId);
         patch.setUpdateTime(LocalDateTime.now());

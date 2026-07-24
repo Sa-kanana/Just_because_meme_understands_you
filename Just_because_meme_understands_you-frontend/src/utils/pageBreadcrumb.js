@@ -2,13 +2,13 @@
  * 全站面包屑：按「逻辑操作路径」解析，入口用 helper 写 query 溯源。
  *
  * from taxonomy（进详情 / 作为 detailFrom）:
- *   feed | hot | banner | home | search | published | favorite | profile
+ *   feed | hot | banner | home | search | published | favorite | profile | ai
  *
  * 进个人主页 / 工具页:
  *   from=detail (+ memeId/memeName + detailFrom*)
  *   from=search (+ keyword)
  *   from=profile (+ userId/profileName)
- *   from=home | header | settings | help
+ *   from=home | header | settings | help | ai
  *
  * @typedef {Object} BreadcrumbItem
  * @property {string} label
@@ -164,6 +164,11 @@ export function appendNavigationTrail(items, from, ctx = {}) {
 
   if (source === 'notifications') {
     items.push({ label: '消息中心', to: { name: 'notifications' } })
+    return
+  }
+
+  if (source === 'ai') {
+    items.push({ label: 'AI 搜梗', to: { name: 'aiSearch' } })
   }
 }
 
@@ -369,6 +374,12 @@ export function resolveRouteBreadcrumbs(route, context = {}) {
       const items = [homeItem()]
       appendToolOrigin(items, route.query, authStore)
       items.push({ label: '消息中心' })
+      return markCurrent(items)
+    }
+    case 'aiSearch': {
+      const items = [homeItem()]
+      appendToolOrigin(items, route.query, authStore)
+      items.push({ label: 'AI 搜梗' })
       return markCurrent(items)
     }
     case 'userProfile': {
@@ -584,7 +595,7 @@ export function buildSearchLocation(options = {}) {
 
 /**
  * 发布 / 设置 / 帮助等工具页，带上进入前的逻辑路径。
- * @param {'publishMeme'|'accountSettings'|'help'|'notifications'} name
+ * @param {'publishMeme'|'accountSettings'|'help'|'notifications'|'aiSearch'} name
  * @param {Object} [options]
  * @param {import('vue-router').RouteLocationNormalizedLoaded} [options.fromRoute]
  * @param {string} [options.memeName]
@@ -631,6 +642,8 @@ export function buildToolPageLocation(name, options = {}) {
     query.from = 'publish'
   } else if (route.name === 'notifications') {
     query.from = 'notifications'
+  } else if (route.name === 'aiSearch') {
+    query.from = 'ai'
   } else if (options.from) {
     query.from = String(options.from).trim()
   }
