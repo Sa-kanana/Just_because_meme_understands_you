@@ -7,166 +7,156 @@
       </p>
     </div>
 
-    <el-card class="forgot-card" shadow="hover">
-      <!-- 步骤条 -->
-      <el-steps :active="currentStep" finish-status="success" align-center class="forgot-steps">
-        <el-step title="发送验证码" />
-        <el-step title="核验验证码" />
-        <el-step title="设置新密码" />
-      </el-steps>
+    <vs-card class="forgot-card">
+      <div class="forgot-card-body">
+        <ui-steps :active="currentStep - 1" class="forgot-steps">
+          <ui-step title="发送验证码" />
+          <ui-step title="核验验证码" />
+          <ui-step title="设置新密码" />
+        </ui-steps>
 
-      <!-- 第一步：输入邮箱，发送验证码 -->
-      <div v-show="currentStep === 1" class="step-panel">
-        <div class="step-panel-header">
-          <h2 class="step-title">输入绑定邮箱</h2>
-          <p class="step-desc">我们将向该邮箱发送验证码，请确保邮箱可正常收信</p>
+        <div v-show="currentStep === 1" class="step-panel">
+          <div class="step-panel-header">
+            <h2 class="step-title">输入绑定邮箱</h2>
+            <p class="step-desc">我们将向该邮箱发送验证码，请确保邮箱可正常收信</p>
+          </div>
+          <ui-form
+            ref="step1FormRef"
+            :model="step1"
+            :rules="step1Rules"
+            label-position="top"
+            class="forgot-form"
+          >
+            <ui-form-item label="邮箱" prop="email">
+              <vs-input
+                v-model="step1.email"
+                placeholder="请输入注册时使用的邮箱"
+                clearable
+                autocomplete="email"
+              />
+            </ui-form-item>
+            <div class="code-row">
+              <vs-button
+                color="primary"
+                class="code-button"
+                :disabled="sendingCode || countdown > 0"
+                :loading="sendingCode"
+                @click="handleSendCode"
+              >
+                <template v-if="countdown > 0">
+                  {{ countdown }}s 后可重发
+                </template>
+                <template v-else>
+                  发送验证码
+                </template>
+              </vs-button>
+            </div>
+            <div class="step-actions">
+              <vs-button @click="$router.replace('/login')">返回登录</vs-button>
+              <vs-button
+                color="primary"
+                :disabled="countdown <= 0"
+                @click="goStep2"
+              >
+                下一步：输入验证码
+              </vs-button>
+            </div>
+          </ui-form>
         </div>
-        <el-form
-          ref="step1FormRef"
-          :model="step1"
-          :rules="step1Rules"
-          label-position="top"
-          class="forgot-form"
-        >
-          <el-form-item label="邮箱" prop="email">
-            <el-input
-              v-model="step1.email"
-              placeholder="请输入注册时使用的邮箱"
-              clearable
-              autocomplete="email"
-              size="large"
-            />
-          </el-form-item>
-          <div class="code-row">
-            <el-button
-              type="primary"
-              class="code-button"
-              :disabled="sendingCode || countdown > 0"
-              :loading="sendingCode"
-              size="large"
-              @click="handleSendCode"
-            >
-              <template v-if="countdown > 0">
-                {{ countdown }}s 后可重发
-              </template>
-              <template v-else>
-                发送验证码
-              </template>
-            </el-button>
-          </div>
-          <div class="step-actions">
-            <el-button size="large" @click="$router.replace('/login')">返回登录</el-button>
-            <el-button
-              type="primary"
-              size="large"
-              :disabled="countdown <= 0"
-              @click="goStep2"
-            >
-              下一步：输入验证码
-            </el-button>
-          </div>
-        </el-form>
-      </div>
 
-      <!-- 第二步：输入验证码，获取 token -->
-      <div v-show="currentStep === 2" class="step-panel">
-        <div class="step-panel-header">
-          <h2 class="step-title">输入邮箱验证码</h2>
-          <p class="step-desc">请查收邮件中的验证码，5 分钟内有效</p>
+        <div v-show="currentStep === 2" class="step-panel">
+          <div class="step-panel-header">
+            <h2 class="step-title">输入邮箱验证码</h2>
+            <p class="step-desc">请查收邮件中的验证码，5 分钟内有效</p>
+          </div>
+          <ui-form
+            ref="step2FormRef"
+            :model="step2"
+            :rules="step2Rules"
+            label-position="top"
+            class="forgot-form"
+          >
+            <ui-form-item label="邮箱">
+              <vs-input :model-value="step1.email" disabled />
+            </ui-form-item>
+            <ui-form-item label="验证码" prop="code">
+              <vs-input
+                v-model="step2.code"
+                placeholder="请输入 6 位验证码"
+                maxlength="6"
+                clearable
+              />
+            </ui-form-item>
+            <div class="step-actions">
+              <vs-button @click="currentStep = 1">上一步</vs-button>
+              <vs-button
+                color="primary"
+                :loading="verifying"
+                :disabled="verifying"
+                @click="handleVerifyCode"
+              >
+                {{ verifying ? '验证中...' : '验证并继续' }}
+              </vs-button>
+            </div>
+          </ui-form>
         </div>
-        <el-form
-          ref="step2FormRef"
-          :model="step2"
-          :rules="step2Rules"
-          label-position="top"
-          class="forgot-form"
-        >
-          <el-form-item label="邮箱">
-            <el-input :model-value="step1.email" disabled size="large" />
-          </el-form-item>
-          <el-form-item label="验证码" prop="code">
-            <el-input
-              v-model="step2.code"
-              placeholder="请输入 6 位验证码"
-              maxlength="6"
-              clearable
-              size="large"
-            />
-          </el-form-item>
-          <div class="step-actions">
-            <el-button size="large" @click="currentStep = 1">上一步</el-button>
-            <el-button
-              type="primary"
-              size="large"
-              :loading="verifying"
-              :disabled="verifying"
-              @click="handleVerifyCode"
-            >
-              {{ verifying ? '验证中...' : '验证并继续' }}
-            </el-button>
-          </div>
-        </el-form>
-      </div>
 
-      <!-- 第三步：输入新密码，提交重置 -->
-      <div v-show="currentStep === 3" class="step-panel">
-        <div class="step-panel-header">
-          <h2 class="step-title">设置新密码</h2>
-          <p class="step-desc">请设置新密码，重置后需使用新密码登录</p>
+        <div v-show="currentStep === 3" class="step-panel">
+          <div class="step-panel-header">
+            <h2 class="step-title">设置新密码</h2>
+            <p class="step-desc">请设置新密码，重置后需使用新密码登录</p>
+          </div>
+          <ui-form
+            ref="step3FormRef"
+            :model="step3"
+            :rules="step3Rules"
+            label-position="top"
+            class="forgot-form"
+          >
+            <ui-form-item label="新密码" prop="newPassword">
+              <vs-input
+                v-model="step3.newPassword"
+                placeholder="至少 6 位，建议包含数字与字母"
+                clearable
+                show-password
+                autocomplete="new-password"
+              />
+            </ui-form-item>
+            <ui-form-item label="确认新密码" prop="confirmPassword">
+              <vs-input
+                v-model="step3.confirmPassword"
+                placeholder="请再次输入新密码"
+                clearable
+                show-password
+                autocomplete="new-password"
+              />
+            </ui-form-item>
+            <div class="step-actions">
+              <vs-button @click="currentStep = 2">上一步</vs-button>
+              <vs-button
+                color="primary"
+                :loading="submitting"
+                :disabled="submitting"
+                @click="handleConfirmReset"
+              >
+                {{ submitting ? '提交中...' : '完成重置' }}
+              </vs-button>
+            </div>
+          </ui-form>
         </div>
-        <el-form
-          ref="step3FormRef"
-          :model="step3"
-          :rules="step3Rules"
-          label-position="top"
-          class="forgot-form"
-        >
-          <el-form-item label="新密码" prop="newPassword">
-            <el-input
-              v-model="step3.newPassword"
-              placeholder="至少 6 位，建议包含数字与字母"
-              clearable
-              show-password
-              autocomplete="new-password"
-              size="large"
-            />
-          </el-form-item>
-          <el-form-item label="确认新密码" prop="confirmPassword">
-            <el-input
-              v-model="step3.confirmPassword"
-              placeholder="请再次输入新密码"
-              clearable
-              show-password
-              autocomplete="new-password"
-              size="large"
-            />
-          </el-form-item>
-          <div class="step-actions">
-            <el-button size="large" @click="currentStep = 2">上一步</el-button>
-            <el-button
-              type="primary"
-              size="large"
-              :loading="submitting"
-              :disabled="submitting"
-              @click="handleConfirmReset"
-            >
-              {{ submitting ? '提交中...' : '完成重置' }}
-            </el-button>
-          </div>
-        </el-form>
-      </div>
 
-      <p class="forgot-hint">
-        遇到问题？可前往
-        <router-link to="/help" class="link-inline">帮助文档</router-link>
-        或联系客服。
-      </p>
-    </el-card>
+        <p class="forgot-hint">
+          遇到问题？可前往
+          <router-link to="/help" class="link-inline">帮助文档</router-link>
+          或联系客服。
+        </p>
+      </div>
+    </vs-card>
   </div>
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/uiFeedback'
 import {
   requestPasswordReset,
   verifyResetCode,
@@ -199,7 +189,7 @@ export default {
         newPassword: '',
         confirmPassword: '',
       },
-      resetToken: '', // 第二步成功后存 token，第三步提交用
+      resetToken: '',
       sendingCode: false,
       countdown: 0,
       countdownTimer: null,
@@ -288,11 +278,10 @@ export default {
       if (this.sendingCode || this.countdown > 0) return
       this.$refs.step1FormRef.validate((valid) => {
         if (!valid) return
-        const email = this.step1.email.trim()
         this.sendingCode = true
-        requestPasswordReset(email)
+        requestPasswordReset(this.step1.email.trim())
           .then(({ retryAfter, message }) => {
-            ElMessage.success(message || '验证码已发送至你的邮箱')
+            toast.success(message || '验证码已发送至你的邮箱')
             const now = Date.now()
             const ms = Number(retryAfter || 60) * 1000
             try {
@@ -306,7 +295,7 @@ export default {
             this.startCountdown(retryAfter)
           })
           .catch((err) => {
-            ElMessage.error(
+            toast.error(
               (err && (err.message || err.msg)) || '发送失败，请稍后重试'
             )
           })
@@ -319,7 +308,7 @@ export default {
       this.$refs.step1FormRef.validate((valid) => {
         if (!valid) return
         if (this.countdown <= 0) {
-          ElMessage.warning('请先点击「发送验证码」并查收邮件')
+          toast.warning('请先点击「发送验证码」并查收邮件')
           return
         }
         this.currentStep = 2
@@ -339,10 +328,10 @@ export default {
             this.currentStep = 3
             this.step3.newPassword = ''
             this.step3.confirmPassword = ''
-            ElMessage.success('验证成功，请设置新密码')
+            toast.success('验证成功，请设置新密码')
           })
           .catch((err) => {
-            ElMessage.error(
+            toast.error(
               (err && (err.message || err.msg)) || '验证码错误或已过期'
             )
           })
@@ -355,7 +344,7 @@ export default {
       this.$refs.step3FormRef.validate((valid) => {
         if (!valid) return
         if (!this.resetToken) {
-          ElMessage.error('重置令牌已失效，请从第一步重新操作')
+          toast.error('重置令牌已失效，请从第一步重新操作')
           return
         }
         this.submitting = true
@@ -364,14 +353,14 @@ export default {
           newPassword: this.step3.newPassword,
         })
           .then(({ message }) => {
-            ElMessage.success(message || '密码已重置，请使用新密码登录')
+            toast.success(message || '密码已重置，请使用新密码登录')
             this.$router.replace({
               path: '/login',
               query: { email: this.step1.email },
             })
           })
           .catch((err) => {
-            ElMessage.error(
+            toast.error(
               (err && (err.message || err.msg)) || '重置失败，请重试'
             )
           })
@@ -416,14 +405,14 @@ export default {
 
 .forgot-card {
   width: 100%;
-  max-width: 460px;
+  max-width: 460px !important;
   border-radius: var(--meme-radius-lg);
   box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
   border: 1px solid var(--meme-border);
   background: var(--meme-bg-card);
 }
 
-.forgot-card :deep(.el-card__body) {
+.forgot-card-body {
   padding: 24px 32px 28px;
 }
 
@@ -431,7 +420,7 @@ export default {
   margin-bottom: 24px;
 }
 
-.forgot-steps :deep(.el-step__title) {
+.forgot-steps :deep(.ui-steps__title) {
   font-size: 13px;
 }
 
@@ -471,7 +460,7 @@ export default {
   margin-top: 8px;
 }
 
-.step-actions .el-button {
+.step-actions :deep(.vs-button) {
   flex: 1;
 }
 

@@ -1,117 +1,127 @@
 <template>
-  <div class="register-page">
-    <div class="register-hero">
-      <h1 class="register-title">加入只因“梗”懂你</h1>
-      <p class="register-subtitle">
-        使用邮箱注册账号，收藏你爱的梗图，让灵感与快乐常伴左右。
-      </p>
-    </div>
+  <AuthPageLayout
+    title="创建账号"
+    desc="使用邮箱注册，收藏你爱的梗图，发现今日快乐。"
+    lead="注册后即可发布梗图、管理收藏夹，并体验 AI 搜梗带来的语境匹配。"
+  >
+    <ui-form
+      ref="registerFormRef"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      class="auth-form"
+    >
+      <ui-form-item label="邮箱" prop="email">
+        <vs-input
+          v-model="form.email"
+          block
+          clearable
+          placeholder="用于接收验证码"
+          autocomplete="email"
+          class="auth-field"
+        >
+          <template #icon>
+            <i class="ri-mail-line" aria-hidden="true" />
+          </template>
+        </vs-input>
+      </ui-form-item>
 
-    <el-card class="register-card" shadow="hover">
-      <div class="register-card-header">
-        <div>
-          <h2 class="register-card-title">创建新账号</h2>
-          <p class="register-card-subtitle">邮箱注册 · 更安全地管理你的梗图世界</p>
-        </div>
-        <div class="register-card-switch">
-          已有账号？
-          <router-link to="/login" class="link-button"> 直接登录 </router-link>
-        </div>
-      </div>
-
-      <el-form
-        ref="registerFormRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        class="register-form"
-      >
-        <el-form-item label="邮箱" prop="email">
-          <el-input
-            v-model="form.email"
-            placeholder="请输入常用邮箱，用于接收验证码"
+      <ui-form-item label="邮箱验证码" prop="verificationCode">
+        <div class="auth-form__code">
+          <vs-input
+            v-model="form.verificationCode"
+            block
             clearable
-            autocomplete="email"
-            size="large"
-          />
-        </el-form-item>
-
-        <el-form-item label="邮箱验证码" prop="verificationCode">
-          <div class="code-row">
-            <el-input
-              v-model="form.verificationCode"
-              placeholder="请输入 6 位验证码"
-              maxlength="6"
-              clearable
-              size="large"
-            />
-            <el-button
-              type="primary"
-              class="code-button"
-              :disabled="sendingCode || countdown > 0"
-              :loading="sendingCode"
-              size="large"
-              @click="handleSendCode"
-            >
-              <template v-if="countdown > 0">
-                {{ countdown }}s 后可重发
-              </template>
-              <template v-else>
-                发送验证码
-              </template>
-            </el-button>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            placeholder="请设置登录密码，至少 6 位，建议包含数字与字母"
-            clearable
-            show-password
-            autocomplete="new-password"
-            size="large"
-          />
-        </el-form-item>
-
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input
-            v-model="form.confirmPassword"
-            placeholder="请再次输入密码"
-            clearable
-            show-password
-            autocomplete="new-password"
-            size="large"
-          />
-        </el-form-item>
-
-        <div class="register-actions">
-          <el-button
-            type="primary"
-            class="register-submit-button"
-            :loading="submitting"
-            :disabled="submitting"
-            size="large"
-            @click="handleSubmit"
+            maxlength="6"
+            placeholder="6 位验证码"
+            class="auth-field"
           >
-            {{ submitting ? '注册中...' : '立即注册' }}
-          </el-button>
+            <template #icon>
+              <i class="ri-shield-keyhole-line" aria-hidden="true" />
+            </template>
+          </vs-input>
+          <button
+            type="button"
+            class="auth-form__code-btn"
+            :disabled="sendingCode || countdown > 0"
+            @click="handleSendCode"
+          >
+            <i
+              v-if="sendingCode"
+              class="ri-loader-4-line auth-form__spin"
+              aria-hidden="true"
+            />
+            <template v-if="countdown > 0">{{ countdown }}s</template>
+            <template v-else-if="sendingCode">发送中</template>
+            <template v-else>获取验证码</template>
+          </button>
         </div>
-      </el-form>
+      </ui-form-item>
 
-      <p class="register-hint">
-        注册即表示你已阅读并同意本网站的相关使用条款与隐私政策。
-      </p>
-    </el-card>
-  </div>
+      <ui-form-item label="密码" prop="password">
+        <vs-input
+          v-model="form.password"
+          type="password"
+          show-password
+          block
+          clearable
+          placeholder="至少 6 位，建议数字 + 字母"
+          autocomplete="new-password"
+          class="auth-field"
+        >
+          <template #icon>
+            <i class="ri-lock-2-line" aria-hidden="true" />
+          </template>
+        </vs-input>
+      </ui-form-item>
+
+      <ui-form-item label="确认密码" prop="confirmPassword">
+        <vs-input
+          v-model="form.confirmPassword"
+          type="password"
+          show-password
+          block
+          clearable
+          placeholder="请再次输入密码"
+          autocomplete="new-password"
+          class="auth-field"
+        >
+          <template #icon>
+            <i class="ri-lock-password-line" aria-hidden="true" />
+          </template>
+        </vs-input>
+      </ui-form-item>
+
+      <button
+        type="button"
+        class="auth-form__submit"
+        :disabled="submitting"
+        @click="handleSubmit"
+      >
+        <i
+          v-if="submitting"
+          class="ri-loader-4-line auth-form__spin"
+          aria-hidden="true"
+        />
+        {{ submitting ? '注册中...' : '立即注册' }}
+      </button>
+    </ui-form>
+
+    <template #footer>
+      已有账号？
+      <router-link to="/login" class="auth-form__link auth-form__link--strong">直接登录</router-link>
+    </template>
+  </AuthPageLayout>
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/uiFeedback'
 import { sendRegisterCode, register } from '@/api/auth'
+import AuthPageLayout from '@/components/auth/AuthPageLayout.vue'
 
 export default {
   name: 'RegisterPage',
+  components: { AuthPageLayout },
   data() {
     const validateConfirmPassword = (_rule, value, callback) => {
       if (!value) {
@@ -171,7 +181,6 @@ export default {
     }
   },
   mounted() {
-    // 刷新页面后恢复发送验证码的冷却时间
     try {
       const saved = localStorage.getItem('meme_register_code_limit')
       if (saved) {
@@ -223,15 +232,14 @@ export default {
       if (this.sendingCode || this.countdown > 0) return
 
       const email = (this.form.email || '').trim()
-      const emailPattern =
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
       if (!email) {
-        ElMessage.error('请输入邮箱')
+        toast.error('请输入邮箱')
         return
       }
       if (!emailPattern.test(email)) {
-        ElMessage.error('请输入正确的邮箱格式')
+        toast.error('请输入正确的邮箱格式')
         return
       }
 
@@ -239,7 +247,7 @@ export default {
 
       sendRegisterCode(email)
         .then(({ retryAfter, message }) => {
-          ElMessage.success(message || '验证码已发送至你的邮箱')
+          toast.success(message || '验证码已发送至你的邮箱')
           const now = Date.now()
           const ms = Number(retryAfter || 60) * 1000
           const expireAt = now + ms
@@ -259,7 +267,7 @@ export default {
           const msg =
             (err && (err.message || err.msg)) ||
             '验证码发送失败，请稍后重试'
-          ElMessage.error(msg)
+          toast.error(msg)
         })
         .finally(() => {
           this.sendingCode = false
@@ -281,9 +289,8 @@ export default {
 
         register(payload)
           .then((data) => {
-            ElMessage.success(data.message || '注册成功')
+            toast.success(data.message || '注册成功')
 
-            // 注册成功后跳转到登录页，并带上邮箱便于自动填充
             this.$router.replace({
               path: '/login',
               query: { email: this.form.email },
@@ -292,7 +299,7 @@ export default {
           .catch((err) => {
             const msg =
               (err && (err.message || err.msg)) || '注册失败，请稍后重试'
-            ElMessage.error(msg)
+            toast.error(msg)
           })
           .finally(() => {
             this.submitting = false
@@ -304,123 +311,172 @@ export default {
 </script>
 
 <style scoped>
-.register-page {
-  min-height: calc(100vh - 56px);
-  padding: 40px 24px 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: var(--meme-gradient-page);
+.auth-form :deep(.ui-form-item) {
+  margin-bottom: 14px;
 }
 
-.register-hero {
-  max-width: 680px;
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.register-title {
-  margin: 0 0 12px;
-  font-size: 32px;
-  font-weight: 700;
+.auth-form :deep(.ui-form-item__label) {
+  font-size: 12px;
+  font-weight: 650;
   letter-spacing: 0.02em;
-  color: var(--meme-text);
-}
-
-.register-subtitle {
-  margin: 0;
-  font-size: 14px;
   color: var(--meme-text-secondary);
 }
 
-.register-card {
+.auth-field {
   width: 100%;
-  max-width: 520px;
-  border-radius: var(--meme-radius-lg);
-  box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
-  border: 1px solid var(--meme-border);
-  background: var(--meme-bg-card);
 }
 
-.register-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 8px;
+.auth-field :deep(.vs-input__wrapper) {
+  min-height: 46px;
+  border-radius: 10px !important;
+  background: var(--meme-bg-muted) !important;
+  box-shadow: 0 0 0 1px transparent inset;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.register-card-title {
-  margin: 0 0 4px;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--meme-text);
+.auth-field :deep(.vs-input__original) {
+  width: 100% !important;
+  min-height: 46px;
+  padding: 0 40px 0 42px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--meme-text) !important;
+  font-size: 14px !important;
+  box-shadow: none !important;
 }
 
-.register-card-subtitle {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--meme-text-secondary);
+.auth-field :deep(.vs-input__icon) {
+  left: 12px !important;
+  color: var(--meme-text-muted);
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-.register-card-switch {
-  font-size: 13px;
-  color: var(--meme-text-secondary);
+.auth-field :deep(.vs-input.is-hovering .vs-input__wrapper),
+.auth-field:hover :deep(.vs-input__wrapper) {
+  background: color-mix(in srgb, var(--meme-bg-muted) 70%, var(--meme-bg-elevated)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-primary) 22%, var(--meme-border)) inset !important;
 }
 
-.link-button {
+.auth-field :deep(.vs-input.is-focus .vs-input__wrapper) {
+  background: var(--meme-bg-elevated) !important;
+  box-shadow:
+    0 0 0 1px var(--meme-primary) inset,
+    0 0 0 3px var(--meme-focus-ring) !important;
+}
+
+.auth-field :deep(.vs-input.is-focus .vs-input__icon) {
   color: var(--meme-primary);
-  font-weight: 500;
-  text-decoration: none;
-  transition: color 0.2s ease;
 }
-.link-button:hover {
+
+.auth-form__code {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.auth-form__code-btn {
+  min-width: 108px;
+  height: 46px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 28%, var(--meme-border));
+  background: var(--meme-bg-elevated);
+  color: var(--meme-primary);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.auth-form__code-btn:hover:not(:disabled) {
+  background: var(--meme-primary-soft);
+  border-color: var(--meme-primary);
   color: var(--meme-primary-dark);
 }
 
-.register-form {
-  margin-top: 8px;
+.auth-form__code-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
-.code-row {
-  display: grid;
-  grid-template-columns: 1.4fr 0.9fr;
-  gap: 10px;
+a.auth-form__link,
+.auth-form__link {
+  color: var(--meme-primary) !important;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.code-button {
+a.auth-form__link:hover,
+.auth-form__link:hover {
+  color: var(--meme-primary-dark) !important;
+}
+
+a.auth-form__link--strong,
+.auth-form__link--strong {
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.auth-form__submit {
   width: 100%;
-}
-
-.register-actions {
-  margin-top: 8px;
-  display: flex;
+  height: 46px;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%);
+  box-shadow: 0 6px 16px var(--meme-focus-ring);
+  transition: box-shadow 0.18s ease, filter 0.15s ease, transform 0.12s ease;
 }
 
-.register-submit-button {
-  width: 100%;
+.auth-form__submit:hover:not(:disabled) {
+  filter: brightness(1.04);
+  box-shadow: 0 8px 20px var(--meme-focus-ring);
 }
 
-.register-hint {
-  margin: 16px 0 0;
-  font-size: 12px;
-  color: var(--meme-text-muted);
-  text-align: center;
+.auth-form__submit:active:not(:disabled) {
+  transform: scale(0.985);
 }
 
-@media (max-width: 600px) {
-  .register-page {
-    padding: 24px 16px 32px;
+.auth-form__submit:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.auth-form__spin {
+  display: inline-block;
+  animation: auth-spin 0.8s linear infinite;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-form__code {
+    grid-template-columns: 1fr;
   }
 
-  .register-card {
-    max-width: 100%;
-  }
-
-  .code-row {
-    grid-template-columns: 1.1fr 1fr;
+  .auth-form__code-btn {
+    width: 100%;
   }
 }
 </style>
-

@@ -12,7 +12,7 @@ from app.agents.prompts import SYSTEM_PROMPT
 AGENT_SYSTEM = (
     SYSTEM_PROMPT
     + "\n\n你是工具增强智能体：回答前必须调用 search_meme_knowledge 获取检索片段；"
-    "只能依据工具返回内容作答；输出中引用梗时写明 meme_id。"
+    "只能依据工具返回内容作答；对用户只写可读正文，不要输出 meme_id 或其他内部字段。"
 )
 
 

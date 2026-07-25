@@ -15,17 +15,17 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=IngestAcceptedResponse)
 async def ingest_documents(
-    body: IngestRequest,
-    _: InternalAuth,
+    payload: IngestRequest,
+    _auth: InternalAuth,
 ) -> IngestAcceptedResponse:
-    task_count, skipped = await enqueue_ingest(body)
+    task_count, skipped = await enqueue_ingest(payload)
     return IngestAcceptedResponse(accepted=True, task_count=task_count, skipped=skipped)
 
 
 @router.post("/delete", response_model=IngestDeleteResponse)
 async def ingest_delete(
-    body: IngestDeleteRequest,
-    _: InternalAuth,
+    payload: IngestDeleteRequest,
+    _auth: InternalAuth,
 ) -> IngestDeleteResponse:
-    deleted = await delete_by_meme_ids(body.meme_ids)
+    deleted = await delete_by_meme_ids(payload.meme_ids)
     return IngestDeleteResponse(deleted_count=deleted)

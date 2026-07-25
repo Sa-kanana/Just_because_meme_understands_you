@@ -11,12 +11,12 @@
           欢迎来到你的互联网冲浪避风港。实时热门梗图与为你定制的幽默内容，发现今日快乐，探寻梗文化源头。
         </p>
         <div class="home-hero__actions">
-          <el-button type="primary" size="large" class="home-hero__btn-primary" @click="$emit('explore')">
-            探索热梗
-          </el-button>
-          <el-button size="large" class="home-hero__btn-secondary" @click="$emit('publish')">
+          <button type="button" class="home-hero__cta home-hero__cta--primary" @click="$emit('publish')">
             发布梗图
-          </el-button>
+          </button>
+          <button type="button" class="home-hero__cta home-hero__cta--ghost" @click="$emit('explore')">
+            探索热梗
+          </button>
         </div>
       </div>
 
@@ -45,16 +45,15 @@
               :disabled="!isClickable(item)"
               @click="handleSlideClick(item)"
             >
-              <el-image
+              <ui-image
+                v-if="!slideErrors[index]"
                 :src="item.img_url"
                 :alt="item.title || '推荐图'"
                 fit="cover"
                 class="home-hero__image"
-              >
-                <template #error>
-                  <span class="home-hero__image-fallback">{{ item.title || '图片加载失败' }}</span>
-                </template>
-              </el-image>
+                @error="onSlideError(index)"
+              />
+              <span v-else class="home-hero__image-fallback">{{ item.title || '图片加载失败' }}</span>
               <span v-if="item.title" class="home-hero__caption">{{ item.title }}</span>
             </button>
           </div>
@@ -115,6 +114,7 @@ export default {
       activeIndex: 0,
       rotateTimer: null,
       rotatePaused: false,
+      slideErrors: {},
     }
   },
   mounted() {
@@ -130,6 +130,7 @@ export default {
       try {
         this.slides = await getHomeImages()
         this.activeIndex = 0
+        this.slideErrors = {}
         this.setupRotate()
       } catch (e) {
         this.error = e.message || '推荐内容加载失败'
@@ -140,6 +141,9 @@ export default {
     },
     slideKey(item, index) {
       return item.id != null ? item.id : `img-${index}-${item.img_url || ''}`
+    },
+    onSlideError(index) {
+      this.slideErrors = { ...this.slideErrors, [index]: true }
     },
     isClickable(item) {
       const type = Number(item.target_type)
@@ -197,19 +201,20 @@ export default {
 
 <style scoped>
 .home-hero {
-  margin-bottom: 24px;
+  margin-bottom: 10px;
   overflow: hidden;
 }
 
 .home-hero__shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: 0;
-  min-height: 360px;
-  border-radius: 20px;
-  border: 1px solid var(--meme-border-accent);
+  min-height: 200px;
+  max-height: 210px;
+  border-radius: 16px;
+  border: 1px solid var(--meme-border);
   background: var(--meme-bg-card);
-  box-shadow: var(--meme-shadow-soft);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
   overflow: hidden;
 }
 
@@ -218,7 +223,7 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 36px 40px;
+  padding: 14px 20px;
   background: var(--meme-gradient-hero);
   overflow: hidden;
 }
@@ -234,27 +239,27 @@ export default {
 .home-hero__eyebrow {
   position: relative;
   z-index: 1;
-  display: inline-flex;
+  display: block;
   width: fit-content;
-  margin-bottom: 16px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12px;
+  margin-bottom: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: var(--meme-accent-text);
-  background: var(--meme-primary-soft);
-  border: 1px solid var(--meme-border-accent);
+  color: var(--meme-text-muted);
+  background: transparent;
 }
 
 .home-hero__title {
   position: relative;
   z-index: 1;
-  margin: 0 0 14px;
-  font-size: 38px;
+  margin: 0 0 6px;
+  font-size: 24px;
   font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
   color: var(--meme-text);
 }
 
@@ -268,21 +273,15 @@ export default {
 .home-hero__tagline {
   position: relative;
   z-index: 1;
-  margin: 0 0 14px;
-  font-size: 20px;
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--meme-primary);
 }
 
 .home-hero__lead {
-  position: relative;
-  z-index: 1;
-  margin: 0 0 24px;
-  max-width: 28em;
-  font-size: 15px;
-  line-height: 1.75;
-  color: var(--meme-text-secondary);
+  display: none;
 }
 
 .home-hero__actions {
@@ -290,27 +289,52 @@ export default {
   z-index: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
-.home-hero__btn-primary {
-  min-width: 120px;
-  border-radius: 12px !important;
-  font-weight: 600;
+.home-hero__cta {
+  min-width: 104px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-.home-hero__btn-secondary {
-  min-width: 120px;
-  border-radius: 12px !important;
-  font-weight: 600;
+.home-hero__cta:active {
+  transform: scale(0.98);
+}
+
+.home-hero__cta--primary {
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%);
+  box-shadow: 0 4px 12px var(--meme-focus-ring);
+}
+
+.home-hero__cta--primary:hover {
+  box-shadow: 0 6px 16px var(--meme-focus-ring);
+  filter: brightness(1.04);
+}
+
+.home-hero__cta--ghost {
+  border: 1px solid var(--meme-border-strong);
   color: var(--meme-text);
-  border-color: var(--meme-border-strong);
-  background: var(--meme-surface-ghost);
+  background: var(--meme-bg-card);
+}
+
+.home-hero__cta--ghost:hover {
+  border-color: var(--meme-primary);
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
 }
 
 .home-hero__media {
   position: relative;
-  min-height: 360px;
+  min-height: 0;
+  height: 100%;
   background: var(--meme-bg-cover);
   overflow: hidden;
 }
@@ -346,13 +370,13 @@ export default {
 }
 
 .home-hero__image,
-.home-hero__slide-btn :deep(.el-image) {
+.home-hero__slide-btn :deep(.ui-image) {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.home-hero__slide-btn :deep(.el-image__inner) {
+.home-hero__slide-btn :deep(.ui-image img) {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -460,7 +484,7 @@ export default {
   gap: 10px;
   width: 100%;
   height: 100%;
-  min-height: 360px;
+  min-height: 200px;
   color: var(--meme-text-muted);
   font-size: 14px;
   background: var(--meme-bg-cover);
@@ -489,10 +513,11 @@ export default {
   .home-hero__shell {
     grid-template-columns: 1fr;
     min-height: 0;
+    max-height: none;
   }
 
   .home-hero__copy {
-    padding: 28px 24px 26px;
+    padding: 16px 18px 14px;
   }
 
   .home-hero__copy::after {
@@ -500,53 +525,50 @@ export default {
   }
 
   .home-hero__title {
-    font-size: 32px;
+    font-size: 22px;
   }
 
   .home-hero__tagline {
-    font-size: 18px;
+    font-size: 13px;
+    margin-bottom: 10px;
   }
 
   .home-hero__media,
   .home-hero__state {
-    min-height: 260px;
+    min-height: 160px;
+    max-height: 180px;
   }
 }
 
 @media (max-width: 768px) {
   .home-hero__copy {
-    padding: 22px 18px 20px;
+    padding: 14px 14px 12px;
   }
 
   .home-hero__title {
-    font-size: 28px;
-  }
-
-  .home-hero__lead {
-    margin-bottom: 18px;
-    font-size: 14px;
+    font-size: 20px;
   }
 
   .home-hero__actions {
-    gap: 10px;
+    gap: 8px;
   }
 
-  .home-hero__btn-primary,
-  .home-hero__btn-secondary {
+  .home-hero__cta {
     flex: 1;
     min-width: 0;
   }
 
   .home-hero__media,
   .home-hero__state {
-    min-height: 220px;
+    min-height: 140px;
+    max-height: 160px;
   }
 
   .home-hero__nav {
     opacity: 1;
-    width: 32px;
-    height: 32px;
-    font-size: 20px;
+    width: 28px;
+    height: 28px;
+    font-size: 18px;
   }
 }
 </style>

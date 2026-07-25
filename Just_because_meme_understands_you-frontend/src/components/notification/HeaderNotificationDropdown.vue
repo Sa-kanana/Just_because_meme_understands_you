@@ -1,10 +1,10 @@
 <template>
-  <el-dropdown
+  <ui-dropdown
     trigger="hover"
     placement="bottom-end"
     @command="handleCommand"
   >
-    <el-badge
+    <ui-badge
       :is-dot="hasUnread"
       :hidden="!hasUnread"
       class="header-notification-badge"
@@ -15,49 +15,48 @@
         aria-label="消息"
         title="消息"
       >
-        <el-icon :size="22"><Bell /></el-icon>
+        <i class="ri-notification-3-line header-notification-icon" aria-hidden="true" />
       </button>
-    </el-badge>
+    </ui-badge>
     <template #dropdown>
-      <el-dropdown-menu class="notification-dropdown-menu">
-        <el-dropdown-item command="all">
+      <ui-dropdown-menu class="notification-dropdown-menu">
+        <ui-dropdown-item command="all">
           <i class="ri-notification-3-line notification-dropdown-icon" />
           <span>消息中心</span>
-        </el-dropdown-item>
-        <el-dropdown-item command="unread">
+        </ui-dropdown-item>
+        <ui-dropdown-item command="unread">
           <i class="ri-mail-unread-line notification-dropdown-icon" />
           <span>未读消息</span>
-          <el-badge
+          <ui-badge
             v-if="unreadTotal > 0"
             :value="unreadTotal"
             :max="99"
             class="notification-dropdown-badge"
           />
-        </el-dropdown-item>
-        <el-dropdown-item command="interact">
+        </ui-dropdown-item>
+        <ui-dropdown-item command="interact">
           <i class="ri-heart-3-line notification-dropdown-icon" />
           <span>互动消息</span>
-        </el-dropdown-item>
-        <el-dropdown-item command="system">
+        </ui-dropdown-item>
+        <ui-dropdown-item command="system">
           <i class="ri-megaphone-line notification-dropdown-icon" />
           <span>系统通知</span>
-        </el-dropdown-item>
-        <el-dropdown-item
+        </ui-dropdown-item>
+        <ui-dropdown-item
           divided
           command="readAll"
           :disabled="unreadTotal <= 0 || markingAll"
         >
           <i class="ri-check-double-line notification-dropdown-icon" />
           <span>{{ markingAll ? '处理中…' : '全部已读' }}</span>
-        </el-dropdown-item>
-      </el-dropdown-menu>
+        </ui-dropdown-item>
+      </ui-dropdown-menu>
     </template>
-  </el-dropdown>
+  </ui-dropdown>
 </template>
 
 <script>
-import { Bell } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/uiFeedback'
 import { markAllNotificationsRead } from '@/api/notification'
 import { useNotificationStore } from '@/stores/notification'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
@@ -66,7 +65,6 @@ import { buildToolPageLocation } from '@/utils/pageBreadcrumb'
 
 export default {
   name: 'HeaderNotificationDropdown',
-  components: { Bell },
   data() {
     return {
       markingAll: false,
@@ -117,12 +115,12 @@ export default {
           interact: data.interact,
           system: data.system,
         })
-        ElMessage.success(
+        toast.success(
           data.updatedCount > 0 ? `已标记 ${data.updatedCount} 条为已读` : '没有未读消息'
         )
       } catch (e) {
         if (isAuthErrorHandled(e)) return
-        ElMessage.error(e.message || '全部已读失败')
+        toast.error(e.message || '全部已读失败')
       } finally {
         this.markingAll = false
       }
@@ -152,6 +150,10 @@ export default {
   transition: color 0.2s ease, background-color 0.15s ease;
 }
 
+.header-notification-icon {
+  font-size: 22px;
+}
+
 .header-notification-btn:hover {
   color: var(--meme-primary);
   background-color: var(--meme-bg-muted);
@@ -163,14 +165,14 @@ export default {
   min-width: 168px;
 }
 
-.notification-dropdown-menu .el-dropdown-menu__item {
+.notification-dropdown-menu .ui-dropdown-item {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
 }
 
-.notification-dropdown-menu .el-dropdown-menu__item:hover {
+.notification-dropdown-menu .ui-dropdown-item:hover:not(:disabled) {
   background-color: var(--meme-primary-soft);
   color: var(--meme-primary);
 }

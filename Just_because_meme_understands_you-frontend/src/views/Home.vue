@@ -24,6 +24,12 @@
 
     <!-- Feed 列表 -->
     <section ref="feedSection" class="meme-section">
+      <div class="meme-section-head">
+        <div>
+          <p class="meme-section-kicker">FEED</p>
+          <h2 class="meme-section-title">发现梗图</h2>
+        </div>
+      </div>
       <HomeFeedTabs
         v-model="feedSort"
         :is-logged-in="isLoggedIn"
@@ -35,34 +41,27 @@
       </div>
 
       <div v-else-if="bootstrapError && !memeList.length" class="meme-error">
-        <el-alert :title="bootstrapError" type="warning" show-icon :closable="false" />
-        <el-button type="primary" plain class="meme-retry-btn" @click="loadBootstrap">重试</el-button>
+        <vs-alert :title="bootstrapError" color="warn" />
+        <vs-button color="primary" transparent class="meme-retry-btn" @click="loadBootstrap">重试</vs-button>
       </div>
 
       <div v-else class="meme-list-wrap">
-        <el-row :gutter="16" class="meme-row">
-          <el-col
+        <div class="meme-grid">
+          <MemeCard
             v-for="item in memeList"
             :key="item.id"
-            :xs="24"
-            :sm="12"
-            :md="8"
-            :lg="6"
-            class="meme-col"
-          >
-            <MemeCard
-              :to="memeDetailFromFeed(item.id)"
-              :name="item.name"
-              :image="item.image"
-              :page-views="item.pageViews"
-              :likes="item.likes"
-              :comments="item.comments"
-              :release-time="item.releaseTime"
-              :update-time="item.updateTime"
-              :author="item.author"
-            />
-          </el-col>
-        </el-row>
+            class="meme-grid__item"
+            :to="memeDetailFromFeed(item.id)"
+            :name="item.name"
+            :image="item.image"
+            :page-views="item.pageViews"
+            :likes="item.likes"
+            :comments="item.comments"
+            :release-time="item.releaseTime"
+            :update-time="item.updateTime"
+            :author="item.author"
+          />
+        </div>
 
         <ListLoadFooter
           :has-more="feedHasMore"
@@ -72,11 +71,11 @@
         />
 
         <div v-if="feedError" class="meme-error">
-          <el-alert :title="feedError" type="warning" show-icon :closable="false" />
+          <vs-alert :title="feedError" color="warn" />
         </div>
 
         <div v-if="!memeList.length && !feedLoading && !bootstrapLoading" class="meme-empty">
-          <el-empty :description="emptyFeedText" />
+          <ui-empty :description="emptyFeedText" />
         </div>
       </div>
     </section>
@@ -191,7 +190,7 @@ export default {
       this.bootstrapError = ''
       try {
         const data = await getHomeBootstrap({
-          hotLimit: 6,
+          hotLimit: 12,
           tagLimit: 12,
           feedSort: this.feedSort,
           feedSize: this.feedPageSize,
@@ -329,24 +328,31 @@ export default {
 
 <style scoped>
 .page {
-  padding: 8px 24px 20px;
+  padding: 0 0 20px;
   overflow-x: hidden;
 }
 
 .meme-section {
-  margin-top: 8px;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .meme-list-wrap {
   min-height: 120px;
 }
 
-.meme-row {
-  margin: 0 -8px;
+.meme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.meme-col {
-  margin-bottom: 20px;
+.meme-grid__item {
+  min-width: 0;
 }
 
 .meme-loading,
@@ -385,9 +391,22 @@ export default {
   }
 }
 
+@media (max-width: 960px) {
+  .meme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .meme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
 @media (max-width: 768px) {
   .page {
-    padding: 8px 12px 16px;
+    padding: 0 0 20px;
   }
 }
 </style>

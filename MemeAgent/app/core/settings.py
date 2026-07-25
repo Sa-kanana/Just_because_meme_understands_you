@@ -1,35 +1,63 @@
 from functools import lru_cache
+import logging
 import os
+from pathlib import Path
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 固定指向 MemeAgent 根目录，避免从仓库根/IDE 启动时读不到 .env
+_MEMEAGENT_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _MEMEAGENT_ROOT / ".env"
+
+logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        # 空字符串环境变量不覆盖 .env（常见于 IDE Run Config）
+        env_ignore_empty=True,
     )
 
-    app_name: str = Field(default="meme-agent", alias="APP_NAME")
-    app_env: str = Field(default="dev", alias="APP_ENV")
-    app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
-    app_port: int = Field(default=8000, alias="APP_PORT")
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    app_name: str = Field(default="meme-agent", validation_alias=AliasChoices("APP_NAME", "app_name"))
+    app_env: str = Field(default="dev", validation_alias=AliasChoices("APP_ENV", "app_env"))
+    app_host: str = Field(default="0.0.0.0", validation_alias=AliasChoices("APP_HOST", "app_host"))
+    app_port: int = Field(default=8000, validation_alias=AliasChoices("APP_PORT", "app_port"))
+    log_level: str = Field(default="INFO", validation_alias=AliasChoices("LOG_LEVEL", "log_level"))
 
-    internal_api_key: str = Field(default="", alias="INTERNAL_API_KEY")
+    internal_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("INTERNAL_API_KEY", "internal_api_key"),
+    )
 
-    vector_database_url: str = Field(default="", alias="VECTOR_DATABASE_URL")
-    vector_embedding_dim: int = Field(default=1536, alias="VECTOR_EMBEDDING_DIM")
+    vector_database_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("VECTOR_DATABASE_URL", "vector_database_url"),
+    )
+    vector_embedding_dim: int = Field(
+        default=1536,
+        validation_alias=AliasChoices("VECTOR_EMBEDDING_DIM", "vector_embedding_dim"),
+    )
 
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
-    openai_chat_model: str = Field(default="gpt-4o-mini", alias="OPENAI_CHAT_MODEL")
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
+    )
+    openai_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_BASE_URL", "openai_base_url"),
+    )
+    openai_chat_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias=AliasChoices("OPENAI_CHAT_MODEL", "openai_chat_model"),
+    )
     openai_embedding_model: str = Field(
         default="text-embedding-3-small",
-        alias="OPENAI_EMBEDDING_MODEL",
+        validation_alias=AliasChoices("OPENAI_EMBEDDING_MODEL", "openai_embedding_model"),
     )
 
     # 同时支持 LANGSMITH_*（官方推荐）与 LANGCHAIN_*
@@ -46,15 +74,24 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LANGCHAIN_PROJECT", "LANGSMITH_PROJECT"),
     )
 
-    retrieval_top_k: int = Field(default=5, alias="RETRIEVAL_TOP_K")
-    max_output_tokens: int = Field(default=512, alias="MAX_OUTPUT_TOKENS")
+    retrieval_top_k: int = Field(
+        default=5,
+        validation_alias=AliasChoices("RETRIEVAL_TOP_K", "retrieval_top_k"),
+    )
+    max_output_tokens: int = Field(
+        default=512,
+        validation_alias=AliasChoices("MAX_OUTPUT_TOKENS", "max_output_tokens"),
+    )
 
     @field_validator("internal_api_key")
     @classmethod
     def validate_internal_api_key(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("INTERNAL_API_KEY is required")
-        return value.strip()
+        if not value or not str(value).strip():
+            raise ValueError(
+                f"INTERNAL_API_KEY is required（请在 {_ENV_FILE} 中配置，"
+                "或设置同名环境变量）"
+            )
+        return str(value).strip()
 
     @property
     def is_dev(self) -> bool:
@@ -78,6 +115,8 @@ def apply_langsmith_env(settings: Settings) -> None:
 
 @lru_cache
 def get_settings() -> Settings:
+    if not _ENV_FILE.is_file():
+        logger.warning("未找到配置文件: %s", _ENV_FILE)
     settings = Settings()
     apply_langsmith_env(settings)
     return settings

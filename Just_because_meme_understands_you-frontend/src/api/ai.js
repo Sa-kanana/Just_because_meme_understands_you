@@ -1,8 +1,4 @@
-import { request } from './request'
-import { useAuthStore } from '@/stores/auth'
-import { isAuthExpiredError, markAuthErrorHandled } from '@/utils/authSession'
-
-const BASE_URL = process.env.VUE_APP_API_BASE_URL || '/api'
+import { request, streamRequest } from './request'
 
 function unwrap(res, fallbackMsg) {
   if (!res || typeof res !== 'object') {
@@ -142,33 +138,11 @@ export async function streamAiSearch(payload = {}, handlers = {}) {
     body.requestId = String(payload.requestId).trim()
   }
 
-  const authStore = useAuthStore()
-  const token = authStore.accessToken || ''
-  const headers = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-  }
-  if (token) {
-    headers.Authorization = token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`
-  }
-
-  const response = await fetch(`${BASE_URL}/ai/search/stream`, {
+  const response = await streamRequest('/ai/search/stream', {
     method: 'POST',
-    headers,
-    credentials: 'include',
     body: JSON.stringify(body),
     signal: handlers.signal,
   })
-
-  if (response.status === 401) {
-    const err = new Error('登录已过期，请重新登录')
-    err.code = 401
-    err.status = 401
-    if (isAuthExpiredError(err)) {
-      throw markAuthErrorHandled(err)
-    }
-    throw err
-  }
 
   if (!response.ok) {
     let message = `AI 搜索失败: ${response.status}`
@@ -223,17 +197,32 @@ export async function streamAiSearch(payload = {}, handlers = {}) {
         // keep string
       }
 
-      if (eventName === 'session' && typeof handlers.onSession === 'function') {
+      // Spring SSE 可能省略 event 行；按 JSON 字段推断事件类型
+      let resolvedEvent = eventName
+      if (
+        (resolvedEvent === 'message' || !resolvedEvent) &&
+        data &&
+        typeof data === 'object'
+      ) {
+        if (data.session_id != null || data.sessionId != null) resolvedEvent = 'session'
+        else if (Array.isArray(data.retrieved) || data.request_id != null) resolvedEvent = 'meta'
+        else if (data.meme_id != null || data.memeId != null) resolvedEvent = 'cite'
+        else if (data.text != null) resolvedEvent = 'token'
+        else if (data.finish_reason != null) resolvedEvent = 'done'
+        else if (data.code != null && data.message != null) resolvedEvent = 'error'
+      }
+
+      if (resolvedEvent === 'session' && typeof handlers.onSession === 'function') {
         handlers.onSession(data)
-      } else if (eventName === 'meta' && typeof handlers.onMeta === 'function') {
+      } else if (resolvedEvent === 'meta' && typeof handlers.onMeta === 'function') {
         handlers.onMeta(data)
-      } else if (eventName === 'cite' && typeof handlers.onCite === 'function') {
+      } else if (resolvedEvent === 'cite' && typeof handlers.onCite === 'function') {
         handlers.onCite(data)
-      } else if (eventName === 'token' && typeof handlers.onToken === 'function') {
+      } else if (resolvedEvent === 'token' && typeof handlers.onToken === 'function') {
         handlers.onToken(data)
-      } else if (eventName === 'done' && typeof handlers.onDone === 'function') {
+      } else if (resolvedEvent === 'done' && typeof handlers.onDone === 'function') {
         handlers.onDone(data)
-      } else if (eventName === 'error' && typeof handlers.onError === 'function') {
+      } else if (resolvedEvent === 'error' && typeof handlers.onError === 'function') {
         handlers.onError(data)
       }
     }

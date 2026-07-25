@@ -1,337 +1,484 @@
 <template>
   <div class="settings-page">
     <header class="settings-hero">
+      <p class="settings-kicker">ACCOUNT</p>
       <h1 class="settings-title">账号设置</h1>
       <p class="settings-lead">管理个人资料与账号安全，保护你的梗位。</p>
     </header>
 
-    <div v-loading="pageLoading" class="settings-body">
-      <aside class="settings-nav" aria-label="设置分区">
-        <button
-          type="button"
-          class="settings-nav__item"
-          :class="{ 'is-active': activeTab === 'profile' }"
-          @click="switchTab('profile')"
-        >
-          <i class="ri-user-settings-line" aria-hidden="true" />
-          个人资料
-        </button>
-        <button
-          type="button"
-          class="settings-nav__item"
-          :class="{ 'is-active': activeTab === 'security' }"
-          @click="switchTab('security')"
-        >
-          <i class="ri-shield-keyhole-line" aria-hidden="true" />
-          账号安全
-        </button>
-      </aside>
+    <div class="settings-body-wrap">
+      <div v-if="pageLoading" class="settings-page-loading">
+        <span class="settings-page-loading__spinner" />
+        <span>加载中...</span>
+      </div>
 
-      <section class="settings-panel">
-        <template v-if="activeTab === 'profile'">
-          <h2 class="settings-panel__title">个人资料</h2>
-          <p class="settings-panel__desc">这些信息会展示在个人主页与发布的梗中。</p>
-
-          <el-form
-            ref="profileFormRef"
-            :model="profileForm"
-            :rules="profileRules"
-            label-position="top"
-            class="settings-form"
-          >
-            <div class="avatar-row">
-              <el-avatar :size="72" :src="profileForm.avatar" class="avatar-preview">
-                {{ avatarFallback }}
-              </el-avatar>
-              <div class="avatar-actions">
-                <el-upload
-                  :show-file-list="false"
-                  :before-upload="beforeAvatarUpload"
-                  accept="image/jpeg,image/png,image/webp"
-                  :http-request="handleAvatarUpload"
+      <div class="settings-body" :class="{ 'is-busy': pageLoading }">
+        <aside class="settings-nav" aria-label="设置分区">
+          <vs-card class="settings-nav-card">
+            <template #text>
+              <div class="settings-nav__list">
+                <button
+                  type="button"
+                  class="settings-nav__item"
+                  :class="{ 'is-active': activeTab === 'profile' }"
+                  @click="switchTab('profile')"
                 >
-                  <el-button :loading="avatarUploading">更换头像</el-button>
-                </el-upload>
-                <p class="avatar-hint">支持 jpg / png / webp，建议正方形</p>
+                  <i class="ri-user-settings-line" aria-hidden="true" />
+                  个人资料
+                </button>
+                <button
+                  type="button"
+                  class="settings-nav__item"
+                  :class="{ 'is-active': activeTab === 'security' }"
+                  @click="switchTab('security')"
+                >
+                  <i class="ri-shield-keyhole-line" aria-hidden="true" />
+                  账号安全
+                </button>
               </div>
-            </div>
+            </template>
+          </vs-card>
+        </aside>
 
-            <el-form-item label="昵称" prop="nickname">
-              <el-input v-model="profileForm.nickname" maxlength="50" show-word-limit clearable />
-            </el-form-item>
-            <el-form-item label="个性签名" prop="signature">
-              <el-input
-                v-model="profileForm.signature"
-                type="textarea"
-                :rows="3"
-                maxlength="255"
-                show-word-limit
-              />
-            </el-form-item>
-            <el-form-item label="性别" prop="gender">
-              <el-radio-group v-model="profileForm.gender">
-                <el-radio :label="0">保密</el-radio>
-                <el-radio :label="1">男</el-radio>
-                <el-radio :label="2">女</el-radio>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="生日" prop="birthday">
-              <el-date-picker
-                v-model="profileForm.birthday"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选择生日"
-                clearable
-                style="width: 100%"
-              />
-            </el-form-item>
-            <div class="form-actions">
-              <el-button type="primary" :loading="profileSaving" @click="saveProfile">
-                保存资料
-              </el-button>
-            </div>
-          </el-form>
-        </template>
-
-        <template v-else>
-          <div class="sec-head">
-            <div>
-              <h2 class="settings-panel__title">账号安全</h2>
-              <p class="settings-panel__desc">保护登录凭证与设备会话。敏感操作完成后需重新登录。</p>
-            </div>
-            <button
-              type="button"
-              class="sec-refresh"
-              :disabled="securityRefreshing"
-              :title="securityRefreshing ? '刷新中' : '刷新安全状态'"
-              @click="refreshSecurity"
-            >
-              <i class="ri-refresh-line" :class="{ 'is-spinning': securityRefreshing }" aria-hidden="true" />
-              刷新
-            </button>
-          </div>
-
-          <div class="sec-health" :class="'sec-health--' + securityLevel.key">
-            <div class="sec-health__icon" aria-hidden="true">
-              <i :class="securityLevel.icon" />
-            </div>
-            <div class="sec-health__body">
-              <div class="sec-health__top">
-                <span class="sec-health__label">安全评级</span>
-                <span class="sec-health__badge">{{ securityLevel.label }}</span>
-              </div>
-              <p class="sec-health__text">{{ securityLevel.hint }}</p>
-              <div class="sec-health__meter" role="meter" :aria-valuenow="securityScore" aria-valuemin="0" aria-valuemax="100">
-                <span class="sec-health__meter-bar" :style="{ width: securityScore + '%' }" />
-              </div>
-            </div>
-          </div>
-
-          <div class="sec-section">
-            <h3 class="sec-section__title">登录方式</h3>
-            <ul class="sec-list">
-              <li class="sec-item">
-                <div class="sec-item__icon sec-item__icon--ok" aria-hidden="true">
-                  <i class="ri-mail-check-line" />
-                </div>
-                <div class="sec-item__main">
-                  <div class="sec-item__title-row">
-                    <span class="sec-item__title">邮箱登录</span>
-                    <span
-                      class="sec-tag"
-                      :class="security.emailBound ? 'sec-tag--ok' : 'sec-tag--warn'"
-                    >
-                      {{ security.emailBound ? '已绑定' : '未绑定' }}
+        <section class="settings-panel-wrap">
+          <vs-card class="settings-panel-card">
+            <template #text>
+              <div class="settings-panel">
+                <template v-if="activeTab === 'profile'">
+                  <div class="settings-panel__head">
+                    <span class="settings-panel__mark" aria-hidden="true">
+                      <i class="ri-user-3-fill" />
                     </span>
+                    <div>
+                      <h2 class="settings-panel__title">个人资料</h2>
+                      <p class="settings-panel__desc">这些信息会展示在个人主页与发布的梗中。</p>
+                    </div>
                   </div>
-                  <p class="sec-item__desc">
-                    {{
-                      security.emailBound
-                        ? `当前绑定：${security.emailMasked || '***'}`
-                        : '尚未绑定可用于登录与找回密码的邮箱'
-                    }}
-                  </p>
-                </div>
-              </li>
 
-              <li class="sec-item">
-                <div
-                  class="sec-item__icon"
-                  :class="security.passwordSet ? 'sec-item__icon--ok' : 'sec-item__icon--warn'"
-                  aria-hidden="true"
-                >
-                  <i class="ri-lock-password-line" />
-                </div>
-                <div class="sec-item__main">
-                  <div class="sec-item__title-row">
-                    <span class="sec-item__title">登录密码</span>
-                    <span
-                      class="sec-tag"
-                      :class="security.passwordSet ? 'sec-tag--ok' : 'sec-tag--warn'"
-                    >
-                      {{ security.passwordSet ? '已设置' : '未设置' }}
-                    </span>
-                  </div>
-                  <p class="sec-item__desc">
-                    <template v-if="security.passwordSet && security.lastPasswordChangeTime">
-                      上次修改 {{ formatDateTime(security.lastPasswordChangeTime) }}
-                      <span v-if="passwordAgeHint" class="sec-item__aside">· {{ passwordAgeHint }}</span>
-                    </template>
-                    <template v-else-if="security.passwordSet">
-                      已设置密码，建议定期更换以降低风险
-                    </template>
-                    <template v-else>
-                      未设置密码，请通过「忘记密码」流程完成初始化
-                    </template>
-                  </p>
-                </div>
-                <div class="sec-item__action">
-                  <button
-                    v-if="security.passwordSet"
-                    type="button"
-                    class="sec-action-btn"
-                    :class="{ 'sec-action-btn--muted': passwordPanelOpen }"
-                    @click="togglePasswordPanel"
+                  <ui-form
+                    ref="profileFormRef"
+                    :model="profileForm"
+                    :rules="profileRules"
+                    label-position="top"
+                    class="settings-form"
                   >
-                    {{ passwordPanelOpen ? '收起' : '修改密码' }}
-                  </button>
-                  <button
-                    v-else
-                    type="button"
-                    class="sec-action-btn sec-action-btn--muted"
-                    @click="goForgotPassword"
-                  >
-                    去设置
-                  </button>
-                </div>
-              </li>
-            </ul>
-
-            <Transition name="sec-slide">
-              <div v-if="passwordPanelOpen && security.passwordSet" class="sec-password">
-                <div class="sec-password__tip">
-                  <i class="ri-information-line" aria-hidden="true" />
-                  <span>更新成功后将退出全部设备会话，需使用新密码重新登录。</span>
-                </div>
-                <el-form
-                  ref="passwordFormRef"
-                  :model="passwordForm"
-                  :rules="passwordRules"
-                  label-position="top"
-                  class="settings-form"
-                  @submit.prevent
-                >
-                  <el-form-item label="当前密码" prop="oldPassword">
-                    <el-input
-                      v-model="passwordForm.oldPassword"
-                      type="password"
-                      show-password
-                      autocomplete="current-password"
-                      placeholder="请输入当前密码"
-                    />
-                  </el-form-item>
-                  <el-form-item label="新密码" prop="newPassword">
-                    <el-input
-                      v-model="passwordForm.newPassword"
-                      type="password"
-                      show-password
-                      autocomplete="new-password"
-                      placeholder="8～72 位，需同时包含字母和数字"
-                    />
-                    <div v-if="passwordForm.newPassword" class="pwd-meter">
-                      <div class="pwd-meter__track">
-                        <span
-                          class="pwd-meter__fill"
-                          :class="'pwd-meter__fill--' + passwordStrength.level"
-                          :style="{ width: passwordStrength.percent + '%' }"
+                    <div class="avatar-block">
+                      <div class="avatar-preview-wrap">
+                        <ui-avatar
+                          :size="88"
+                          :src="profileForm.avatar"
+                          :fallback="profileForm.nickname || 'U'"
+                          class="avatar-preview"
                         />
                       </div>
-                      <span class="pwd-meter__label" :class="'pwd-meter__label--' + passwordStrength.level">
-                        强度：{{ passwordStrength.label }}
-                      </span>
+                      <div class="avatar-actions">
+                        <p class="avatar-actions__title">头像</p>
+                        <p class="avatar-hint">支持 jpg / png / webp，建议正方形</p>
+                        <ui-upload
+                          accept="image/jpeg,image/png,image/webp"
+                          :http-request="handleAvatarUpload"
+                        >
+                          <button
+                            type="button"
+                            class="settings-btn settings-btn--soft"
+                            :disabled="avatarUploading"
+                          >
+                            <i
+                              :class="avatarUploading ? 'ri-loader-4-line is-spinning' : 'ri-image-edit-line'"
+                              aria-hidden="true"
+                            />
+                            {{ avatarUploading ? '上传中...' : '更换头像' }}
+                          </button>
+                        </ui-upload>
+                      </div>
                     </div>
-                  </el-form-item>
-                  <el-form-item label="确认新密码" prop="confirmPassword">
-                    <el-input
-                      v-model="passwordForm.confirmPassword"
-                      type="password"
-                      show-password
-                      autocomplete="new-password"
-                      placeholder="再次输入新密码"
-                      @keyup.enter="submitPassword"
-                    />
-                  </el-form-item>
-                  <div class="form-actions form-actions--split">
-                    <el-button @click="closePasswordPanel">取消</el-button>
-                    <el-button
-                      type="primary"
-                      :loading="passwordSaving"
-                      :disabled="passwordStrength.level === 'weak'"
-                      @click="submitPassword"
-                    >
-                      确认更新
-                    </el-button>
-                  </div>
-                </el-form>
-              </div>
-            </Transition>
-          </div>
 
-          <div class="sec-section">
-            <h3 class="sec-section__title">登录会话</h3>
-            <ul class="sec-list">
-              <li class="sec-item">
-                <div
-                  class="sec-item__icon"
-                  :class="security.hasOtherSessions ? 'sec-item__icon--warn' : 'sec-item__icon--ok'"
-                  aria-hidden="true"
-                >
-                  <i class="ri-devices-line" />
-                </div>
-                <div class="sec-item__main">
-                  <div class="sec-item__title-row">
-                    <span class="sec-item__title">设备会话</span>
-                    <span
-                      class="sec-tag"
-                      :class="security.hasOtherSessions ? 'sec-tag--warn' : 'sec-tag--ok'"
-                    >
-                      {{ security.hasOtherSessions ? '多设备在线' : '仅本机' }}
-                    </span>
-                  </div>
-                  <p class="sec-item__desc">
-                    {{
-                      security.hasOtherSessions
-                        ? '检测到其他设备仍持有有效登录。若非本人操作，请立即退出全部设备并修改密码。'
-                        : '当前仅本机存在有效登录会话。'
-                    }}
-                  </p>
-                </div>
-              </li>
-            </ul>
-          </div>
+                    <ui-form-item label="昵称" prop="nickname">
+                      <vs-input
+                        v-model="profileForm.nickname"
+                        maxlength="50"
+                        clearable
+                        block
+                        placeholder="怎么称呼你"
+                        class="settings-input"
+                      />
+                    </ui-form-item>
 
-          <div class="sec-danger">
-            <div class="sec-danger__head">
-              <i class="ri-alarm-warning-line" aria-hidden="true" />
-              <div>
-                <h3 class="sec-danger__title">紧急操作</h3>
-                <p class="sec-danger__desc">
-                  退出全部设备会使所有端（含本机）的登录立即失效，用于怀疑账号被盗时快速止损。
-                </p>
+                    <ui-form-item label="个性签名" prop="signature">
+                      <vs-input
+                        v-model="profileForm.signature"
+                        type="textarea"
+                        :rows="3"
+                        maxlength="255"
+                        block
+                        placeholder="一句话介绍自己"
+                        class="settings-input settings-input--area"
+                      />
+                    </ui-form-item>
+
+                    <ui-form-item label="性别" prop="gender">
+                      <div class="gender-segment" role="radiogroup" aria-label="性别">
+                        <button
+                          v-for="opt in genderOptions"
+                          :key="`gender-${opt.value}`"
+                          type="button"
+                          class="gender-segment__item"
+                          :class="{ 'is-active': profileForm.gender === opt.value }"
+                          role="radio"
+                          :aria-checked="profileForm.gender === opt.value"
+                          @click="profileForm.gender = opt.value"
+                        >
+                          <i :class="opt.icon" aria-hidden="true" />
+                          {{ opt.label }}
+                        </button>
+                      </div>
+                    </ui-form-item>
+
+                    <ui-form-item label="生日" prop="birthday">
+                      <ui-date-picker
+                        v-model="profileForm.birthday"
+                        type="date"
+                        value-format="YYYY-MM-DD"
+                        placeholder="选择生日"
+                        class="settings-date"
+                      />
+                    </ui-form-item>
+
+                    <div class="form-actions">
+                      <button
+                        type="button"
+                        class="settings-btn settings-btn--primary"
+                        :disabled="profileSaving"
+                        @click="saveProfile"
+                      >
+                        <i
+                          :class="profileSaving ? 'ri-loader-4-line is-spinning' : 'ri-check-line'"
+                          aria-hidden="true"
+                        />
+                        {{ profileSaving ? '保存中...' : '保存资料' }}
+                      </button>
+                    </div>
+                  </ui-form>
+                </template>
+
+                <template v-else>
+                  <div class="sec-head">
+                    <div class="settings-panel__head settings-panel__head--inline">
+                      <span class="settings-panel__mark settings-panel__mark--shield" aria-hidden="true">
+                        <i class="ri-shield-keyhole-fill" />
+                      </span>
+                      <div>
+                        <h2 class="settings-panel__title">账号安全</h2>
+                        <p class="settings-panel__desc">
+                          保护登录凭证与设备会话。敏感操作完成后需重新登录。
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="sec-refresh"
+                      :disabled="securityRefreshing"
+                      :title="securityRefreshing ? '刷新中' : '刷新安全状态'"
+                      @click="refreshSecurity"
+                    >
+                      <i
+                        class="ri-refresh-line"
+                        :class="{ 'is-spinning': securityRefreshing }"
+                        aria-hidden="true"
+                      />
+                      刷新
+                    </button>
+                  </div>
+
+                  <vs-card class="sec-health-card" :class="'is-' + securityLevel.key">
+                    <template #text>
+                      <div class="sec-health">
+                        <div class="sec-health__icon" aria-hidden="true">
+                          <i :class="securityLevel.icon" />
+                        </div>
+                        <div class="sec-health__body">
+                          <div class="sec-health__top">
+                            <span class="sec-health__label">安全评级</span>
+                            <ui-tag :type="securityLevelTagType" class="sec-health__badge">
+                              {{ securityLevel.label }}
+                            </ui-tag>
+                          </div>
+                          <p class="sec-health__text">{{ securityLevel.hint }}</p>
+                          <ui-progress
+                            :percentage="securityScore"
+                            class="sec-health__progress"
+                            :class="'is-' + securityLevel.key"
+                          />
+                        </div>
+                      </div>
+                    </template>
+                  </vs-card>
+
+                  <div class="sec-section">
+                    <h3 class="sec-section__title">
+                      <i class="ri-key-2-line" aria-hidden="true" />
+                      登录方式
+                    </h3>
+                    <vs-card class="sec-list-card">
+                      <template #text>
+                        <ul class="sec-list">
+                          <li class="sec-item">
+                            <div class="sec-item__icon sec-item__icon--ok" aria-hidden="true">
+                              <i class="ri-mail-check-line" />
+                            </div>
+                            <div class="sec-item__main">
+                              <div class="sec-item__title-row">
+                                <span class="sec-item__title">邮箱登录</span>
+                                <ui-tag :type="security.emailBound ? 'success' : 'warning'">
+                                  {{ security.emailBound ? '已绑定' : '未绑定' }}
+                                </ui-tag>
+                              </div>
+                              <p class="sec-item__desc">
+                                {{
+                                  security.emailBound
+                                    ? `当前绑定：${security.emailMasked || '***'}`
+                                    : '尚未绑定可用于登录与找回密码的邮箱'
+                                }}
+                              </p>
+                            </div>
+                          </li>
+
+                          <li class="sec-item">
+                            <div
+                              class="sec-item__icon"
+                              :class="security.passwordSet ? 'sec-item__icon--ok' : 'sec-item__icon--warn'"
+                              aria-hidden="true"
+                            >
+                              <i class="ri-lock-password-line" />
+                            </div>
+                            <div class="sec-item__main">
+                              <div class="sec-item__title-row">
+                                <span class="sec-item__title">登录密码</span>
+                                <ui-tag :type="security.passwordSet ? 'success' : 'warning'">
+                                  {{ security.passwordSet ? '已设置' : '未设置' }}
+                                </ui-tag>
+                              </div>
+                              <p class="sec-item__desc">
+                                <template v-if="security.passwordSet && security.lastPasswordChangeTime">
+                                  上次修改 {{ formatDateTime(security.lastPasswordChangeTime) }}
+                                  <span v-if="passwordAgeHint" class="sec-item__aside">
+                                    · {{ passwordAgeHint }}
+                                  </span>
+                                </template>
+                                <template v-else-if="security.passwordSet">
+                                  已设置密码，建议定期更换以降低风险
+                                </template>
+                                <template v-else>
+                                  未设置密码，请通过「忘记密码」流程完成初始化
+                                </template>
+                              </p>
+                            </div>
+                            <div class="sec-item__action">
+                              <button
+                                v-if="security.passwordSet"
+                                type="button"
+                                class="sec-action-btn"
+                                :class="{ 'sec-action-btn--muted': passwordPanelOpen }"
+                                @click="togglePasswordPanel"
+                              >
+                                <i
+                                  :class="passwordPanelOpen ? 'ri-arrow-up-s-line' : 'ri-edit-line'"
+                                  aria-hidden="true"
+                                />
+                                {{ passwordPanelOpen ? '收起' : '修改密码' }}
+                              </button>
+                              <button
+                                v-else
+                                type="button"
+                                class="sec-action-btn sec-action-btn--muted"
+                                @click="goForgotPassword"
+                              >
+                                去设置
+                              </button>
+                            </div>
+                          </li>
+                        </ul>
+                      </template>
+                    </vs-card>
+
+                    <Transition name="sec-slide">
+                      <vs-card v-if="passwordPanelOpen && security.passwordSet" class="sec-password-card">
+                        <template #text>
+                          <div class="sec-password">
+                            <vs-alert color="primary" class="sec-password__alert">
+                              更新成功后将退出全部设备会话，需使用新密码重新登录。
+                            </vs-alert>
+                            <ui-form
+                              ref="passwordFormRef"
+                              :model="passwordForm"
+                              :rules="passwordRules"
+                              label-position="top"
+                              class="settings-form"
+                              @submit.prevent
+                            >
+                              <ui-form-item label="当前密码" prop="oldPassword">
+                                <vs-input
+                                  v-model="passwordForm.oldPassword"
+                                  type="password"
+                                  show-password
+                                  autocomplete="current-password"
+                                  placeholder="请输入当前密码"
+                                  block
+                                  class="settings-input"
+                                />
+                              </ui-form-item>
+                              <ui-form-item label="新密码" prop="newPassword">
+                                <vs-input
+                                  v-model="passwordForm.newPassword"
+                                  type="password"
+                                  show-password
+                                  autocomplete="new-password"
+                                  placeholder="8～72 位，需同时包含字母和数字"
+                                  block
+                                  class="settings-input"
+                                />
+                                <div v-if="passwordForm.newPassword" class="pwd-meter">
+                                  <div class="pwd-meter__track">
+                                    <span
+                                      class="pwd-meter__fill"
+                                      :class="'pwd-meter__fill--' + passwordStrength.level"
+                                      :style="{ width: passwordStrength.percent + '%' }"
+                                    />
+                                  </div>
+                                  <span
+                                    class="pwd-meter__label"
+                                    :class="'pwd-meter__label--' + passwordStrength.level"
+                                  >
+                                    强度：{{ passwordStrength.label }}
+                                  </span>
+                                </div>
+                              </ui-form-item>
+                              <ui-form-item label="确认新密码" prop="confirmPassword">
+                                <vs-input
+                                  v-model="passwordForm.confirmPassword"
+                                  type="password"
+                                  show-password
+                                  autocomplete="new-password"
+                                  placeholder="再次输入新密码"
+                                  block
+                                  class="settings-input"
+                                  @keydown.enter="submitPassword"
+                                />
+                              </ui-form-item>
+                              <div class="form-actions form-actions--split">
+                                <button
+                                  type="button"
+                                  class="settings-btn settings-btn--ghost"
+                                  @click="closePasswordPanel"
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  type="button"
+                                  class="settings-btn settings-btn--primary"
+                                  :disabled="passwordSaving || passwordStrength.level === 'weak'"
+                                  @click="submitPassword"
+                                >
+                                  <i
+                                    :class="
+                                      passwordSaving
+                                        ? 'ri-loader-4-line is-spinning'
+                                        : 'ri-lock-password-line'
+                                    "
+                                    aria-hidden="true"
+                                  />
+                                  {{ passwordSaving ? '更新中...' : '确认更新' }}
+                                </button>
+                              </div>
+                            </ui-form>
+                          </div>
+                        </template>
+                      </vs-card>
+                    </Transition>
+                  </div>
+
+                  <div class="sec-section">
+                    <h3 class="sec-section__title">
+                      <i class="ri-computer-line" aria-hidden="true" />
+                      登录会话
+                    </h3>
+                    <vs-card class="sec-list-card">
+                      <template #text>
+                        <ul class="sec-list">
+                          <li class="sec-item">
+                            <div
+                              class="sec-item__icon"
+                              :class="
+                                security.hasOtherSessions
+                                  ? 'sec-item__icon--warn'
+                                  : 'sec-item__icon--ok'
+                              "
+                              aria-hidden="true"
+                            >
+                              <i class="ri-smartphone-line" />
+                            </div>
+                            <div class="sec-item__main">
+                              <div class="sec-item__title-row">
+                                <span class="sec-item__title">设备会话</span>
+                                <ui-tag :type="security.hasOtherSessions ? 'warning' : 'success'">
+                                  {{ security.hasOtherSessions ? '多设备在线' : '仅本机' }}
+                                </ui-tag>
+                              </div>
+                              <p class="sec-item__desc">
+                                {{
+                                  security.hasOtherSessions
+                                    ? '检测到其他设备仍持有有效登录。若非本人操作，请立即退出全部设备并修改密码。'
+                                    : '当前仅本机存在有效登录会话。'
+                                }}
+                              </p>
+                            </div>
+                          </li>
+                        </ul>
+                      </template>
+                    </vs-card>
+                  </div>
+
+                  <vs-card class="sec-danger-card">
+                    <template #text>
+                      <div class="sec-danger">
+                        <div class="sec-danger__head">
+                          <span class="sec-danger__icon" aria-hidden="true">
+                            <i class="ri-alarm-warning-fill" />
+                          </span>
+                          <div>
+                            <h3 class="sec-danger__title">紧急操作</h3>
+                            <p class="sec-danger__desc">
+                              退出全部设备会使所有端（含本机）的登录立即失效，用于怀疑账号被盗时快速止损。
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="settings-btn settings-btn--danger"
+                          :disabled="revoking"
+                          @click="confirmRevokeAll"
+                        >
+                          <i
+                            :class="revoking ? 'ri-loader-4-line is-spinning' : 'ri-logout-box-r-line'"
+                            aria-hidden="true"
+                          />
+                          {{ revoking ? '处理中...' : '退出所有设备' }}
+                        </button>
+                      </div>
+                    </template>
+                  </vs-card>
+                </template>
               </div>
-            </div>
-            <el-button type="danger" :loading="revoking" @click="confirmRevokeAll">
-              退出所有设备
-            </el-button>
-          </div>
-        </template>
-      </section>
+            </template>
+          </vs-card>
+        </section>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { toast, confirmBox } from '@/utils/uiFeedback'
 import { useAuthStore } from '@/stores/auth'
 import {
   getAccountSettings,
@@ -416,6 +563,11 @@ export default {
         gender: 0,
         birthday: '',
       },
+      genderOptions: [
+        { value: 0, label: '保密', icon: 'ri-eye-off-line' },
+        { value: 1, label: '男', icon: 'ri-men-line' },
+        { value: 2, label: '女', icon: 'ri-women-line' },
+      ],
       passwordForm: {
         oldPassword: '',
         newPassword: '',
@@ -441,10 +593,6 @@ export default {
   computed: {
     authToken() {
       return useAuthStore().token
-    },
-    avatarFallback() {
-      const name = this.profileForm.nickname || 'U'
-      return String(name).charAt(0).toUpperCase()
     },
     passwordStrength() {
       return scorePassword(this.passwordForm.newPassword)
@@ -500,6 +648,12 @@ export default {
       if (!Number.isFinite(ts)) return null
       return Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000))
     },
+    securityLevelTagType() {
+      const key = this.securityLevel && this.securityLevel.key
+      if (key === 'ok') return 'success'
+      if (key === 'risk') return 'danger'
+      return 'warning'
+    },
     passwordAgeHint() {
       const days = this.passwordAgeDays
       if (days == null) return ''
@@ -543,7 +697,7 @@ export default {
         }
         this.security = { ...data.security }
       } catch (error) {
-        ElMessage.error(error?.message || '加载账号设置失败')
+        toast.error(error?.message || '加载账号设置失败')
       } finally {
         this.pageLoading = false
       }
@@ -560,9 +714,9 @@ export default {
       this.securityRefreshing = true
       try {
         this.security = await getAccountSecurity(this.authToken)
-        ElMessage.success('安全状态已更新')
+        toast.success('安全状态已更新')
       } catch (error) {
-        ElMessage.error(error?.message || '刷新失败')
+        toast.error(error?.message || '刷新失败')
       } finally {
         this.securityRefreshing = false
       }
@@ -584,26 +738,23 @@ export default {
     goForgotPassword() {
       this.$router.push({ path: '/forgot-password' })
     },
-    beforeAvatarUpload(file) {
+    async handleAvatarUpload({ file }) {
       const okType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
       if (!okType) {
-        ElMessage.warning('仅支持 jpg / png / webp')
-        return false
+        toast.warning('仅支持 jpg / png / webp')
+        return
       }
       if (file.size > 5 * 1024 * 1024) {
-        ElMessage.warning('头像大小不能超过 5MB')
-        return false
+        toast.warning('头像大小不能超过 5MB')
+        return
       }
-      return true
-    },
-    async handleAvatarUpload({ file }) {
       this.avatarUploading = true
       try {
         const res = await uploadUserAvatar(file, this.authToken)
         this.profileForm.avatar = res.url
-        ElMessage.success('头像已上传，记得保存资料')
+        toast.success('头像已上传，记得保存资料')
       } catch (error) {
-        ElMessage.error(error?.message || '头像上传失败')
+        toast.error(error?.message || '头像上传失败')
       } finally {
         this.avatarUploading = false
       }
@@ -636,9 +787,9 @@ export default {
             signature: this.profileForm.signature,
             avatar: this.profileForm.avatar,
           })
-          ElMessage.success('资料已保存')
+          toast.success('资料已保存')
         } catch (error) {
-          ElMessage.error(error?.message || '保存失败')
+          toast.error(error?.message || '保存失败')
         } finally {
           this.profileSaving = false
         }
@@ -648,31 +799,31 @@ export default {
       this.$refs.passwordFormRef.validate(async (valid) => {
         if (!valid || this.passwordSaving) return
         if (this.passwordStrength.level === 'weak') {
-          ElMessage.warning('请设置更安全的新密码')
+          toast.warning('请设置更安全的新密码')
           return
         }
         try {
-          await ElMessageBox.confirm(
+          await confirmBox(
             '修改密码后，所有设备（含本机）将立即下线，需使用新密码重新登录。',
             '确认修改密码',
             {
               type: 'warning',
               confirmButtonText: '确认修改',
               cancelButtonText: '再想想',
-              customClass: 'meme-confirm-box',
             }
           )
-        } catch {
+        } catch (e) {
+          if (e === 'cancel') return
           return
         }
         this.passwordSaving = true
         try {
           const res = await changeAccountPassword({ ...this.passwordForm }, this.authToken)
-          ElMessage.success(res.message || '密码已更新，请重新登录')
+          toast.success(res.message || '密码已更新，请重新登录')
           useAuthStore().clearAuthState()
           this.$router.replace({ path: '/login', query: { redirect: '/settings?tab=security' } })
         } catch (error) {
-          ElMessage.error(error?.message || '修改密码失败')
+          toast.error(error?.message || '修改密码失败')
         } finally {
           this.passwordSaving = false
         }
@@ -680,28 +831,27 @@ export default {
     },
     async confirmRevokeAll() {
       try {
-        await ElMessageBox.confirm(
+        await confirmBox(
           '将使全部设备（含当前）的登录立即失效，并需重新登录。仅在怀疑账号异常时操作。',
           '退出所有设备',
           {
             type: 'warning',
             confirmButtonText: '立即全部退出',
             cancelButtonText: '取消',
-            confirmButtonClass: 'el-button--danger',
-            customClass: 'meme-confirm-box',
           }
         )
-      } catch {
+      } catch (e) {
+        if (e === 'cancel') return
         return
       }
       this.revoking = true
       try {
         const res = await revokeAllSessions(this.authToken)
-        ElMessage.success(`已退出 ${res.revokedCount} 个会话，请重新登录`)
+        toast.success(`已退出 ${res.revokedCount} 个会话，请重新登录`)
         useAuthStore().clearAuthState()
         this.$router.replace({ path: '/login', query: { redirect: '/settings?tab=security' } })
       } catch (error) {
-        ElMessage.error(error?.message || '操作失败')
+        toast.error(error?.message || '操作失败')
       } finally {
         this.revoking = false
       }
@@ -717,20 +867,28 @@ export default {
 
 <style scoped>
 .settings-page {
-  max-width: 960px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 28px 20px 64px;
+  padding: 20px 20px 64px;
 }
 
 .settings-hero {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
+}
+
+.settings-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  color: var(--meme-primary);
 }
 
 .settings-title {
   margin: 0 0 8px;
   font-size: 28px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--meme-text);
 }
 
@@ -741,22 +899,61 @@ export default {
   color: var(--meme-text-secondary);
 }
 
+.settings-body-wrap {
+  position: relative;
+}
+
+.settings-page-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--meme-radius-lg);
+  background: color-mix(in srgb, var(--meme-bg-card) 82%, transparent);
+  color: var(--meme-text-secondary);
+  font-size: 14px;
+}
+
+.settings-page-loading__spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--meme-border);
+  border-top-color: var(--meme-primary);
+  border-radius: 50%;
+  animation: sec-spin 0.8s linear infinite;
+}
+
+.settings-body.is-busy {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 .settings-body {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
   min-height: 320px;
 }
 
-.settings-nav {
+.settings-nav-card {
+  position: sticky;
+  top: 76px;
+}
+
+.settings-nav-card :deep(.vs-card__text) {
+  padding: 0 !important;
+}
+
+.settings-nav__list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 12px;
-  border-radius: var(--meme-radius-lg);
-  border: 1px solid var(--meme-border);
-  background: var(--meme-bg-card);
 }
 
 .settings-nav__item {
@@ -764,16 +961,16 @@ export default {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border: none;
   border-radius: 10px;
   background: transparent;
   color: var(--meme-text-secondary);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .settings-nav__item:hover {
@@ -784,62 +981,200 @@ export default {
 .settings-nav__item.is-active {
   color: var(--meme-primary);
   background: var(--meme-primary-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--meme-primary) 22%, transparent);
+}
+
+.settings-nav__item i {
+  font-size: 16px;
+}
+
+.settings-panel-card :deep(.vs-card__text) {
+  padding: 0 !important;
 }
 
 .settings-panel {
   padding: 24px 28px 28px;
-  border-radius: var(--meme-radius-lg);
-  border: 1px solid var(--meme-border);
-  background: var(--meme-gradient-dialog), var(--meme-bg-card);
-  box-shadow: var(--meme-shadow-soft);
+  background:
+    radial-gradient(
+      680px 240px at 100% -20%,
+      color-mix(in srgb, var(--meme-primary) 12%, transparent),
+      transparent 55%
+    ),
+    var(--meme-bg-card);
+}
+
+.settings-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.settings-panel__head--inline {
+  margin-bottom: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-panel__mark {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  font-size: 18px;
+  color: #fff;
+  background: linear-gradient(145deg, var(--meme-primary), var(--meme-primary-dark));
+  box-shadow: 0 8px 18px var(--meme-focus-ring);
+}
+
+.settings-panel__mark--shield {
+  background: linear-gradient(145deg, #34d399, #059669);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--meme-success) 35%, transparent);
 }
 
 .settings-panel__title {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
 .settings-panel__desc {
-  margin: 0 0 22px;
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--meme-text-secondary);
 }
 
-.settings-subtitle {
-  margin: 0 0 14px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--meme-text);
-}
-
 .settings-form {
-  max-width: 480px;
+  max-width: 520px;
 }
 
-.avatar-row {
+.avatar-block {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--meme-border);
+  background: color-mix(in srgb, var(--meme-bg-muted) 70%, var(--meme-bg-elevated));
+}
+
+.avatar-preview-wrap {
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 50%;
+  background: linear-gradient(
+    145deg,
+    var(--meme-primary),
+    color-mix(in srgb, var(--meme-primary) 40%, #fff)
+  );
+  box-shadow: 0 8px 20px var(--meme-focus-ring);
 }
 
 .avatar-preview {
+  display: block;
+  border: 3px solid var(--meme-bg-elevated);
   background: var(--meme-bg-muted);
   color: var(--meme-text-secondary);
   font-weight: 700;
 }
 
+.avatar-actions__title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--meme-text);
+}
+
 .avatar-hint {
-  margin: 8px 0 0;
+  margin: 0 0 12px;
   font-size: 12px;
   color: var(--meme-text-muted);
 }
 
+.gender-segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-muted);
+}
+
+.gender-segment__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 76px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gender-segment__item:hover {
+  color: var(--meme-text);
+  background: color-mix(in srgb, var(--meme-bg-elevated) 70%, transparent);
+}
+
+.gender-segment__item.is-active {
+  background: var(--meme-bg-elevated);
+  color: var(--meme-primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  font-weight: 700;
+}
+
+.gender-segment__item i {
+  font-size: 15px;
+}
+
+.settings-form :deep(.settings-input .vs-input__wrapper),
+.settings-form :deep(.settings-input .vs-input__original) {
+  min-height: 40px;
+  border-radius: 12px !important;
+}
+
+.settings-form :deep(.settings-input--area .vs-input__original),
+.settings-form :deep(.settings-input--area textarea) {
+  min-height: 88px;
+  border-radius: 12px !important;
+  line-height: 1.55;
+}
+
+.settings-date {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-muted);
+  color: var(--meme-text);
+  font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.settings-date:focus {
+  outline: none;
+  border-color: var(--meme-primary);
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 0 0 3px var(--meme-focus-ring);
+}
+
 .form-actions {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .form-actions--split {
@@ -848,16 +1183,88 @@ export default {
   gap: 10px;
 }
 
-/* —— 账号安全 —— */
+.settings-btn {
+  min-height: 38px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.settings-btn:disabled {
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+  opacity: 0.72;
+}
+
+.settings-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
+  box-shadow: 0 6px 16px var(--meme-focus-ring);
+}
+
+.settings-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+
+.settings-btn--soft {
+  color: var(--meme-primary);
+  background: var(--meme-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 28%, var(--meme-border));
+  box-shadow: 0 2px 8px var(--meme-focus-ring);
+}
+
+.settings-btn--soft:hover:not(:disabled) {
+  background: var(--meme-primary-soft);
+  border-color: var(--meme-primary);
+}
+
+.settings-btn--ghost {
+  color: var(--meme-text-secondary);
+  background: var(--meme-bg-muted);
+  border: 1px solid var(--meme-border);
+}
+
+.settings-btn--ghost:hover:not(:disabled) {
+  color: var(--meme-text);
+  background: var(--meme-bg-elevated);
+}
+
+.settings-btn--danger {
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--meme-danger),
+    color-mix(in srgb, var(--meme-danger) 72%, #7f1d1d)
+  );
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--meme-danger) 32%, transparent);
+}
+
+.settings-btn--danger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.is-spinning {
+  display: inline-block;
+  animation: sec-spin 0.8s linear infinite;
+}
+
 .sec-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 4px;
-}
-
-.sec-head .settings-panel__desc {
   margin-bottom: 18px;
 }
 
@@ -889,9 +1296,27 @@ export default {
   cursor: not-allowed;
 }
 
-.sec-refresh .is-spinning {
-  display: inline-block;
-  animation: sec-spin 0.8s linear infinite;
+.sec-health-card {
+  margin-bottom: 22px;
+}
+
+.sec-health-card :deep(.vs-card__text) {
+  padding: 0 !important;
+}
+
+.sec-health-card.is-ok {
+  border-color: color-mix(in srgb, var(--meme-success) 30%, var(--meme-border)) !important;
+  background: var(--meme-success-soft) !important;
+}
+
+.sec-health-card.is-warn {
+  border-color: color-mix(in srgb, var(--meme-warning) 30%, var(--meme-border)) !important;
+  background: var(--meme-warning-soft) !important;
+}
+
+.sec-health-card.is-risk {
+  border-color: color-mix(in srgb, var(--meme-danger) 30%, var(--meme-border)) !important;
+  background: var(--meme-danger-soft) !important;
 }
 
 .sec-health {
@@ -899,24 +1324,6 @@ export default {
   gap: 14px;
   align-items: flex-start;
   padding: 16px 18px;
-  margin-bottom: 24px;
-  border-radius: 14px;
-  border: 1px solid var(--meme-border);
-}
-
-.sec-health--ok {
-  background: var(--meme-success-soft);
-  border-color: color-mix(in srgb, var(--meme-success) 28%, var(--meme-border));
-}
-
-.sec-health--warn {
-  background: var(--meme-warning-soft);
-  border-color: color-mix(in srgb, var(--meme-warning) 28%, var(--meme-border));
-}
-
-.sec-health--risk {
-  background: var(--meme-danger-soft);
-  border-color: color-mix(in srgb, var(--meme-danger) 28%, var(--meme-border));
 }
 
 .sec-health__icon {
@@ -932,15 +1339,15 @@ export default {
   color: var(--meme-text-secondary);
 }
 
-.sec-health--ok .sec-health__icon {
+.sec-health-card.is-ok .sec-health__icon {
   color: var(--meme-success);
 }
 
-.sec-health--warn .sec-health__icon {
+.sec-health-card.is-warn .sec-health__icon {
   color: var(--meme-warning);
 }
 
-.sec-health--risk .sec-health__icon {
+.sec-health-card.is-risk .sec-health__icon {
   color: var(--meme-danger);
 }
 
@@ -964,12 +1371,6 @@ export default {
   text-transform: uppercase;
 }
 
-.sec-health__badge {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--meme-text);
-}
-
 .sec-health__text {
   margin: 0 0 12px;
   font-size: 13px;
@@ -977,30 +1378,19 @@ export default {
   color: var(--meme-text-secondary);
 }
 
-.sec-health__meter {
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--meme-text) 8%, transparent);
-  overflow: hidden;
-}
-
-.sec-health__meter-bar {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
+.sec-health__progress :deep(.ui-progress__bar) {
   background: var(--meme-primary);
-  transition: width 0.35s ease;
 }
 
-.sec-health--ok .sec-health__meter-bar {
+.sec-health__progress.is-ok :deep(.ui-progress__bar) {
   background: var(--meme-success);
 }
 
-.sec-health--warn .sec-health__meter-bar {
+.sec-health__progress.is-warn :deep(.ui-progress__bar) {
   background: var(--meme-warning);
 }
 
-.sec-health--risk .sec-health__meter-bar {
+.sec-health__progress.is-risk :deep(.ui-progress__bar) {
   background: var(--meme-danger);
 }
 
@@ -1009,6 +1399,9 @@ export default {
 }
 
 .sec-section__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 700;
@@ -1017,14 +1410,21 @@ export default {
   text-transform: uppercase;
 }
 
+.sec-section__title i {
+  font-size: 15px;
+  color: var(--meme-primary);
+}
+
+.sec-list-card :deep(.vs-card__text),
+.sec-password-card :deep(.vs-card__text),
+.sec-danger-card :deep(.vs-card__text) {
+  padding: 0 !important;
+}
+
 .sec-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--meme-border);
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--meme-bg-card);
 }
 
 .sec-item {
@@ -1032,7 +1432,7 @@ export default {
   grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 16px 16px;
+  padding: 16px;
 }
 
 .sec-item + .sec-item {
@@ -1098,6 +1498,7 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   min-height: 34px;
   padding: 0 14px;
   border: 1px solid var(--meme-border-accent);
@@ -1115,7 +1516,6 @@ export default {
 .sec-action-btn:hover {
   border-color: var(--meme-primary);
   color: var(--meme-primary-dark);
-  filter: brightness(1.06);
 }
 
 .sec-action-btn--muted {
@@ -1127,54 +1527,18 @@ export default {
 .sec-action-btn--muted:hover {
   color: var(--meme-text);
   border-color: var(--meme-border-strong);
-  filter: none;
 }
 
-.sec-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.sec-tag--ok {
-  color: var(--meme-success);
-  background: var(--meme-success-soft);
-}
-
-.sec-tag--warn {
-  color: var(--meme-warning);
-  background: var(--meme-warning-soft);
+.sec-password-card {
+  margin-top: 12px;
 }
 
 .sec-password {
-  margin-top: 12px;
   padding: 16px 16px 8px;
-  border-radius: 14px;
-  border: 1px solid var(--meme-border-accent);
-  background: var(--meme-gradient-card);
 }
 
-.sec-password__tip {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
+.sec-password__alert {
   margin-bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--meme-primary-soft);
-  color: var(--meme-accent-text);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.sec-password__tip i {
-  flex-shrink: 0;
-  margin-top: 1px;
-  font-size: 15px;
 }
 
 .pwd-meter {
@@ -1228,15 +1592,17 @@ export default {
   color: var(--meme-success);
 }
 
+.sec-danger-card {
+  border-color: color-mix(in srgb, var(--meme-danger) 28%, var(--meme-border)) !important;
+  background: var(--meme-danger-soft) !important;
+}
+
 .sec-danger {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--meme-danger) 28%, var(--meme-border));
-  background: var(--meme-danger-soft);
 }
 
 .sec-danger__head {
@@ -1246,11 +1612,22 @@ export default {
   min-width: 0;
 }
 
-.sec-danger__head > i {
+.sec-danger__icon {
   flex-shrink: 0;
-  font-size: 22px;
-  color: var(--meme-danger);
-  margin-top: 2px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 20px;
+  color: #fff;
+  background: linear-gradient(
+    145deg,
+    var(--meme-danger),
+    color-mix(in srgb, var(--meme-danger) 70%, #7f1d1d)
+  );
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--meme-danger) 30%, transparent);
 }
 
 .sec-danger__title {
@@ -1289,8 +1666,13 @@ export default {
     grid-template-columns: 1fr;
   }
 
-  .settings-nav {
+  .settings-nav-card {
+    position: static;
+  }
+
+  .settings-nav__list {
     flex-direction: row;
+    padding: 10px;
   }
 
   .settings-nav__item {
@@ -1300,6 +1682,11 @@ export default {
 
   .settings-panel {
     padding: 20px 16px 24px;
+  }
+
+  .avatar-block {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .sec-item {

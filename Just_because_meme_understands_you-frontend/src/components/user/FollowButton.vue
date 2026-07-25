@@ -24,7 +24,7 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/uiFeedback'
 import { followUser, unfollowUser, getFollowStatus } from '@/api/follow'
 import { useAuthStore } from '@/stores/auth'
 
@@ -165,7 +165,7 @@ export default {
       if (this.loading || this.disabled || this.hidden) return
       if (!this.requireLogin()) return
       if (!/^\d+$/.test(this.targetId)) {
-        ElMessage.warning('用户无效')
+        toast.warning('用户无效')
         return
       }
 
@@ -181,10 +181,10 @@ export default {
         if (epoch !== this.statusEpoch) return
         this.applyResult(data)
         this.hoverCancel = false
-        ElMessage.success(nextFollow ? '关注成功' : '已取消关注')
+        toast.success(nextFollow ? '关注成功' : '已取消关注')
       } catch (err) {
         if (epoch === this.statusEpoch) {
-          ElMessage.error((err && err.message) || (nextFollow ? '关注失败' : '取消关注失败'))
+          toast.error((err && err.message) || (nextFollow ? '关注失败' : '取消关注失败'))
         }
       } finally {
         if (epoch === this.statusEpoch) {

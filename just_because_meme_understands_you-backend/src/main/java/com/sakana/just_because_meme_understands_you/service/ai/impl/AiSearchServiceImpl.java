@@ -20,6 +20,7 @@ import com.sakana.just_because_meme_understands_you.service.ai.support.AiBusines
 import com.sakana.just_because_meme_understands_you.service.ai.support.AiRateLimiter;
 import com.sakana.just_because_meme_understands_you.service.ai.support.TokenBudgetTrimmer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
@@ -27,6 +28,7 @@ import reactor.core.publisher.Flux;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -66,7 +68,7 @@ public class AiSearchServiceImpl implements IAiSearchService {
     }
 
     @Override
-    public Flux<String> streamSearch(Long userId, AiSearchStreamRequestDTO request) {
+    public Flux<ServerSentEvent<String>> streamSearch(Long userId, AiSearchStreamRequestDTO request) {
         if (!memeAgentClient.isConfigured()) {
             throw new BizException(Result.CODE_ERROR, "AI 搜索服务未配置");
         }
@@ -82,11 +84,12 @@ public class AiSearchServiceImpl implements IAiSearchService {
         AiChatSession session = resolveSession(userId, request.getSessionId(), query);
         Long sessionId = session.getId();
 
-        // 先读历史再写本轮 user，避免 messages 与 query 重复同一句
         List<AiChatMessage> history = loadHistory(sessionId);
         saveMessage(sessionId, "user", query, requestId);
 
-        Flux<String> sessionEvent = Flux.just(formatSessionEvent(sessionId, requestId));
+        Flux<ServerSentEvent<String>> sessionEvent = Flux.just(sse(
+                "session",
+                Map.of("session_id", String.valueOf(sessionId), "request_id", requestId)));
 
         Optional<String> cached = aiAnswerCache.get(userId, query);
         if (cached.isPresent()) {
@@ -97,7 +100,6 @@ public class AiSearchServiceImpl implements IAiSearchService {
         }
 
         List<AiChatMessage> trimmed = tokenBudgetTrimmer.trim(history, properties.getAi().getMaxHistoryTokens());
-
         MemeAgentStreamRequestDTO agentRequest = buildAgentRequest(
                 userId, sessionId, requestId, query, trimmed);
 
@@ -106,7 +108,11 @@ public class AiSearchServiceImpl implements IAiSearchService {
         return Flux.concat(
                 sessionEvent,
                 memeAgentClient.stream(agentRequest)
-                        .doOnNext(chunk -> accumulateAssistant(chunk, assistantBuffer))
+                        .doOnNext(event -> accumulateAssistant(event, assistantBuffer))
+                        .onErrorResume(e -> {
+                            log.error("AI stream error userId={} sessionId={}", userId, sessionId, e);
+                            return Flux.just(formatErrorEvent(e));
+                        })
                         .doOnComplete(() -> {
                             String answer = assistantBuffer.get().toString();
                             if (StringUtils.hasText(answer)) {
@@ -114,50 +120,59 @@ public class AiSearchServiceImpl implements IAiSearchService {
                                 aiAnswerCache.put(userId, query, answer);
                             }
                             touchSession(sessionId);
-                        })
-                        .doOnError(e -> log.error("AI stream error userId={} sessionId={}", userId, sessionId, e)));
+                        }));
     }
 
-    /** 告知前端本轮会话 id（新建会话时尤其重要） */
-    private static String formatSessionEvent(Long sessionId, String requestId) {
-        return "event: session\ndata: {\"session_id\":\"" + sessionId
-                + "\",\"request_id\":\"" + requestId + "\"}\n\n";
-    }
-
-    private Flux<String> replayCachedAnswer(String requestId, String answer) {
-        String meta = "event: meta\ndata: {\"request_id\":\"" + requestId + "\",\"retrieved\":[]}\n\n";
-        StringBuilder tokens = new StringBuilder();
+    private Flux<ServerSentEvent<String>> replayCachedAnswer(String requestId, String answer) {
+        List<ServerSentEvent<String>> events = new ArrayList<>();
+        events.add(sse("meta", Map.of("request_id", requestId, "retrieved", List.of())));
         int step = 32;
         for (int i = 0; i < answer.length(); i += step) {
             String piece = answer.substring(i, Math.min(i + step, answer.length()));
-            tokens.append("event: token\ndata: {\"text\":")
-                    .append(aiAnswerCache.toJson(piece))
-                    .append("}\n\n");
+            events.add(sse("token", Map.of("text", piece)));
         }
-        String done = "event: done\ndata: {\"finish_reason\":\"cache\",\"usage\":{}}\n\n";
-        return Flux.just(meta, tokens.toString(), done);
+        events.add(sse("done", Map.of("finish_reason", "cache", "usage", Map.of())));
+        return Flux.fromIterable(events);
     }
 
-    private void accumulateAssistant(String chunk, AtomicReference<StringBuilder> buffer) {
-        if (!StringUtils.hasText(chunk)) {
+    private void accumulateAssistant(ServerSentEvent<String> event,
+                                     AtomicReference<StringBuilder> buffer) {
+        if (event == null || !StringUtils.hasText(event.data())) {
+            return;
+        }
+        String eventName = event.event() != null ? event.event() : "";
+        // WebClient 解码后通常只有 data；token 事件名可能为空，按 JSON 字段兼容
+        if (StringUtils.hasText(eventName) && !"token".equals(eventName) && !"message".equals(eventName)) {
             return;
         }
         try {
-            for (String line : chunk.split("\n")) {
-                if (!line.startsWith("data:")) {
-                    continue;
-                }
-                String json = line.substring(5).trim();
-                if (!StringUtils.hasText(json)) {
-                    continue;
-                }
-                JsonNode node = objectMapper.readTree(json);
-                if (node.has("text")) {
-                    buffer.get().append(node.get("text").asText(""));
-                }
+            JsonNode node = objectMapper.readTree(event.data());
+            if (node.has("text")) {
+                buffer.get().append(node.get("text").asText(""));
             }
         } catch (Exception e) {
-            log.debug("Skip non-json sse chunk", e);
+            log.debug("Skip non-json sse data", e);
+        }
+    }
+
+    private ServerSentEvent<String> formatErrorEvent(Throwable error) {
+        String message = error != null && StringUtils.hasText(error.getMessage())
+                ? error.getMessage()
+                : "AI 搜索上游失败";
+        return sse("error", Map.of("code", "upstream_error", "message", message));
+    }
+
+    private ServerSentEvent<String> sse(String event, Object payload) {
+        try {
+            return ServerSentEvent.<String>builder()
+                    .event(event)
+                    .data(objectMapper.writeValueAsString(payload))
+                    .build();
+        } catch (Exception e) {
+            return ServerSentEvent.<String>builder()
+                    .event(event)
+                    .data("{\"message\":\"sse_encode_error\"}")
+                    .build();
         }
     }
 
@@ -168,9 +183,16 @@ public class AiSearchServiceImpl implements IAiSearchService {
                                                         List<AiChatMessage> trimmed) {
         List<MemeAgentStreamRequestDTO.ChatMessage> messages = new ArrayList<>();
         for (AiChatMessage msg : trimmed) {
+            if (msg == null || !StringUtils.hasText(msg.getRole()) || !StringUtils.hasText(msg.getContent())) {
+                continue;
+            }
+            String role = msg.getRole().trim().toLowerCase();
+            if (!"user".equals(role) && !"assistant".equals(role) && !"system".equals(role)) {
+                continue;
+            }
             messages.add(MemeAgentStreamRequestDTO.ChatMessage.builder()
-                    .role(msg.getRole())
-                    .content(msg.getContent())
+                    .role(role)
+                    .content(msg.getContent().trim())
                     .build());
         }
         AiBusinessContextAssembler.AssembledContext assembled = businessContextAssembler.assemble(query);
@@ -185,7 +207,9 @@ public class AiSearchServiceImpl implements IAiSearchService {
                         .hintMemeIds(assembled.hintMemeIds())
                         .extra(assembled.extra())
                         .build())
-                .maxTokens(properties.getAi().getMaxOutputTokens())
+                .maxTokens(Math.min(
+                        Math.max(64, properties.getAi().getMaxOutputTokens()),
+                        2048))
                 .build();
     }
 

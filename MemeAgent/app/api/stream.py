@@ -12,11 +12,11 @@ router = APIRouter(tags=["stream"])
 
 @router.post("/stream")
 async def stream_search(
-    body: StreamRequest,
-    _: InternalAuth,
+    payload: StreamRequest,
+    _auth: InternalAuth,
 ) -> StreamingResponse:
     async def event_generator() -> AsyncIterator[str]:
-        async for chunk in stream_ai_search(body):
+        async for chunk in stream_ai_search(payload):
             yield chunk
 
     return StreamingResponse(

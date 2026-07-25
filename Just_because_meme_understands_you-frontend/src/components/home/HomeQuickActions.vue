@@ -1,14 +1,15 @@
 <template>
   <section class="home-quick-actions" aria-label="快捷入口">
     <button
-      v-for="action in actions"
+      v-for="(action, index) in actions"
       :key="action.key"
       type="button"
       class="home-quick-actions__item"
+      :style="{ '--delay': `${index * 40}ms` }"
       @click="$emit('action', action)"
     >
       <span class="home-quick-actions__icon" aria-hidden="true">
-        <component :is="iconFor(action.key)" />
+        <i :class="iconClass(action.key)" />
       </span>
       <span class="home-quick-actions__label">{{ action.label }}</span>
     </button>
@@ -16,53 +17,11 @@
 </template>
 
 <script>
-import { h } from 'vue'
-
-const ICONS = {
-  publish: () => h('svg', { viewBox: '0 0 24 24', fill: 'none' }, [
-    h('path', {
-      d: 'M12 5v14M5 12h14',
-      stroke: 'currentColor',
-      'stroke-width': '2',
-      'stroke-linecap': 'round',
-    }),
-  ]),
-  search: () => h('svg', { viewBox: '0 0 24 24', fill: 'none' }, [
-    h('circle', { cx: '11', cy: '11', r: '6.5', stroke: 'currentColor', 'stroke-width': '1.75' }),
-    h('path', {
-      d: 'M16 16l4.5 4.5',
-      stroke: 'currentColor',
-      'stroke-width': '1.75',
-      'stroke-linecap': 'round',
-    }),
-  ]),
-  favorites: () => h('svg', { viewBox: '0 0 24 24', fill: 'none' }, [
-    h('path', {
-      d: 'M12 3.5l2.38 4.82 5.32.77-3.85 3.75.91 5.3L12 15.9l-4.76 2.24.91-5.3-3.85-3.75 5.32-.77L12 3.5Z',
-      stroke: 'currentColor',
-      'stroke-width': '1.5',
-      'stroke-linejoin': 'round',
-    }),
-  ]),
-  ai: () => h('svg', { viewBox: '0 0 24 24', fill: 'none' }, [
-    h('rect', {
-      x: '5',
-      y: '7',
-      width: '14',
-      height: '10',
-      rx: '3',
-      stroke: 'currentColor',
-      'stroke-width': '1.75',
-    }),
-    h('circle', { cx: '9.5', cy: '12', r: '1.2', fill: 'currentColor' }),
-    h('circle', { cx: '14.5', cy: '12', r: '1.2', fill: 'currentColor' }),
-    h('path', {
-      d: 'M12 4v3M9 19h6',
-      stroke: 'currentColor',
-      'stroke-width': '1.75',
-      'stroke-linecap': 'round',
-    }),
-  ]),
+const ICON_MAP = {
+  publish: 'ri-add-circle-line',
+  search: 'ri-search-2-line',
+  favorites: 'ri-star-line',
+  ai: 'ri-sparkling-2-line',
 }
 
 export default {
@@ -75,8 +34,8 @@ export default {
   },
   emits: ['action'],
   methods: {
-    iconFor(key) {
-      return ICONS[key] || ICONS.search
+    iconClass(key) {
+      return ICON_MAP[key] || 'ri-compass-3-line'
     },
   },
 }
@@ -86,43 +45,71 @@ export default {
 .home-quick-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .home-quick-actions__item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 42px;
-  padding: 8px 12px;
-  border: 1px solid var(--meme-border-accent);
-  border-radius: 12px;
-  background: var(--meme-gradient-card);
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--meme-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 82%, transparent);
+  backdrop-filter: blur(8px);
   color: var(--meme-text);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  animation: home-qa-in 0.3s ease-out both;
+  animation-delay: var(--delay, 0ms);
 }
 
 .home-quick-actions__item:hover {
+  border-color: var(--meme-border-accent);
+  background: var(--meme-bg-elevated);
+  box-shadow: var(--meme-shadow-soft);
   transform: translateY(-1px);
-  border-color: var(--meme-primary);
-  box-shadow: var(--meme-shadow-card);
 }
 
 .home-quick-actions__icon {
   display: inline-flex;
-  width: 20px;
-  height: 20px;
-  color: var(--meme-primary);
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
+  color: #fff;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: 0 3px 8px var(--meme-focus-ring);
 }
 
-.home-quick-actions__icon :deep(svg) {
-  width: 100%;
-  height: 100%;
+.home-quick-actions__label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+@keyframes home-qa-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-quick-actions__item {
+    animation: none;
+  }
 }
 
 @media (max-width: 860px) {

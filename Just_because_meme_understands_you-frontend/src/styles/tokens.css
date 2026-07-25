@@ -4,18 +4,17 @@
  * - html.dark → 深色
  *
  * 页面禁止写暗色分支；改色只改这里。
- * Element Plus 由官方 dark/css-vars.css + html.dark 驱动。
+ * Vuesax Alpha 主题色与业务 Token 对齐。
  */
 
 :root {
   color-scheme: light;
 
-  --el-color-primary: #318aef;
-  --el-color-primary-light-3: #6ba8f2;
-  --el-color-primary-light-5: #9ac5f6;
-  --el-color-primary-light-7: #c9e1fa;
-  --el-color-primary-light-9: #e8f2fd;
-  --el-color-primary-dark-2: #2872d4;
+  /* Vuesax 要求 RGB 三元组，供 rgba(var(--vs-*), a) 使用 */
+  --vs-primary: 49, 138, 239;
+  --vs-success: 5, 150, 105;
+  --vs-danger: 225, 29, 72;
+  --vs-warn: 217, 119, 6;
 
   --meme-primary: #318aef;
   --meme-primary-dark: #2872d4;
@@ -67,12 +66,10 @@
 html.dark {
   color-scheme: dark;
 
-  --el-color-primary: #5ba8ff;
-  --el-color-primary-light-3: #7cbaff;
-  --el-color-primary-light-5: #9dcbff;
-  --el-color-primary-light-7: #2b4060;
-  --el-color-primary-light-9: #1c2a40;
-  --el-color-primary-dark-2: #3d8eef;
+  --vs-primary: 91, 168, 255;
+  --vs-success: 52, 211, 153;
+  --vs-danger: 251, 113, 133;
+  --vs-warn: 251, 191, 36;
 
   --meme-primary: #5ba8ff;
   --meme-primary-dark: #3d8eef;
@@ -92,29 +89,27 @@ html.dark {
   --meme-text: #e8eef7;
   --meme-text-secondary: #9aa8bc;
   --meme-text-muted: #6b7a90;
-  --meme-text-inverse: #ffffff;
+  --meme-text-inverse: #0e1218;
 
   --meme-danger: #fb7185;
-  --meme-danger-soft: #3b1d28;
+  --meme-danger-soft: rgba(251, 113, 133, 0.16);
   --meme-warning: #fbbf24;
-  --meme-warning-soft: #3b2e14;
+  --meme-warning-soft: rgba(251, 191, 36, 0.14);
   --meme-success: #34d399;
-  --meme-success-soft: #14352b;
-  --meme-overlay: rgba(4, 8, 14, 0.68);
+  --meme-success-soft: rgba(52, 211, 153, 0.14);
+  --meme-overlay: rgba(0, 0, 0, 0.55);
   --meme-focus-ring: rgba(91, 168, 255, 0.32);
 
-  --meme-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.35);
-  --meme-shadow-dialog: 0 28px 56px rgba(0, 0, 0, 0.55);
-  --meme-shadow-soft: 0 10px 32px rgba(0, 0, 0, 0.28);
+  --meme-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --meme-shadow-dialog: 0 24px 48px rgba(0, 0, 0, 0.5);
+  --meme-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
 
-  --meme-gradient-page: radial-gradient(ellipse at 18% -8%, rgba(91, 168, 255, 0.14) 0%, transparent 46%),
-    radial-gradient(ellipse at 88% 0%, rgba(82, 199, 184, 0.06) 0%, transparent 40%),
-    linear-gradient(180deg, #121820 0%, #0e1218 100%);
-  --meme-gradient-dialog: radial-gradient(120% 80% at 50% -10%, rgba(91, 168, 255, 0.14), transparent 55%);
-  --meme-gradient-hero: radial-gradient(circle at 92% 8%, rgba(91, 168, 255, 0.16), transparent 44%),
-    radial-gradient(circle at 6% 92%, rgba(82, 199, 184, 0.08), transparent 40%),
-    linear-gradient(155deg, #1a2433 0%, #151c28 55%, #121820 100%);
-  --meme-gradient-card: linear-gradient(180deg, #1c2430 0%, #171d27 100%);
-  --meme-hero-fade: linear-gradient(90deg, transparent 78%, rgba(14, 18, 24, 0.45) 100%);
+  --meme-gradient-page: radial-gradient(ellipse at 12% -10%, rgba(91, 168, 255, 0.1) 0%, transparent 42%),
+    linear-gradient(180deg, #0e1218 0%, #121820 100%);
+  --meme-gradient-dialog: radial-gradient(120% 80% at 50% -10%, rgba(91, 168, 255, 0.12), transparent 55%);
+  --meme-gradient-hero: radial-gradient(circle at 92% 8%, rgba(91, 168, 255, 0.1), transparent 44%),
+    linear-gradient(155deg, #141a24 0%, #171d27 52%, #121820 100%);
+  --meme-gradient-card: linear-gradient(180deg, #1a222e 0%, #171d27 100%);
+  --meme-hero-fade: linear-gradient(90deg, transparent 82%, rgba(23, 29, 39, 0.65) 100%);
   --meme-surface-ghost: rgba(28, 36, 48, 0.88);
 }

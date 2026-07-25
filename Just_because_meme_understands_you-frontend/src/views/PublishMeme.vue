@@ -1,243 +1,313 @@
 <template>
   <div class="publish-page">
     <header class="publish-hero">
+      <p class="publish-hero-kicker">PUBLISH</p>
       <h1 class="publish-hero-title">发布梗</h1>
       <p class="publish-hero-sub">
         分享你知道的梗，填写基础信息并附上延伸阅读，帮助更多人快速 get 到点。
       </p>
     </header>
 
-    <el-card class="publish-card" shadow="never">
-      <el-form :model="form" label-position="top" class="publish-form" size="large">
-        <!-- 基础信息 -->
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-icon section-icon--primary">✦</span>
-            <div>
-              <h3 class="section-title">基础信息</h3>
-              <p class="section-hint">名称与介绍会展示在梗详情页顶部</p>
-            </div>
-          </div>
-
-          <el-form-item label="梗名称" required>
-            <el-input
-              v-model="form.name"
-              maxlength="50"
-              show-word-limit
-              placeholder="给这个梗起个名字"
-            />
-          </el-form-item>
-
-          <el-form-item label="梗介绍" required>
-            <el-input
-              v-model="form.introduction"
-              type="textarea"
-              :rows="4"
-              maxlength="500"
-              show-word-limit
-              placeholder="介绍一下这个梗的来源、出处、怎么用…"
-            />
-          </el-form-item>
-        </section>
-
-        <!-- 封面与标签 -->
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-icon section-icon--cover">🖼</span>
-            <div>
-              <h3 class="section-title">封面与标签</h3>
-              <p class="section-hint">封面用于列表展示，标签帮助用户发现你的梗</p>
-            </div>
-          </div>
-
-          <el-form-item label="封面图" required>
-            <div class="cover-uploader">
-              <div v-if="form.image" class="upload-tile upload-tile--cover upload-tile--filled">
-                <el-image :src="form.image" fit="cover" class="upload-preview" />
-                <button type="button" class="upload-remove" aria-label="移除封面" @click="form.image = ''">
-                  <el-icon><Close /></el-icon>
-                </button>
-                <span class="upload-badge">封面</span>
+    <vs-card class="publish-card">
+      <template #text>
+        <ui-form :model="form" label-position="top" class="publish-form">
+          <section class="form-section">
+            <div class="section-head">
+              <span class="section-icon section-icon--primary" aria-hidden="true">
+                <i class="ri-edit-2-line" />
+              </span>
+              <div>
+                <h3 class="section-title">基础信息</h3>
+                <p class="section-hint">名称与介绍会展示在梗详情页顶部</p>
               </div>
-              <label v-else class="upload-tile upload-tile--cover upload-tile--empty">
+            </div>
+
+            <ui-form-item label="梗名称" required>
+              <vs-input
+                v-model="form.name"
+                block
+                clearable
+                maxlength="50"
+                placeholder="给这个梗起个名字"
+                class="publish-field"
+              />
+            </ui-form-item>
+
+            <ui-form-item label="梗介绍">
+              <vs-input
+                v-model="form.introduction"
+                type="textarea"
+                block
+                :rows="4"
+                maxlength="500"
+                placeholder="介绍一下这个梗的来源、出处、怎么用…（选填）"
+                class="publish-field publish-field--textarea"
+              />
+            </ui-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head">
+              <span class="section-icon" aria-hidden="true">
+                <i class="ri-image-2-line" />
+              </span>
+              <div>
+                <h3 class="section-title">封面与标签</h3>
+                <p class="section-hint">封面用于列表展示，标签帮助用户发现你的梗</p>
+              </div>
+            </div>
+
+            <ui-form-item label="封面图" required>
+              <div class="cover-uploader">
+                <div
+                  v-if="form.image"
+                  class="upload-tile upload-tile--cover upload-tile--filled upload-tile--previewable"
+                  role="button"
+                  tabindex="0"
+                  aria-label="点击放大查看封面"
+                  @click="openImagePreview(form.image)"
+                  @keydown.enter.prevent="openImagePreview(form.image)"
+                >
+                  <ui-image :src="form.image" fit="cover" class="upload-preview" />
+                  <button
+                    type="button"
+                    class="upload-remove"
+                    aria-label="移除封面"
+                    @click.stop="form.image = ''"
+                  >
+                    <i class="ri-close-line" />
+                  </button>
+                  <span class="upload-badge">封面</span>
+                  <span class="upload-zoom-hint" aria-hidden="true">
+                    <i class="ri-zoom-in-line" />
+                  </span>
+                </div>
+                <label v-else class="upload-tile upload-tile--cover upload-tile--empty">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    class="upload-input"
+                    :disabled="coverUploading"
+                    @change="onCoverChange"
+                  />
+                  <i class="ri-image-add-line upload-icon" aria-hidden="true" />
+                  <span class="upload-label">{{ coverUploading ? '上传中…' : '点击上传封面' }}</span>
+                  <span class="upload-tip">JPG / PNG / WebP / GIF，≤ 10MB</span>
+                </label>
+              </div>
+            </ui-form-item>
+
+            <ui-form-item label="标签">
+              <vs-select
+                v-model="form.tagIds"
+                multiple
+                filter
+                block
+                placeholder="选择标签（选填）"
+                class="tag-select"
+              >
+                <vs-option
+                  v-for="tag in tags"
+                  :key="tag.id"
+                  :label="tag.name"
+                  :value="tag.id"
+                >
+                  {{ tag.name }}
+                </vs-option>
+              </vs-select>
+            </ui-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="section-head section-head--with-action">
+              <div class="section-head-main">
+                <span class="section-icon" aria-hidden="true">
+                  <i class="ri-links-line" />
+                </span>
+                <div>
+                  <h3 class="section-title">相关链接</h3>
+                  <p class="section-hint">B 站、百科、原文报道等外链，最多 10 条</p>
+                </div>
+              </div>
+              <vs-button
+                v-if="form.resources.length < 10"
+                type="border"
+                color="primary"
+                size="small"
+                class="section-add-btn"
+                @click="addLink"
+              >
+                <i class="ri-add-line" aria-hidden="true" />
+                添加链接
+              </vs-button>
+            </div>
+
+            <div v-if="form.resources.length" class="link-list">
+              <div
+                v-for="(item, idx) in form.resources"
+                :key="`link-${idx}`"
+                class="link-card"
+              >
+                <div class="link-card-index">{{ idx + 1 }}</div>
+                <div class="link-card-body">
+                  <div class="link-card-row">
+                    <vs-select v-model="item.type" class="link-type-select" placeholder="类型">
+                      <vs-option label="通用链接" value="link" />
+                      <vs-option label="文章" value="article" />
+                      <vs-option label="视频" value="video" />
+                    </vs-select>
+                    <vs-input
+                      v-model="item.title"
+                      block
+                      maxlength="128"
+                      placeholder="给链接起个标题，如「原视频出处」"
+                      class="link-title-input"
+                    />
+                  </div>
+                  <vs-input
+                    v-model="item.url"
+                    block
+                    maxlength="500"
+                    placeholder="https://..."
+                    class="link-url-input"
+                  >
+                    <template #icon>
+                      <i class="ri-link" aria-hidden="true" />
+                    </template>
+                  </vs-input>
+                </div>
+                <button
+                  type="button"
+                  class="link-card-remove"
+                  aria-label="删除链接"
+                  @click="removeLink(idx)"
+                >
+                  <i class="ri-delete-bin-line" />
+                </button>
+              </div>
+            </div>
+
+            <button v-else type="button" class="link-empty" @click="addLink">
+              <i class="ri-link link-empty-icon" aria-hidden="true" />
+              <span class="link-empty-title">还没有添加相关链接</span>
+              <span class="link-empty-desc">点击此处或上方按钮，添加 B 站、百科等延伸阅读</span>
+            </button>
+          </section>
+
+          <section class="form-section form-section--last">
+            <div class="section-head">
+              <span class="section-icon" aria-hidden="true">
+                <i class="ri-attachment-2" />
+              </span>
+              <div>
+                <h3 class="section-title">相关资源</h3>
+                <p class="section-hint">补充图片 / GIF，最多 6 张，与外链分开存储</p>
+              </div>
+            </div>
+
+            <div class="resource-uploader">
+              <div
+                v-for="(url, idx) in form.resourceUrls"
+                :key="`res-${idx}`"
+                class="upload-tile upload-tile--resource upload-tile--filled upload-tile--previewable"
+                role="button"
+                tabindex="0"
+                aria-label="点击放大查看资源图"
+                @click="openImagePreview(url)"
+                @keydown.enter.prevent="openImagePreview(url)"
+              >
+                <ui-image :src="url" fit="cover" class="upload-preview" />
+                <button
+                  type="button"
+                  class="upload-remove"
+                  aria-label="移除资源"
+                  @click.stop="removeResource(idx)"
+                >
+                  <i class="ri-close-line" />
+                </button>
+                <span class="upload-zoom-hint" aria-hidden="true">
+                  <i class="ri-zoom-in-line" />
+                </span>
+              </div>
+              <label v-if="form.resourceUrls.length < 6" class="upload-tile upload-tile--resource upload-tile--empty">
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   class="upload-input"
-                  @change="onCoverChange"
+                  :disabled="resourceUploading"
+                  @change="onResourceChange"
                 />
-                <el-icon class="upload-icon" :size="28"><Picture /></el-icon>
-                <span class="upload-label">{{ coverUploading ? '上传中…' : '点击上传封面' }}</span>
-                <span class="upload-tip">JPG / PNG / WebP / GIF，≤ 10MB</span>
+                <i class="ri-add-line upload-icon" aria-hidden="true" />
+                <span class="upload-label">{{ resourceUploading ? '上传中…' : '添加资源' }}</span>
               </label>
             </div>
-          </el-form-item>
+          </section>
 
-          <el-form-item label="标签" required>
-            <el-select
-              v-model="form.tagIds"
-              multiple
-              filterable
-              placeholder="选择至少一个标签"
-              class="tag-select"
-            >
-              <el-option
-                v-for="tag in tags"
-                :key="tag.id"
-                :label="tag.name"
-                :value="tag.id"
-              />
-            </el-select>
-          </el-form-item>
-        </section>
-
-        <!-- 相关链接 -->
-        <section class="form-section">
-          <div class="section-head section-head--with-action">
-            <div class="section-head-main">
-              <span class="section-icon section-icon--link">🔗</span>
-              <div>
-                <h3 class="section-title">相关链接</h3>
-                <p class="section-hint">B 站、百科、原文报道等外链，最多 10 条</p>
-              </div>
-            </div>
-            <el-button
-              v-if="form.resources.length < 10"
-              class="section-add-btn"
-              round
-              @click="addLink"
-            >
-              <el-icon><Plus /></el-icon>
-              添加链接
-            </el-button>
-          </div>
-
-          <div v-if="form.resources.length" class="link-list">
-            <div
-              v-for="(item, idx) in form.resources"
-              :key="`link-${idx}`"
-              class="link-card"
-            >
-              <div class="link-card-index">{{ idx + 1 }}</div>
-              <div class="link-card-body">
-                <div class="link-card-row">
-                  <el-select v-model="item.type" class="link-type-select" placeholder="类型">
-                    <el-option label="通用链接" value="link">
-                      <span class="link-type-option"><el-icon><Link /></el-icon> 通用链接</span>
-                    </el-option>
-                    <el-option label="文章" value="article">
-                      <span class="link-type-option"><el-icon><Document /></el-icon> 文章</span>
-                    </el-option>
-                    <el-option label="视频" value="video">
-                      <span class="link-type-option"><el-icon><VideoCamera /></el-icon> 视频</span>
-                    </el-option>
-                  </el-select>
-                  <el-input
-                    v-model="item.title"
-                    maxlength="128"
-                    show-word-limit
-                    placeholder="给链接起个标题，如「原视频出处」"
-                    class="link-title-input"
-                  />
-                </div>
-                <el-input
-                  v-model="item.url"
-                  maxlength="500"
-                  placeholder="https://..."
-                  class="link-url-input"
-                >
-                  <template #prefix>
-                    <el-icon class="link-url-prefix"><Link /></el-icon>
-                  </template>
-                </el-input>
-              </div>
-              <button
-                type="button"
-                class="link-card-remove"
-                aria-label="删除链接"
-                @click="removeLink(idx)"
+          <footer class="publish-footer">
+            <p class="publish-footer-hint">
+              <i class="ri-shield-check-line" aria-hidden="true" />
+              提交后将进入审核，通过后会在首页展示
+            </p>
+            <div class="publish-actions">
+              <vs-button
+                type="border"
+                color="primary"
+                class="publish-cancel-btn"
+                :disabled="submitting"
+                @click="goBack"
               >
-                <el-icon><Delete /></el-icon>
-              </button>
+                取消
+              </vs-button>
+              <vs-button
+                color="primary"
+                :loading="submitting"
+                :disabled="!canSubmit || submitting"
+                class="publish-submit-btn"
+                @click="handleSubmit"
+              >
+                <span class="publish-submit-inner">
+                  <i v-if="!submitting" class="ri-send-plane-2-line" aria-hidden="true" />
+                  发布梗
+                </span>
+              </vs-button>
             </div>
-          </div>
+          </footer>
+        </ui-form>
+      </template>
+    </vs-card>
 
-          <div v-else class="link-empty" @click="addLink">
-            <el-icon class="link-empty-icon" :size="32"><Link /></el-icon>
-            <p class="link-empty-title">还没有添加相关链接</p>
-            <p class="link-empty-desc">点击此处或上方按钮，添加 B 站、百科等延伸阅读</p>
-          </div>
-        </section>
-
-        <!-- 相关资源 -->
-        <section class="form-section form-section--last">
-          <div class="section-head">
-            <span class="section-icon section-icon--media">📎</span>
-            <div>
-              <h3 class="section-title">相关资源</h3>
-              <p class="section-hint">补充图片 / GIF，最多 6 张，与外链分开存储</p>
-            </div>
-          </div>
-
-          <div class="resource-uploader">
-            <div
-              v-for="(url, idx) in form.resourceUrls"
-              :key="`res-${idx}`"
-              class="upload-tile upload-tile--resource upload-tile--filled"
-            >
-              <el-image :src="url" fit="cover" class="upload-preview" />
-              <button type="button" class="upload-remove" aria-label="移除资源" @click="removeResource(idx)">
-                <el-icon><Close /></el-icon>
-              </button>
-            </div>
-            <label v-if="form.resourceUrls.length < 6" class="upload-tile upload-tile--resource upload-tile--empty">
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                class="upload-input"
-                @change="onResourceChange"
-              />
-              <el-icon class="upload-icon" :size="24"><Plus /></el-icon>
-              <span class="upload-label">{{ resourceUploading ? '上传中…' : '添加资源' }}</span>
-            </label>
-          </div>
-        </section>
-
-        <footer class="publish-footer">
-          <p class="publish-footer-hint">提交后将进入审核，通过后会在首页展示</p>
-          <div class="publish-actions">
-            <el-button size="large" round @click="goBack">取消</el-button>
-            <el-button
-              type="primary"
-              size="large"
-              round
-              :loading="submitting"
-              :disabled="!canSubmit"
-              class="publish-submit-btn"
-              @click="handleSubmit"
-            >
-              发布梗
-            </el-button>
-          </div>
-        </footer>
-      </el-form>
-    </el-card>
+    <vs-dialog
+      v-model="imagePreviewVisible"
+      full-screen
+      not-padding
+      class="publish-image-viewer"
+    >
+      <div class="publish-image-viewer__body" @click="closeImagePreview">
+        <button
+          type="button"
+          class="publish-image-viewer__close"
+          aria-label="关闭预览"
+          @click.stop="closeImagePreview"
+        >
+          <i class="ri-close-line" />
+        </button>
+        <ui-image
+          v-if="imagePreviewSrc"
+          :src="imagePreviewSrc"
+          fit="contain"
+          class="publish-image-viewer__img"
+          @click.stop
+        />
+        <p class="publish-image-viewer__tip">点击空白处关闭</p>
+      </div>
+    </vs-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import {
-  Close,
-  Delete,
-  Document,
-  Link,
-  Picture,
-  Plus,
-  VideoCamera,
-} from '@element-plus/icons-vue'
+import { toast } from '@/utils/uiFeedback'
 import { getMemeTags, publishMeme } from '@/api/meme'
 import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
@@ -250,6 +320,8 @@ const tags = ref([])
 const submitting = ref(false)
 const coverUploading = ref(false)
 const resourceUploading = ref(false)
+const imagePreviewVisible = ref(false)
+const imagePreviewSrc = ref('')
 
 const form = reactive({
   name: '',
@@ -263,10 +335,20 @@ const form = reactive({
 const canSubmit = computed(
   () =>
     form.name.trim() &&
-    form.introduction.trim() &&
-    form.image &&
-    form.tagIds.length > 0
+    form.image
 )
+
+function openImagePreview(url) {
+  const src = String(url || '').trim()
+  if (!src) return
+  imagePreviewSrc.value = src
+  imagePreviewVisible.value = true
+}
+
+function closeImagePreview() {
+  imagePreviewVisible.value = false
+  imagePreviewSrc.value = ''
+}
 
 onMounted(async () => {
   if (!authStore.isLoggedIn) {
@@ -276,7 +358,7 @@ onMounted(async () => {
   try {
     tags.value = await getMemeTags()
   } catch (e) {
-    ElMessage.error(e.message || '加载标签失败')
+    toast.error(e.message || '加载标签失败')
   }
 })
 
@@ -285,14 +367,14 @@ async function onCoverChange(event) {
   event.target.value = ''
   if (!file) return
   if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('封面不能超过 10MB')
+    toast.warning('封面不能超过 10MB')
     return
   }
   coverUploading.value = true
   try {
     form.image = await uploadToOss(file, 'meme')
   } catch (e) {
-    ElMessage.error(e.message || '封面上传失败')
+    toast.error(e.message || '封面上传失败')
   } finally {
     coverUploading.value = false
   }
@@ -300,7 +382,7 @@ async function onCoverChange(event) {
 
 function addLink() {
   if (form.resources.length >= 10) {
-    ElMessage.warning('最多 10 条相关链接')
+    toast.warning('最多 10 条相关链接')
     return
   }
   form.resources.push({
@@ -325,15 +407,15 @@ function validateLinks() {
     const url = String(item.url || '').trim()
     if (!title && !url) continue
     if (!title) {
-      ElMessage.warning(`第 ${i + 1} 条链接请填写标题`)
+      toast.warning(`第 ${i + 1} 条链接请填写标题`)
       return false
     }
     if (!url) {
-      ElMessage.warning(`第 ${i + 1} 条链接请填写 URL`)
+      toast.warning(`第 ${i + 1} 条链接请填写 URL`)
       return false
     }
     if (!/^https?:\/\//i.test(url)) {
-      ElMessage.warning(`第 ${i + 1} 条链接须以 http:// 或 https:// 开头`)
+      toast.warning(`第 ${i + 1} 条链接须以 http:// 或 https:// 开头`)
       return false
     }
   }
@@ -345,11 +427,11 @@ async function onResourceChange(event) {
   event.target.value = ''
   if (!file) return
   if (form.resourceUrls.length >= 6) {
-    ElMessage.warning('最多 6 个资源')
+    toast.warning('最多 6 个资源')
     return
   }
   if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('单个资源不能超过 10MB')
+    toast.warning('单个资源不能超过 10MB')
     return
   }
   resourceUploading.value = true
@@ -357,7 +439,7 @@ async function onResourceChange(event) {
     const url = await uploadToOss(file, 'meme')
     form.resourceUrls.push(url)
   } catch (e) {
-    ElMessage.error(e.message || '资源上传失败')
+    toast.error(e.message || '资源上传失败')
   } finally {
     resourceUploading.value = false
   }
@@ -389,11 +471,11 @@ async function handleSubmit() {
       resources,
       resourceUrls: form.resourceUrls,
     })
-    ElMessage.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
+    toast.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
     router.push('/')
   } catch (e) {
     if (isAuthErrorHandled(e)) return
-    ElMessage.error(e.message || '发布失败')
+    toast.error(e.message || '发布失败')
   } finally {
     submitting.value = false
   }
@@ -408,51 +490,73 @@ function goBack() {
 .publish-page {
   max-width: 820px;
   margin: 0 auto;
-  padding: 28px 20px 48px;
+  padding: 12px 8px 40px;
 }
 
 .publish-hero {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   text-align: center;
+}
+
+.publish-hero-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--meme-primary);
 }
 
 .publish-hero-title {
   margin: 0 0 8px;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
 .publish-hero-sub {
-  margin: 0;
+  margin: 0 auto;
+  max-width: 520px;
   font-size: 14px;
   line-height: 1.6;
   color: var(--meme-text-secondary);
-  max-width: 520px;
-  margin-inline: auto;
 }
 
 .publish-card {
-  border-radius: var(--meme-radius-xl, 20px);
-  border: 1px solid var(--meme-border);
-  box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
+  border-radius: var(--meme-radius-lg) !important;
 }
 
-.publish-card :deep(.el-card__body) {
+.publish-card :deep(.vs-card__text) {
   padding: 8px 28px 24px;
 }
 
-.publish-form :deep(.el-form-item__label) {
+.publish-form :deep(.ui-form-item) {
+  margin-bottom: 16px;
+}
+
+.publish-form :deep(.ui-form-item__label) {
   font-weight: 600;
   color: var(--meme-text-secondary);
   padding-bottom: 6px;
 }
 
-.publish-form :deep(.el-input__wrapper),
-.publish-form :deep(.el-textarea__inner),
-.publish-form :deep(.el-select__wrapper) {
-  border-radius: 10px;
+.publish-field {
+  width: 100%;
+}
+
+.publish-field :deep(.vs-input__wrapper),
+.publish-field :deep(.vs-input__original),
+.tag-select :deep(.vs-select),
+.link-title-input :deep(.vs-input__wrapper),
+.link-url-input :deep(.vs-input__wrapper) {
+  width: 100%;
+}
+
+.publish-field--textarea :deep(textarea),
+.publish-field--textarea :deep(.vs-input__original) {
+  min-height: 108px;
+  line-height: 1.55;
+  resize: vertical;
 }
 
 .form-section {
@@ -493,26 +597,20 @@ function goBack() {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  font-size: 16px;
+  font-size: 18px;
+  color: var(--meme-text-secondary);
   background: var(--meme-bg-muted);
 }
 
 .section-icon--primary {
   background: var(--meme-primary-soft);
   color: var(--meme-primary);
-  font-size: 14px;
-}
-
-.section-icon--cover,
-.section-icon--link,
-.section-icon--media {
-  background: var(--meme-bg);
 }
 
 .section-title {
   margin: 0 0 2px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--meme-text);
 }
 
@@ -525,18 +623,8 @@ function goBack() {
 
 .section-add-btn {
   flex-shrink: 0;
-  border-color: var(--meme-primary);
-  color: var(--meme-primary);
-  background: var(--meme-primary-soft);
 }
 
-.section-add-btn:hover {
-  background: var(--meme-primary-soft);
-  border-color: var(--meme-primary-dark);
-  color: var(--meme-primary-dark);
-}
-
-/* 上传区域 */
 .cover-uploader,
 .resource-uploader {
   display: flex;
@@ -568,7 +656,7 @@ function goBack() {
   justify-content: center;
   gap: 6px;
   border: 1.5px dashed var(--meme-border-strong);
-  background: var(--meme-gradient-card);
+  background: var(--meme-bg-muted);
   cursor: pointer;
   color: var(--meme-text-muted);
 }
@@ -576,6 +664,7 @@ function goBack() {
 .upload-tile--empty:hover {
   border-color: var(--meme-primary);
   color: var(--meme-primary);
+  background: var(--meme-primary-soft);
   box-shadow: 0 4px 12px var(--meme-focus-ring);
   transform: translateY(-1px);
 }
@@ -585,6 +674,35 @@ function goBack() {
   box-shadow: var(--meme-shadow-soft);
 }
 
+.upload-tile--previewable {
+  cursor: zoom-in;
+}
+
+.upload-tile--previewable:hover .upload-zoom-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.upload-zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translate(-50%, 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  backdrop-filter: blur(4px);
+}
+
 .upload-preview {
   width: 100%;
   height: 100%;
@@ -592,12 +710,14 @@ function goBack() {
 }
 
 .upload-icon {
-  opacity: 0.85;
+  font-size: 28px;
+  opacity: 0.9;
+  line-height: 1;
 }
 
 .upload-label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 550;
 }
 
 .upload-tip {
@@ -615,7 +735,7 @@ function goBack() {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 550;
   color: var(--meme-text-inverse);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
@@ -650,7 +770,6 @@ function goBack() {
   width: 100%;
 }
 
-/* 链接列表 */
 .link-list {
   display: flex;
   flex-direction: column;
@@ -664,12 +783,12 @@ function goBack() {
   padding: 14px 14px 14px 12px;
   border-radius: 12px;
   border: 1px solid var(--meme-border);
-  background: var(--meme-gradient-card);
+  background: var(--meme-bg-muted);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .link-card:hover {
-  border-color: var(--meme-border-accent);
+  border-color: color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border));
   box-shadow: 0 4px 14px var(--meme-focus-ring);
 }
 
@@ -702,18 +821,10 @@ function goBack() {
   gap: 10px;
 }
 
-.link-type-select {
+.link-type-select,
+.link-title-input,
+.link-url-input {
   width: 100%;
-}
-
-.link-type-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.link-url-prefix {
-  color: var(--meme-text-muted);
 }
 
 .link-card-remove {
@@ -738,39 +849,44 @@ function goBack() {
 }
 
 .link-empty {
+  width: 100%;
   padding: 28px 20px;
   border-radius: 12px;
   border: 1.5px dashed var(--meme-border-strong);
-  background: var(--meme-bg);
+  background: var(--meme-bg-muted);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
 
 .link-empty:hover {
-  border-color: var(--meme-border-accent);
+  border-color: var(--meme-primary);
   background: var(--meme-primary-soft);
 }
 
 .link-empty-icon {
+  display: block;
+  font-size: 28px;
   color: var(--meme-text-muted);
-  margin-bottom: 8px;
+  margin: 0 auto 8px;
+  line-height: 1;
 }
 
 .link-empty-title {
+  display: block;
   margin: 0 0 4px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
   color: var(--meme-text-secondary);
 }
 
 .link-empty-desc {
+  display: block;
   margin: 0;
   font-size: 12px;
   color: var(--meme-text-muted);
 }
 
-/* 底部操作 */
 .publish-footer {
   margin-top: 8px;
   padding-top: 20px;
@@ -784,28 +900,96 @@ function goBack() {
 
 .publish-footer-hint {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--meme-text-muted);
 }
 
 .publish-actions {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   margin-left: auto;
 }
 
+.publish-cancel-btn {
+  min-width: 88px;
+  height: 40px !important;
+  padding: 0 18px !important;
+  border-radius: 10px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--meme-text-secondary) !important;
+  background: var(--meme-bg-elevated) !important;
+  border: 1px solid var(--meme-border-strong) !important;
+  box-shadow: none !important;
+}
+
+.publish-cancel-btn:hover:not(:disabled) {
+  color: var(--meme-text) !important;
+  border-color: var(--meme-text-muted) !important;
+  background: var(--meme-bg-muted) !important;
+  filter: none !important;
+}
+
+.publish-cancel-btn :deep(.vs-button__content) {
+  color: inherit !important;
+}
+
 .publish-submit-btn {
-  min-width: 120px;
-  font-weight: 600;
-  box-shadow: 0 4px 14px var(--meme-focus-ring);
+  min-width: 124px;
+  height: 40px !important;
+  padding: 0 20px !important;
+  border-radius: 10px !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  color: #fff !important;
+  background: var(--meme-primary) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px var(--meme-focus-ring) !important;
+}
+
+.publish-submit-btn:hover:not(:disabled) {
+  background: var(--meme-primary-dark) !important;
+  color: #fff !important;
+  filter: none !important;
+  transform: translateY(-1px);
+}
+
+.publish-submit-btn:disabled,
+.publish-submit-btn.is-disabled {
+  color: #fff !important;
+  background: color-mix(in srgb, var(--meme-primary) 45%, var(--meme-border)) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  cursor: not-allowed;
+}
+
+.publish-submit-btn:disabled :deep(.vs-button__content),
+.publish-submit-btn:disabled :deep(.vs-button__content *) {
+  color: #fff !important;
+  opacity: 1 !important;
+}
+
+.publish-submit-btn :deep(.vs-button__content) {
+  color: inherit !important;
+}
+
+.publish-submit-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
 }
 
 @media (max-width: 640px) {
   .publish-page {
-    padding: 16px 12px 32px;
+    padding: 8px 0 28px;
   }
 
-  .publish-card :deep(.el-card__body) {
+  .publish-card :deep(.vs-card__text) {
     padding: 4px 16px 20px;
   }
 
@@ -830,5 +1014,58 @@ function goBack() {
     margin-left: 0;
     justify-content: flex-end;
   }
+}
+
+.publish-image-viewer :deep(.vs-dialog__content) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.publish-image-viewer__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 48px 24px 32px;
+  background: rgba(15, 23, 42, 0.88);
+  cursor: zoom-out;
+}
+
+.publish-image-viewer__close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.publish-image-viewer__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.publish-image-viewer__img {
+  max-width: min(92vw, 960px);
+  max-height: 82vh;
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+
+.publish-image-viewer__tip {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
 }
 </style>

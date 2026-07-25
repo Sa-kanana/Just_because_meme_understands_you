@@ -49,7 +49,7 @@ function resolveIsDark(mode) {
 }
 
 /**
- * 同步 DOM：Element Plus 官方暗色依赖 html.dark；
+ * 同步 DOM：Vuesax 暗色依赖 html.dark；
  * color-scheme 影响原生控件滚动条/表单底色。
  */
 export function applyThemeToDocument(isDark) {

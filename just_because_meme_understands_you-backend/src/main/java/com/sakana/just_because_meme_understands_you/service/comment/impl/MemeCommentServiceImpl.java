@@ -217,7 +217,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         }
 
         memeCommentMapper.insert(comment);
-        commentSupport.saveImages(comment.getId(), request.getImageUrls());
+        commentSupport.saveImages(comment.getId(), userId, request.getImageUrls());
 
         if (!isRootComment) {
             memeCommentMapper.update(null, new LambdaUpdateWrapper<MemeComment>()

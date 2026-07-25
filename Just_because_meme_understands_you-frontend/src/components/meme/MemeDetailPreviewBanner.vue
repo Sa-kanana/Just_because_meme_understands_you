@@ -45,16 +45,15 @@
       </div>
 
       <div class="preview-banner-actions">
-        <el-button round @click="$emit('back-published')">回到我的发布</el-button>
-        <el-button
+        <vs-button @click="$emit('back-published')">回到我的发布</vs-button>
+        <vs-button
           v-if="variant === 'reviewing'"
-          type="primary"
-          round
+          color="primary"
           :loading="refreshing"
           @click="$emit('refresh')"
         >
           刷新状态
-        </el-button>
+        </vs-button>
       </div>
     </div>
   </section>
@@ -154,7 +153,7 @@ export default {
   top: 0;
   bottom: 0;
   width: 4px;
-  background: linear-gradient(180deg, var(--meme-primary), var(--el-color-primary-light-3));
+  background: linear-gradient(180deg, var(--meme-primary), var(--meme-primary-dark));
 }
 
 .preview-banner--offline .preview-banner-accent {
@@ -368,7 +367,7 @@ export default {
     justify-content: stretch;
   }
 
-  .preview-banner-actions :deep(.el-button) {
+  .preview-banner-actions :deep(.vs-button) {
     flex: 1;
   }
 }

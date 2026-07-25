@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.retrieval.repository import (
     RetrievedChunk,
@@ -26,6 +26,29 @@ class SearchMemeInput(BaseModel):
         description="Java 预检索给出的候选 meme_id 列表，可为空",
     )
     top_k: int = Field(default=5, ge=1, le=20, description="返回条数上限")
+
+    @field_validator("hint_meme_ids", mode="before")
+    @classmethod
+    def coerce_hint_ids(cls, value):
+        if value is None or value == "" or value in ("无", "none", "null", "[]"):
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            if not text or text in ("无", "none", "null"):
+                return []
+            if text.startswith("["):
+                try:
+                    import json
+
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        return [str(x).strip() for x in parsed if str(x).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [part.strip() for part in text.split(",") if part.strip()]
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+        return [str(value).strip()]
 
 
 async def retrieve_meme_chunks(

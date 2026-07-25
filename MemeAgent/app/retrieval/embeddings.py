@@ -31,8 +31,14 @@ async def embed_text(text: str, settings: Settings | None = None) -> list[float]
     normalized = re.sub(r"\s+", " ", text.strip())
     if not cfg.openai_api_key:
         return _deterministic_embedding(normalized, cfg.vector_embedding_dim)
-    embeddings = _get_embeddings(cfg)
-    return await embeddings.aembed_query(normalized)
+    try:
+        embeddings = _get_embeddings(cfg)
+        return await embeddings.aembed_query(normalized)
+    except Exception:
+        logger.exception(
+            "Embedding API 失败，回退本地 deterministic embedding（联调可用，生产请检查额度）"
+        )
+        return _deterministic_embedding(normalized, cfg.vector_embedding_dim)
 
 
 def _deterministic_embedding(text: str, dim: int) -> list[float]:

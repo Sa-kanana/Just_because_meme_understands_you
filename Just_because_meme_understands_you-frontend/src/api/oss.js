@@ -4,7 +4,8 @@ import { request } from './request'
 /**
  * 获取 OSS 前端直传凭证
  * GET /oss/policy?fileType=avatar|meme|comment|home
- * @param {string} fileType 文件类型，决定 OSS 存放目录
+ * 直传目录为 tmp/{type}/{userId}/…，业务提交时由后端 promote 到正式前缀
+ * @param {string} fileType 文件类型，决定 OSS 临时目录
  * @returns {Promise<{accessKeyId, policy, signature, dir, host, publicBaseUrl, expire}>}
  */
 export function getOssPolicy(fileType = '') {

@@ -95,43 +95,35 @@ export default {
   min-height: 44px;
   padding: 0 18px 0 14px;
   border-radius: 999px;
-  border: 1px solid var(--meme-border-accent);
-  background: var(--meme-gradient-card);
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 32%, var(--meme-border));
+  background: color-mix(in srgb, var(--meme-primary) 10%, var(--meme-bg-elevated));
   color: var(--meme-primary);
   cursor: pointer;
+  box-shadow: none;
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease,
     border-color 0.15s ease,
     background 0.15s ease,
-    color 0.15s ease;
-  box-shadow: var(--meme-shadow-soft);
+    color 0.15s ease,
+    filter 0.15s ease;
 }
 
 .meme-favorite-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: var(--meme-primary);
-  box-shadow: var(--meme-shadow-card);
+  border-color: color-mix(in srgb, var(--meme-primary) 55%, var(--meme-border));
+  background: color-mix(in srgb, var(--meme-primary) 16%, var(--meme-bg-elevated));
 }
 
 .meme-favorite-btn:active:not(:disabled) {
-  transform: translateY(0);
+  filter: brightness(0.97);
 }
 
 .meme-favorite-btn.is-active {
-  border-color: rgba(245, 158, 11, 0.45);
-  background: linear-gradient(135deg, var(--meme-warning-soft) 0%, color-mix(in srgb, var(--meme-warning-soft) 70%, var(--meme-bg-card)) 100%);
-  color: var(--meme-warning);
-  box-shadow:
-    0 1px 2px rgba(180, 83, 9, 0.08),
-    0 8px 22px rgba(245, 158, 11, 0.22);
+  border-color: color-mix(in srgb, var(--meme-primary) 48%, var(--meme-border));
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
 }
 
 .meme-favorite-btn.is-active:hover:not(:disabled) {
-  border-color: rgba(217, 119, 6, 0.55);
-  box-shadow:
-    0 2px 6px rgba(180, 83, 9, 0.1),
-    0 12px 28px rgba(245, 158, 11, 0.28);
+  filter: brightness(1.05);
 }
 
 .meme-favorite-btn.is-preview,

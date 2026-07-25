@@ -1,6 +1,6 @@
 /**
  * 全局基础样式：只消费 Token，不写暗色分支。
- * Element Plus 挂到 body 的浮层同样用变量兜底，避免主题切换后仍显浅色。
+ * Vuesax / 自研 ui 与业务表面统一走 --meme-*。
  */
 
 *,
@@ -28,153 +28,141 @@ body {
   min-height: 100vh;
 }
 
-/* —— 品牌按钮 / 卡片 / 输入框 —— */
-#app .el-button--primary:not(.is-plain) {
-  --el-button-text-color: var(--meme-text-inverse);
-  --el-button-hover-text-color: var(--meme-text-inverse);
-  background-color: var(--meme-primary);
-  border-color: var(--meme-primary);
-  color: var(--meme-text-inverse);
-  box-shadow: 0 2px 6px var(--meme-focus-ring);
+/* —— Vuesax 主题色：保持 tokens 中的 RGB 三元组，勿再写成 hex —— */
+:root {
+  --vs-color-primary: var(--vs-primary);
 }
 
-#app .el-button--primary:not(.is-plain):hover,
-#app .el-button--primary:not(.is-plain):focus {
-  background-color: var(--meme-primary-dark);
-  border-color: var(--meme-primary-dark);
-  color: var(--meme-text-inverse);
-  box-shadow: 0 4px 12px var(--meme-focus-ring);
-}
-
-/* plain 主按钮：保留描边浅底 + 可读文字，避免被实心覆盖导致蓝底蓝字 */
-#app .el-button--primary.is-plain {
-  --el-button-bg-color: var(--meme-primary-soft);
-  --el-button-text-color: var(--meme-primary);
-  --el-button-border-color: var(--meme-border-accent);
-  --el-button-hover-bg-color: var(--meme-primary-soft);
-  --el-button-hover-text-color: var(--meme-primary-dark);
-  --el-button-hover-border-color: var(--meme-primary);
-  background-color: var(--meme-primary-soft);
-  border-color: var(--meme-border-accent);
-  color: var(--meme-primary);
-  box-shadow: none;
-}
-
-#app .el-button--primary.is-plain:hover,
-#app .el-button--primary.is-plain:focus {
-  background-color: var(--meme-primary-soft);
-  border-color: var(--meme-primary);
-  color: var(--meme-primary-dark);
-  filter: brightness(1.05);
-}
-
-#app .el-card {
-  border: 1px solid var(--meme-border);
-  border-radius: var(--meme-radius-lg);
-  box-shadow: var(--meme-shadow-card);
-  background-color: var(--meme-bg-card);
-  color: var(--meme-text);
-}
-
-#app .el-input__wrapper,
-#app .el-textarea__inner {
-  box-shadow: 0 0 0 1px var(--meme-border) inset;
-  background-color: var(--meme-bg-elevated);
-  color: var(--meme-text);
-}
-
-#app .el-input__wrapper:hover,
-#app .el-input__wrapper.is-focus {
-  box-shadow: 0 0 0 1px var(--meme-primary) inset;
-}
-
-#app .el-badge__content.is-dot {
-  background-color: #ef4444;
-}
-
-#app .el-empty__description p,
-#app .el-pagination button,
-#app .el-pagination .el-pager li {
-  color: var(--meme-text-secondary);
-}
-
-#app .el-tabs__item {
-  color: var(--meme-text-secondary);
-}
-
-#app .el-tabs__item.is-active {
-  color: var(--meme-primary);
-}
-
-#app .el-divider {
-  border-color: var(--meme-border);
-}
-
-/* —— 挂载在 body 的浮层：下拉 / 弹出 / 对话框 —— */
-.el-popper.is-light,
-.el-dropdown__popper,
-.el-select__popper,
-.el-autocomplete__popper,
-.el-popover.el-popper {
-  background: var(--meme-bg-elevated) !important;
-  border: 1px solid var(--meme-border) !important;
-  color: var(--meme-text) !important;
-}
-
-.el-dropdown-menu {
-  background: var(--meme-bg-elevated) !important;
-  border-color: var(--meme-border) !important;
-}
-
-.el-dropdown-menu__item {
-  color: var(--meme-text) !important;
-}
-
-.el-dropdown-menu__item:not(.is-disabled):hover,
-.el-dropdown-menu__item:focus {
-  background: var(--meme-primary-soft) !important;
-  color: var(--meme-primary) !important;
-}
-
-.el-select-dropdown__item {
-  color: var(--meme-text);
-}
-
-.el-select-dropdown__item.is-hovering,
-.el-select-dropdown__item:hover {
-  background: var(--meme-bg-muted);
-}
-
-.el-select-dropdown__item.is-selected {
-  color: var(--meme-primary);
+#app .vs-button {
+  --vs-color: var(--meme-primary);
   font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: var(--meme-radius-sm) !important;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.15s ease;
 }
 
-.el-dialog,
-.el-message-box {
-  --el-dialog-bg-color: var(--meme-bg-card);
-  --el-bg-color: var(--meme-bg-card);
-  background: var(--meme-bg-card) !important;
-  border: 1px solid var(--meme-border);
+#app .vs-button:not(:disabled):hover {
+  filter: brightness(1.03);
+}
+
+#app .vs-button.vs-button--primary:not(.vs-button--flat):not(.vs-button--border):not(.vs-button--transparent),
+#app .vs-button[class*='primary']:not(.vs-button--flat):not(.vs-button--border):not(.vs-button--transparent) {
+  box-shadow: 0 4px 14px var(--meme-focus-ring);
+}
+
+/* 列表「加载更多」：描边胶囊，保证主色文字可读 */
+#app .meme-load-more-btn.vs-button {
+  min-width: 132px;
+  height: 36px !important;
+  padding: 0 18px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  color: var(--meme-primary) !important;
+  background: var(--meme-bg-elevated) !important;
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border)) !important;
+  box-shadow: none !important;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease !important;
+}
+
+#app .meme-load-more-btn.vs-button:hover:not(:disabled) {
+  background: var(--meme-primary-soft) !important;
+  border-color: var(--meme-primary) !important;
+  color: var(--meme-primary-dark) !important;
+  box-shadow: 0 4px 12px var(--meme-focus-ring) !important;
+  filter: none !important;
+  transform: translateY(-1px);
+}
+
+#app .meme-load-more-btn.vs-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+#app .meme-load-more-btn.vs-button .vs-button__content,
+#app .meme-load-more-btn.vs-button .vs-button__text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit !important;
+}
+
+#app .vs-card {
+  width: 100%;
+  max-width: none;
+  border: 1px solid var(--meme-border) !important;
+  border-radius: var(--meme-radius-md) !important;
+  box-shadow: var(--meme-shadow-soft) !important;
+  background-color: var(--meme-bg-card) !important;
+  color: var(--meme-text) !important;
+  overflow: hidden;
+  cursor: default;
+}
+
+#app .vs-card-content {
+  width: 100%;
+  max-width: none;
+}
+
+#app .vs-input {
+  --vs-color: var(--meme-primary);
+}
+
+#app .vs-input .vs-input__wrapper,
+#app .vs-input__wrapper {
+  background: var(--meme-bg-elevated) !important;
   color: var(--meme-text);
 }
 
-.el-dialog__title,
-.el-message-box__title {
+#app .vs-alert {
+  border-radius: var(--meme-radius-sm) !important;
+}
+
+#app .vs-dialog {
+  --vs-color: var(--meme-primary);
+}
+
+/* vs-avatar 无 src：图片走 slot；有图时勿强制渐变底 */
+#app .vs-avatar {
+  overflow: hidden;
+}
+
+#app .vs-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 首页 / 列表通用区块标题 */
+.meme-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.meme-section-kicker {
+  margin: 0 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--meme-primary);
+  opacity: 0.75;
+}
+
+.meme-section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--meme-text);
-}
-
-.el-dialog__body,
-.el-message-box__message {
-  color: var(--meme-text-secondary);
-}
-
-.el-overlay {
-  background-color: var(--meme-overlay) !important;
-}
-
-.el-loading-mask {
-  background-color: color-mix(in srgb, var(--meme-bg) 72%, transparent);
 }
 
 /* 页面通用表面 */
@@ -182,4 +170,118 @@ body {
   min-height: calc(100vh - 56px);
   background: var(--meme-gradient-page);
   color: var(--meme-text);
+}
+
+/* —— Toast 通知（挂到 body；实心色底 + 白字，保证可读） —— */
+[id*='notification-container'].is-top-center {
+  top: 68px !important;
+  z-index: 400000 !important;
+  padding: 0 !important;
+  pointer-events: none;
+}
+
+[id*='notification-container'].is-top-center .vs-notification {
+  pointer-events: auto;
+  max-width: min(400px, calc(100vw - 24px)) !important;
+  width: min(400px, calc(100vw - 24px)) !important;
+  min-height: 72px;
+  margin: 8px 12px !important;
+  padding: 16px 40px 16px 54px !important;
+  border-radius: 16px !important;
+  border-width: 0 !important;
+  /* 强制实心背景：依赖 tokens 中 --vs-* RGB 三元组 */
+  background: rgb(var(--vs-color)) !important;
+  color: #fff !important;
+  box-shadow:
+    0 14px 36px rgba(15, 23, 42, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset !important;
+  animation: meme-toast-pop 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+[id*='notification-container'].is-top-center .vs-notification.is-color:not(.is-flat),
+[id*='notification-container'].is-top-center .vs-notification.is-color:not(.is-flat) * {
+  color: #fff !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__icon {
+  width: 48px !important;
+  height: 48px !important;
+  left: 4px !important;
+  top: calc(50% - 24px) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #fff !important;
+  font-size: 1.45rem !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__icon i {
+  font-size: inherit;
+  line-height: 1;
+  color: #fff !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__title h4 {
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: #fff !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__text p {
+  font-size: 13.5px !important;
+  line-height: 1.5 !important;
+  font-weight: 500;
+  opacity: 0.96;
+  color: #fff !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__progress {
+  height: 3.5px !important;
+  border-radius: 0 !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  opacity: 1;
+}
+
+[id*='notification-container'].is-top-center .vs-notification__close {
+  top: 8px !important;
+  right: 8px !important;
+  transform: scale(0.9) !important;
+  opacity: 0.9;
+  --vs-color: 255, 255, 255 !important;
+}
+
+[id*='notification-container'].is-top-center .vs-notification:hover:not(.is-flat) {
+  transform: translateY(1px) scale(1.01) !important;
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset !important;
+}
+
+@keyframes meme-toast-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 600px) {
+  [id*='notification-container'].is-top-center {
+    top: 58px !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  [id*='notification-container'].is-top-center .vs-notification {
+    width: calc(100% - 16px) !important;
+    max-width: none !important;
+    margin: 6px 8px !important;
+    border-radius: 14px !important;
+  }
 }

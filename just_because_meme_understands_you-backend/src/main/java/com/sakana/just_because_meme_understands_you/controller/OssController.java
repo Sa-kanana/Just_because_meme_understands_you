@@ -28,7 +28,7 @@ public class OssController {
 
     /**
      * 获取前端直传 OSS 的安全签名凭证。
-     * 前端根据 fileType 将图片分目录存放：avatar / meme / comment / home。
+     * 直传落到 tmp/{avatar|memes|comments}/{userId}/…，业务提交时再 promote 到正式目录。
      *
      * GET /oss/policy?fileType=avatar
      */

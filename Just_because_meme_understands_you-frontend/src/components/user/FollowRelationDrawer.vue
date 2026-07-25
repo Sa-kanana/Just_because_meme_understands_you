@@ -1,11 +1,10 @@
 <template>
-  <el-drawer
+  <ui-drawer
     :model-value="visible"
     class="follow-relation-drawer"
     direction="rtl"
     size="420px"
-    :with-header="true"
-    destroy-on-close
+    @update:model-value="$emit('update:visible', $event)"
     @close="onClose"
   >
     <template #header>
@@ -57,9 +56,12 @@
         class="relation-item"
       >
         <button type="button" class="relation-user" @click="goProfile(item.userId)">
-          <el-avatar :size="48" :src="item.avatar" class="relation-avatar">
-            {{ (item.nickname || 'U').charAt(0).toUpperCase() }}
-          </el-avatar>
+          <ui-avatar
+            :size="48"
+            :src="item.avatar"
+            :fallback="item.nickname || 'U'"
+            class="relation-avatar"
+          />
           <div class="relation-user-meta">
             <div class="relation-name-row">
               <span class="relation-name">{{ item.nickname }}</span>
@@ -81,18 +83,20 @@
     </ul>
 
     <div v-if="list.length" class="relation-footer">
-      <el-button
+      <vs-button
         v-if="hasMore"
-        text
-        type="primary"
+        class="meme-load-more-btn"
+        type="border"
+        color="primary"
         :loading="loadingMore"
         @click="loadMore"
       >
+        <i v-if="!loadingMore" class="ri-arrow-down-s-line" aria-hidden="true" />
         加载更多
-      </el-button>
+      </vs-button>
       <span v-else class="relation-footer-end">没有更多了</span>
     </div>
-  </el-drawer>
+  </ui-drawer>
 </template>
 
 <script>

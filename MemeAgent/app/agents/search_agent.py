@@ -72,8 +72,9 @@ def _fallback_answer(query: str, retrieved: list[RetrievedChunk]) -> str:
         return f"暂未检索到与「{query}」相关的梗。请尝试换关键词，或到首页浏览热门内容。"
     lines = [f"找到 {len(retrieved)} 条相关梗："]
     for chunk in retrieved[:5]:
-        title = chunk.title or chunk.content.splitlines()[0][:40]
-        lines.append(f"- meme_id={chunk.meme_id} {title}")
+        title = (chunk.title or chunk.content.splitlines()[0][:40]).strip()
+        lines.append(f"- {title}")
+    lines.append("可点击下方「相关梗」查看详情。")
     return "\n".join(lines)
 
 
@@ -145,46 +146,70 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             f"{context_block}\n\n"
             f"<user_query>\n{request.query}\n</user_query>\n\n"
             "请先调用 search_meme_knowledge，再基于工具结果用中文回答。"
+            "回答中不要出现 meme_id、score 等内部字段，只写用户可读内容。"
         )
 
         completion_chars = 0
-        async for event in executor.astream_events(
-            {
-                "input": agent_input,
-                "chat_history": _history_messages(request),
-            },
-            version="v2",
-            config={
-                "metadata": {
-                    "request_id": request.request_id,
-                    "session_id": request.session_id,
+        try:
+            async for event in executor.astream_events(
+                {
+                    "input": agent_input,
+                    "chat_history": _history_messages(request),
                 },
-                "tags": ["meme-search-agent"],
-            },
-        ):
-            kind = event.get("event")
-            if kind == "on_tool_end":
-                # Agent 再次检索时补充 cite（去重）
-                output = event.get("data", {}).get("output")
-                raw = output if isinstance(output, str) else getattr(output, "content", "")
-                for chunk in parse_tool_payload(str(raw or "")):
-                    if chunk.meme_id in emitted:
-                        continue
-                    emitted.add(chunk.meme_id)
-                    yield _format_sse(
-                        "cite",
-                        StreamCiteEvent(
-                            meme_id=chunk.meme_id,
-                            score=chunk.score,
-                            title=chunk.title,
-                        ).model_dump(),
-                    )
-            elif kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                text = getattr(chunk, "content", None) if chunk is not None else None
-                if isinstance(text, str) and text:
-                    completion_chars += len(text)
-                    yield _format_sse("token", StreamTokenEvent(text=text).model_dump())
+                version="v2",
+                config={
+                    "metadata": {
+                        "request_id": request.request_id,
+                        "session_id": request.session_id,
+                    },
+                    "tags": ["meme-search-agent"],
+                },
+            ):
+                kind = event.get("event")
+                if kind == "on_tool_end":
+                    # Agent 再次检索时补充 cite（去重）
+                    output = event.get("data", {}).get("output")
+                    raw = output if isinstance(output, str) else getattr(output, "content", "")
+                    for chunk in parse_tool_payload(str(raw or "")):
+                        if chunk.meme_id in emitted:
+                            continue
+                        emitted.add(chunk.meme_id)
+                        yield _format_sse(
+                            "cite",
+                            StreamCiteEvent(
+                                meme_id=chunk.meme_id,
+                                score=chunk.score,
+                                title=chunk.title,
+                            ).model_dump(),
+                        )
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    text = _extract_stream_text(chunk)
+                    if text:
+                        completion_chars += len(text)
+                        yield _format_sse("token", StreamTokenEvent(text=text).model_dump())
+        except Exception as llm_exc:
+            logger.exception(
+                "LangChain agent failed, fallback answer request_id=%s",
+                request.request_id,
+            )
+            if completion_chars == 0:
+                fallback = _fallback_answer(request.query, retrieved)
+                for piece in _chunk_text(fallback, 24):
+                    yield _format_sse("token", StreamTokenEvent(text=piece).model_dump())
+                yield _format_sse(
+                    "done",
+                    StreamDoneEvent(
+                        finish_reason="fallback_llm_error",
+                        usage={"completion": len(fallback)},
+                    ).model_dump(),
+                )
+                return
+            yield _format_sse(
+                "error",
+                StreamErrorEvent(code="llm_error", message=str(llm_exc)).model_dump(),
+            )
+            return
 
         yield _format_sse(
             "done",
@@ -199,3 +224,28 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             "error",
             StreamErrorEvent(code="agent_error", message=str(exc)).model_dump(),
         )
+
+
+def _extract_stream_text(chunk: Any) -> str:
+    """兼容 str / content blocks 的流式 token 文本。"""
+    if chunk is None:
+        return ""
+    text = getattr(chunk, "content", None)
+    if isinstance(text, str):
+        return text
+    if isinstance(text, list):
+        parts: list[str] = []
+        for block in text:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                if block.get("type") == "text" or "text" in block:
+                    parts.append(str(block.get("text") or ""))
+            else:
+                piece = getattr(block, "text", None)
+                if piece:
+                    parts.append(str(piece))
+        return "".join(parts)
+    # langchain_core 新版 AIMessageChunk.text
+    fallback = getattr(chunk, "text", None)
+    return str(fallback) if fallback else ""

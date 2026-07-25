@@ -256,3 +256,80 @@ export async function request(url, options = {}) {
     throw err
   }
 }
+
+/**
+ * SSE / 流式请求（需 ReadableStream，走 fetch；鉴权与 401 refresh 与 request 对齐）
+ * @returns {Promise<Response>}
+ */
+export async function streamRequest(url, options = {}, { retriedAfterRefresh = false } = {}) {
+  const method = (options.method || 'POST').toUpperCase()
+  const headers = {
+    Accept: 'text/event-stream',
+    ...(options.headers || {}),
+  }
+  if (
+    method !== 'GET' &&
+    method !== 'HEAD' &&
+    !(typeof FormData !== 'undefined' && options.body instanceof FormData) &&
+    !headers['Content-Type'] &&
+    !headers['content-type']
+  ) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (!headers.Authorization && !headers.authorization && typeof authLifecycle.getAccessToken === 'function') {
+    const token = withBearerToken(authLifecycle.getAccessToken())
+    if (token) headers.Authorization = token
+  }
+
+  const absoluteUrl = /^https?:\/\//i.test(url) ? url : `${BASE_URL}${url.startsWith('/') ? url : `/${url}`}`
+  const response = await fetch(absoluteUrl, {
+    method,
+    headers,
+    body: options.body,
+    credentials:
+      typeof options.withCredentials === 'boolean'
+        ? options.withCredentials
+          ? 'include'
+          : 'omit'
+        : 'include',
+    signal: options.signal,
+  })
+
+  if (response.status !== 401) {
+    return response
+  }
+
+  const canRefresh =
+    !retriedAfterRefresh &&
+    options.skipAuthRefresh !== true &&
+    typeof authLifecycle.refreshAccessToken === 'function'
+
+  if (canRefresh) {
+    try {
+      await Promise.resolve(authLifecycle.refreshAccessToken())
+      return streamRequest(url, options, { retriedAfterRefresh: true })
+    } catch (refreshError) {
+      if (typeof authLifecycle.handleFinalLogout === 'function') {
+        authLifecycle.handleFinalLogout(refreshError)
+      }
+      throw markAuthErrorHandled(refreshError)
+    }
+  }
+
+  let payload = null
+  try {
+    payload = await response.clone().json()
+  } catch {
+    // ignore
+  }
+  const message =
+    (payload && (payload.message || payload.msg)) || '登录已过期，请重新登录'
+  const err = new Error(message)
+  err.code = payload && payload.code != null ? Number(payload.code) : 401
+  err.status = 401
+  err.data = payload
+  if (typeof authLifecycle.handleFinalLogout === 'function') {
+    authLifecycle.handleFinalLogout(err)
+  }
+  throw markAuthErrorHandled(err)
+}

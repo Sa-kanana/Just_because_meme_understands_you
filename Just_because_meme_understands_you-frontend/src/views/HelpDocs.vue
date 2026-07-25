@@ -1,8 +1,8 @@
 <template>
   <div class="page">
-    <el-card class="content-card" shadow="hover">
-      <el-empty description="这里将展示网站帮助文档与说明（占位）" />
-    </el-card>
+    <vs-card class="content-card">
+      <ui-empty description="这里将展示网站帮助文档与说明（占位）" />
+    </vs-card>
   </div>
 </template>
 

@@ -1,88 +1,85 @@
 <template>
-  <div class="login-page">
-    <div class="login-hero">
-      <h1 class="login-title">欢迎回来，梗友</h1>
-      <p class="login-subtitle">
-        使用绑定邮箱登录，解锁更多只因“梗”懂你的个性化体验。
-      </p>
-    </div>
+  <AuthPageLayout
+    title="欢迎回来"
+    desc="使用绑定邮箱登录，继续你的梗图旅程。"
+    lead="登录后解锁收藏、发布与个性化推荐，让快乐常伴左右。"
+  >
+    <ui-form
+      ref="loginFormRef"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      class="auth-form"
+      @keyup.enter="handleSubmit"
+    >
+      <ui-form-item label="邮箱" prop="email">
+        <vs-input
+          v-model="form.email"
+          block
+          clearable
+          placeholder="name@example.com"
+          autocomplete="email"
+          class="auth-field"
+        >
+          <template #icon>
+            <i class="ri-mail-line" aria-hidden="true" />
+          </template>
+        </vs-input>
+      </ui-form-item>
 
-    <el-card class="login-card" shadow="hover">
-      <div class="login-card-header">
-        <div>
-          <h2 class="login-card-title">账号登录</h2>
-          <p class="login-card-subtitle">
-            使用邮箱 + 密码登录，继续探索只因“梗”懂你
-          </p>
-        </div>
-        <div class="login-card-switch">
-          <span class="login-card-switch-text">还没有账号？</span>
-          <router-link to="/register" class="link-button">立即注册</router-link>
-        </div>
+      <ui-form-item label="密码" prop="password">
+        <vs-input
+          v-model="form.password"
+          type="password"
+          show-password
+          block
+          clearable
+          placeholder="请输入密码"
+          autocomplete="current-password"
+          class="auth-field"
+        >
+          <template #icon>
+            <i class="ri-lock-2-line" aria-hidden="true" />
+          </template>
+        </vs-input>
+      </ui-form-item>
+
+      <div class="auth-form__row">
+        <router-link to="/forgot-password" class="auth-form__link">忘记密码？</router-link>
       </div>
 
-      <el-form
-        ref="loginFormRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        class="login-form"
-        @keyup.enter="handleSubmit"
+      <button
+        type="button"
+        class="auth-form__submit"
+        :disabled="submitting"
+        @click="handleSubmit"
       >
-        <el-form-item label="邮箱" prop="email">
-          <el-input
-            v-model="form.email"
-            placeholder="请输入邮箱"
-            clearable
-            autocomplete="email"
-            size="large"
-          />
-        </el-form-item>
+        <i
+          v-if="submitting"
+          class="ri-loader-4-line auth-form__spin"
+          aria-hidden="true"
+        />
+        {{ submitting ? '登录中...' : '登录' }}
+      </button>
+    </ui-form>
 
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            placeholder="请输入密码"
-            clearable
-            show-password
-            autocomplete="current-password"
-            size="large"
-          />
-        </el-form-item>
-
-        <div class="login-extra-row">
-          <router-link to="/forgot-password" class="forgot-link">忘记密码？</router-link>
-        </div>
-
-        <div class="login-actions">
-          <el-button
-            type="primary"
-            class="login-submit-button"
-            :loading="submitting"
-            :disabled="submitting"
-            size="large"
-            @click="handleSubmit"
-          >
-            {{ submitting ? '登录中...' : '登录' }}
-          </el-button>
-        </div>
-      </el-form>
-
-      <p class="login-hint">
-        登录即表示你同意本网站的相关使用条款。
-      </p>
-    </el-card>
-  </div>
+    <template #footer>
+      还没有账号？
+      <router-link to="/register" class="auth-form__link auth-form__link--strong">立即注册</router-link>
+    </template>
+  </AuthPageLayout>
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/uiFeedback'
 import { login } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { POST_LOGIN_REDIRECT_KEY, resolveSafeRedirectPath } from '@/utils/authSession'
+import AuthPageLayout from '@/components/auth/AuthPageLayout.vue'
 
 export default {
   name: 'LoginPage',
+  components: { AuthPageLayout },
   data() {
     return {
       form: {
@@ -108,7 +105,6 @@ export default {
     }
   },
   mounted() {
-    // 如果从注册页带了邮箱过来，自动填充，减少重复输入
     const emailFromQuery = this.$route.query.email
     if (emailFromQuery) {
       this.form.email = String(emailFromQuery)
@@ -134,7 +130,7 @@ export default {
               token,
               user,
             })
-            ElMessage.success('登录成功')
+            toast.success('登录成功')
             const redirectFromQuery = this.$route.query.redirect
             let redirectFromStorage = ''
             try {
@@ -149,7 +145,7 @@ export default {
           .catch((err) => {
             const msg =
               (err && (err.message || err.msg)) || '登录失败，请稍后重试'
-            ElMessage.error(msg)
+            toast.error(msg)
           })
           .finally(() => {
             this.submitting = false
@@ -161,138 +157,130 @@ export default {
 </script>
 
 <style scoped>
-.login-page {
-  min-height: calc(100vh - 56px);
-  padding: 40px 24px 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: var(--meme-gradient-page);
+.auth-form :deep(.ui-form-item) {
+  margin-bottom: 16px;
 }
 
-.login-hero {
-  max-width: 640px;
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.login-title {
-  margin: 0 0 12px;
-  font-size: 32px;
-  font-weight: 700;
+.auth-form :deep(.ui-form-item__label) {
+  font-size: 12px;
+  font-weight: 650;
   letter-spacing: 0.02em;
-  color: var(--meme-text);
-}
-
-.login-subtitle {
-  margin: 0;
-  font-size: 14px;
   color: var(--meme-text-secondary);
 }
 
-.login-card {
+.auth-field {
   width: 100%;
-  max-width: 420px;
-  border-radius: var(--meme-radius-lg);
-  box-shadow: var(--meme-shadow-card), var(--meme-shadow-soft);
-  border: 1px solid var(--meme-border);
-  background: var(--meme-bg-card);
 }
 
-.login-card :deep(.el-card__body) {
-  padding: 24px 32px 28px;
+.auth-field :deep(.vs-input__wrapper) {
+  min-height: 46px;
+  border-radius: 10px !important;
+  background: var(--meme-bg-muted) !important;
+  box-shadow: 0 0 0 1px transparent inset;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.login-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+.auth-field :deep(.vs-input__original) {
+  width: 100% !important;
+  min-height: 46px;
+  padding: 0 40px 0 42px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--meme-text) !important;
+  font-size: 14px !important;
+  box-shadow: none !important;
 }
 
-.login-card-title {
-  margin: 0 0 4px;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--meme-text);
+.auth-field :deep(.vs-input__icon) {
+  left: 12px !important;
+  color: var(--meme-text-muted);
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-.login-card-subtitle {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--meme-text-secondary);
+.auth-field :deep(.vs-input.is-hovering .vs-input__wrapper),
+.auth-field:hover :deep(.vs-input__wrapper) {
+  background: color-mix(in srgb, var(--meme-bg-muted) 70%, var(--meme-bg-elevated)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-primary) 22%, var(--meme-border)) inset !important;
 }
 
-.login-card-switch {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--meme-text-secondary);
-  white-space: nowrap;
+.auth-field :deep(.vs-input.is-focus .vs-input__wrapper) {
+  background: var(--meme-bg-elevated) !important;
+  box-shadow:
+    0 0 0 1px var(--meme-primary) inset,
+    0 0 0 3px var(--meme-focus-ring) !important;
 }
 
-.link-button {
+.auth-field :deep(.vs-input.is-focus .vs-input__icon) {
   color: var(--meme-primary);
-  font-weight: 500;
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-.link-button:hover {
-  color: var(--meme-primary-dark);
 }
 
-.login-card-switch-text {
-  line-height: 1;
-}
-
-.login-form {
-  margin-top: 16px;
-}
-
-.login-extra-row {
-  margin-top: 8px;
-  margin-bottom: 8px;
+.auth-form__row {
   display: flex;
   justify-content: flex-end;
-  align-items: center;
-  font-size: 13px;
-  color: var(--meme-text-secondary);
+  margin: -4px 0 18px;
 }
 
-.forgot-link {
-  color: var(--meme-primary);
+a.auth-form__link,
+.auth-form__link {
+  color: var(--meme-primary) !important;
+  font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
 }
-.forgot-link:hover {
-  color: var(--meme-primary-dark);
+
+a.auth-form__link:hover,
+.auth-form__link:hover {
+  color: var(--meme-primary-dark) !important;
 }
 
-.login-actions {
-  margin-top: 8px;
-  display: flex;
-  justify-content: center;
+a.auth-form__link--strong,
+.auth-form__link--strong {
+  font-weight: 700;
+  margin-left: 4px;
 }
 
-.login-submit-button {
+.auth-form__submit {
   width: 100%;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%);
+  box-shadow: 0 6px 16px var(--meme-focus-ring);
+  transition: box-shadow 0.18s ease, filter 0.15s ease, transform 0.12s ease;
 }
 
-.login-hint {
-  margin: 16px 0 0;
-  font-size: 12px;
-  color: var(--meme-text-muted);
-  text-align: center;
+.auth-form__submit:hover:not(:disabled) {
+  filter: brightness(1.04);
+  box-shadow: 0 8px 20px var(--meme-focus-ring);
 }
 
-@media (max-width: 600px) {
-  .login-page {
-    padding: 24px 16px 32px;
-  }
+.auth-form__submit:active:not(:disabled) {
+  transform: scale(0.985);
+}
 
-  .login-card {
-    max-width: 100%;
+.auth-form__submit:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.auth-form__spin {
+  display: inline-block;
+  animation: auth-spin 0.8s linear infinite;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>
-

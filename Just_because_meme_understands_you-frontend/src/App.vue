@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <header class="site-header">
+    <header class="site-header" :class="{ 'is-scrolled': headerScrolled }">
       <div class="header-left">
         <router-link to="/" class="logo-wrap">
           <img class="logo-img" alt="网站 logo" src="/icon.svg?v=4" />
@@ -25,18 +25,22 @@
       </div>
 
       <div class="header-center">
-        <el-input
+        <vs-input
           ref="headerSearchRef"
           v-model="searchKeyword"
           placeholder="搜索梗图、标签..."
           clearable
+          block
+          icon-after
+          shape="rounded"
           class="header-search"
-          @keyup.enter="handleSearch"
+          @keydown.enter="handleSearch"
+          @click-icon="handleSearch"
         >
-          <template #suffix>
-            <el-icon class="search-suffix-icon" @click="handleSearch"><Search /></el-icon>
+          <template #icon>
+            <i class="ri-search-line search-suffix-icon" aria-hidden="true" />
           </template>
-        </el-input>
+        </vs-input>
       </div>
       <div class="header-right">
         <button
@@ -48,59 +52,72 @@
         >
           <i :class="themeBtnIcon" aria-hidden="true" />
         </button>
-        <!-- 未登录：显示 登录/注册 -->
         <template v-if="!currentUser">
-          <router-link :to="loginRoute" class="header-auth-link">登录</router-link>
-          <span class="header-auth-sep">/</span>
-          <router-link to="/register" class="header-auth-link">注册</router-link>
+          <div class="header-auth">
+            <vs-button
+              type="border"
+              color="primary"
+              size="small"
+              class="header-auth__login"
+              @click="$router.push(loginRoute)"
+            >
+              登录
+            </vs-button>
+            <vs-button
+              color="primary"
+              size="small"
+              class="header-auth__register"
+              @click="$router.push('/register')"
+            >
+              注册
+            </vs-button>
+          </div>
         </template>
-        <!-- 已登录：通知图标（悬停预览）+ 用户头像（悬停下拉菜单） -->
         <template v-else>
           <HeaderNotificationDropdown />
-          <el-dropdown
+          <ui-dropdown
             trigger="hover"
             placement="bottom-end"
             @command="handleUserMenuCommand"
           >
             <span class="header-avatar-wrapper">
-              <el-avatar
-                :size="36"
+              <ui-avatar
+                :size="34"
                 :src="currentUser.avatar"
+                :fallback="currentUser.nickname || currentUser.username || 'U'"
+                pointer
                 class="header-avatar"
-              >
-                {{ currentUser.nickname ? currentUser.nickname.charAt(0).toUpperCase() : 'U' }}
-              </el-avatar>
+              />
             </span>
             <template #dropdown>
-              <el-dropdown-menu class="user-dropdown-menu">
-                <el-dropdown-item command="publish">
+              <ui-dropdown-menu class="user-dropdown-menu">
+                <ui-dropdown-item command="publish">
                   <i class="ri-add-line user-dropdown-icon"></i>
                   <span>发布梗</span>
-                </el-dropdown-item>
-                <el-dropdown-item command="ai">
+                </ui-dropdown-item>
+                <ui-dropdown-item command="ai">
                   <i class="ri-robot-2-line user-dropdown-icon"></i>
                   <span>AI 搜梗</span>
-                </el-dropdown-item>
-                <el-dropdown-item command="profile">
+                </ui-dropdown-item>
+                <ui-dropdown-item command="profile">
                   <i class="ri-user-3-line user-dropdown-icon"></i>
                   <span>个人主页</span>
-                </el-dropdown-item>
-        
-                <el-dropdown-item command="account">
+                </ui-dropdown-item>
+                <ui-dropdown-item command="account">
                   <i class="ri-settings-3-line user-dropdown-icon"></i>
                   <span>账号设置</span>
-                </el-dropdown-item>
-                <el-dropdown-item command="feedback">
+                </ui-dropdown-item>
+                <ui-dropdown-item command="feedback">
                   <i class="ri-chat-1-line user-dropdown-icon"></i>
                   <span>提交反馈/建议</span>
-                </el-dropdown-item>
-                <el-dropdown-item divided command="logout">
+                </ui-dropdown-item>
+                <ui-dropdown-item divided command="logout">
                   <i class="ri-logout-box-r-line user-dropdown-icon"></i>
                   <span>退出账号</span>
-                </el-dropdown-item>
-              </el-dropdown-menu>
+                </ui-dropdown-item>
+              </ui-dropdown-menu>
             </template>
-          </el-dropdown>
+          </ui-dropdown>
         </template>
       </div>
     </header>
@@ -111,9 +128,8 @@
       class="route-progress-wrap"
     >
       <div class="route-progress-inner">
-        <el-progress
+        <ui-progress
           :percentage="progressPercent"
-          :show-text="false"
           :stroke-width="4"
           class="route-progress-bar"
         />
@@ -125,69 +141,71 @@
       <router-view />
 
       <!-- 回到顶部按钮 -->
-      <el-backtop
+      <ui-backtop
         :right="32"
         :bottom="40"
         :visibility-height="240"
         class="meme-backtop"
       >
         <div class="meme-backtop-inner">
-          <el-icon><ArrowUp /></el-icon>
+          <i class="ri-arrow-up-line" />
         </div>
-      </el-backtop>
+      </ui-backtop>
     </main>
 
-    <Teleport to="body">
-      <Transition name="logout-fade">
-        <div
-          v-if="logoutConfirmVisible"
-          class="logout-overlay"
-          role="presentation"
-          @click.self="cancelLogout"
-          @keydown.esc="cancelLogout"
-        >
-          <div
-            class="logout-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="logout-dialog-title"
-          >
-            <div class="logout-dialog__visual" aria-hidden="true">
-              <span class="logout-dialog__ring" />
-              <span class="logout-dialog__icon-wrap">
-                <i class="ri-logout-box-r-line logout-dialog__icon" />
-              </span>
-            </div>
-            <h3 id="logout-dialog-title" class="logout-dialog__title">退出登录</h3>
-            <p class="logout-dialog__desc">退出后仍可浏览梗图，发布与收藏等需重新登录。</p>
-            <div class="logout-dialog__actions">
-              <button
-                type="button"
-                class="logout-dialog__btn logout-dialog__btn--ghost"
-                :disabled="logoutLoading"
-                @click="cancelLogout"
-              >
-                再想想
-              </button>
-              <button
-                type="button"
-                class="logout-dialog__btn logout-dialog__btn--danger"
-                :disabled="logoutLoading"
-                @click="confirmLogout"
-              >
-                {{ logoutLoading ? '退出中…' : '退出登录' }}
-              </button>
-            </div>
-          </div>
+    <vs-dialog
+      v-model="logoutConfirmVisible"
+      width="360px"
+      class="logout-dialog"
+      :prevent-close="logoutLoading"
+      @close="cancelLogout"
+    >
+      <div class="logout-dialog__body">
+        <div class="logout-dialog__visual" aria-hidden="true">
+          <span class="logout-dialog__ring" />
+          <span class="logout-dialog__icon-wrap">
+            <i class="ri-logout-box-r-line logout-dialog__icon" />
+          </span>
         </div>
-      </Transition>
-    </Teleport>
+        <h3 class="logout-dialog__title">退出登录</h3>
+        <p class="logout-dialog__desc">
+          退出后仍可浏览梗图，发布与收藏等需重新登录。
+        </p>
+      </div>
 
+      <template #footer>
+        <div class="logout-dialog__actions">
+          <button
+            type="button"
+            class="logout-dialog__btn logout-dialog__btn--ghost"
+            :disabled="logoutLoading"
+            @click="cancelLogout"
+          >
+            再想想
+          </button>
+          <button
+            type="button"
+            class="logout-dialog__btn logout-dialog__btn--danger"
+            :disabled="logoutLoading"
+            @click="confirmLogout"
+          >
+            <i
+              v-if="logoutLoading"
+              class="ri-loader-4-line logout-dialog__btn-spin"
+              aria-hidden="true"
+            />
+            {{ logoutLoading ? '退出中...' : '退出登录' }}
+          </button>
+        </div>
+      </template>
+    </vs-dialog>
+
+    <UiConfirmDialog />
   </div>
 </template>
 
 <script>
-import { Search, ArrowUp } from '@element-plus/icons-vue'
+import { toast } from '@/utils/uiFeedback'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
@@ -203,7 +221,7 @@ import HeaderNotificationDropdown from '@/components/notification/HeaderNotifica
 
 export default {
   name: 'App',
-  components: { Search, ArrowUp, GlobalBreadcrumb, HeaderNotificationDropdown },
+  components: { GlobalBreadcrumb, HeaderNotificationDropdown },
   data() {
     return {
       searchKeyword: '',
@@ -213,6 +231,7 @@ export default {
       progressTweenTimer: null,
       logoutConfirmVisible: false,
       logoutLoading: false,
+      headerScrolled: false,
     }
   },
   computed: {
@@ -272,12 +291,15 @@ export default {
       this.searchKeyword = this.$route.query.keyword
     }
     window.addEventListener('route-loading', this.handleRouteLoading)
+    window.addEventListener('scroll', this.onHeaderScroll, { passive: true })
+    this.onHeaderScroll()
     this.startProgress()
     setTimeout(() => this.finishProgress(), 500)
     this.refreshNotificationBadge()
   },
   beforeUnmount() {
     window.removeEventListener('route-loading', this.handleRouteLoading)
+    window.removeEventListener('scroll', this.onHeaderScroll)
     this.clearProgressTimers()
   },
   watch: {
@@ -361,9 +383,7 @@ export default {
             : ''
       const userId = rawUserId != null ? String(rawUserId).trim() : ''
       if (!userId || !/^\d+$/.test(userId)) {
-        this.$message &&
-          this.$message.warning &&
-          this.$message.warning('登录态中的用户ID异常，请重新登录后再试')
+        toast.warning('登录态中的用户ID异常，请重新登录后再试')
         this.$router.push({ path: '/login', query: { redirect: this.$route.fullPath } })
         return
       }
@@ -465,6 +485,9 @@ export default {
         this.finishProgress()
       }
     },
+    onHeaderScroll() {
+      this.headerScrolled = window.scrollY > 8
+    },
     startProgress() {
       this.clearProgressTimers()
       this.isRouteLoading = true
@@ -504,14 +527,26 @@ export default {
 /* Token / 基础样式见 src/styles/tokens.css、base.css */
 
 .site-header {
-  height: 56px;
-  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 58px;
+  padding: 0 28px;
   display: grid;
-  grid-template-columns: auto minmax(220px, 360px) auto;
+  grid-template-columns: auto minmax(220px, 380px) auto;
   column-gap: 24px;
   align-items: center;
-  background-color: var(--meme-bg-card);
-  border-bottom: 1px solid var(--meme-border);
+  background: color-mix(in srgb, var(--meme-bg-elevated) 88%, transparent);
+  border-bottom: 1px solid transparent;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.site-header.is-scrolled {
+  border-bottom-color: var(--meme-border);
+  box-shadow: var(--meme-shadow-soft);
+  background: color-mix(in srgb, var(--meme-bg-elevated) 94%, transparent);
 }
 
 .header-left {
@@ -555,29 +590,60 @@ export default {
   background: var(--meme-primary-soft);
 }
 
-.header-auth-link {
-  color: var(--meme-primary);
-  font-size: 15px;
-  font-weight: 500;
-  text-decoration: none;
-  padding: 6px 12px;
-  border-radius: var(--meme-radius-sm, 6px);
-  transition: color 0.2s ease, background-color 0.2s ease;
+.header-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.header-auth-link:hover {
-  color: var(--meme-primary-dark);
-  background-color: var(--el-color-primary-light-9, #e8f2fd);
+
+.header-auth__login.vs-button,
+.header-auth__register.vs-button {
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
 }
-.header-auth-link.router-link-active {
-  color: var(--meme-primary);
-  background-color: var(--meme-primary-soft);
+
+.header-auth__login.vs-button {
+  color: var(--meme-primary) !important;
+  background: var(--meme-bg-elevated) !important;
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border)) !important;
 }
-.header-auth-sep {
-  color: var(--meme-text-secondary);
-  font-size: 14px;
-  font-weight: 400;
-  user-select: none;
-  margin: 0 2px;
+
+.header-auth__login.vs-button:hover:not(:disabled) {
+  color: var(--meme-primary-dark) !important;
+  background: var(--meme-primary-soft) !important;
+  border-color: var(--meme-primary) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.header-auth__register.vs-button {
+  color: #fff !important;
+  background: var(--meme-primary) !important;
+  border: 1px solid var(--meme-primary) !important;
+  box-shadow: 0 2px 8px var(--meme-focus-ring) !important;
+}
+
+.header-auth__register.vs-button:hover:not(:disabled) {
+  color: #fff !important;
+  background: var(--meme-primary-dark) !important;
+  border-color: var(--meme-primary-dark) !important;
+  box-shadow: 0 4px 12px var(--meme-focus-ring) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+.header-auth__login.vs-button :deep(.vs-button__content),
+.header-auth__login.vs-button :deep(.vs-button__text),
+.header-auth__register.vs-button :deep(.vs-button__content),
+.header-auth__register.vs-button :deep(.vs-button__text) {
+  color: inherit !important;
 }
 
 .logo-wrap {
@@ -596,67 +662,139 @@ export default {
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 4px;
 }
 
 .nav-link {
-  font-size: 18px;
+  position: relative;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--meme-text-secondary);
   text-decoration: none;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: color 0.15s ease, background-color 0.15s ease, transform 0.05s ease;
+  padding: 8px 12px;
+  border-radius: var(--meme-radius-sm);
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .nav-link:hover {
   color: var(--meme-primary);
-  background-color: var(--meme-bg-muted);
+  background-color: var(--meme-primary-soft);
 }
 
 .nav-link.active {
   color: var(--meme-primary);
-  background-color: var(--meme-border);
+  background-color: var(--meme-primary-soft);
+}
+
+.nav-link.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--meme-primary);
 }
 
 .nav-link:active {
-  color: var(--meme-primary);
-  background-color: var(--meme-border);
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .header-search {
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
 }
 
-.header-search :deep(.el-input__wrapper) {
-  border-radius: 999px;
+.header-search :deep(.vs-input__wrapper) {
+  height: 38px;
+  border-radius: 999px !important;
+  background: var(--meme-bg-muted) !important;
   box-shadow: 0 0 0 1px var(--meme-border) inset;
+  transition: box-shadow 0.18s ease, background 0.18s ease;
 }
 
-.header-search :deep(.el-input__wrapper:hover),
-.header-search :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px var(--meme-primary) inset;
+.header-search :deep(.vs-input__original) {
+  width: 100% !important;
+  height: 38px;
+  padding: 0 42px 0 16px !important;
+  border: none !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--meme-text) !important;
+  font-size: 14px;
+  line-height: 38px;
+  box-shadow: none !important;
+}
+
+.header-search :deep(.vs-input__original::placeholder) {
+  color: var(--meme-text-muted);
+  opacity: 0.85;
+}
+
+.header-search :deep(.vs-input__placeholder) {
+  left: 16px !important;
+  font-size: 14px;
+  color: var(--meme-text-muted);
+  opacity: 0.85;
+}
+
+.header-search :deep(.vs-input__icon) {
+  width: 32px !important;
+  height: 32px !important;
+  right: 3px !important;
+  left: auto !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--meme-text-muted);
+  transform: none !important;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.header-search :deep(.vs-input__icon:hover),
+.header-search :deep(.vs-input.is-focus .vs-input__icon) {
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.header-search :deep(.vs-input__clearable) {
+  right: 38px !important;
+  background: color-mix(in srgb, var(--meme-text-muted) 16%, transparent) !important;
+}
+
+.header-search:hover :deep(.vs-input__wrapper),
+.header-search :deep(.vs-input.is-hovering .vs-input__wrapper) {
+  background: var(--meme-bg-elevated) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border)) inset;
+}
+
+.header-search :deep(.vs-input.is-focus .vs-input__wrapper) {
+  background: var(--meme-bg-elevated) !important;
+  box-shadow:
+    0 0 0 1px var(--meme-primary) inset,
+    0 0 0 3px var(--meme-focus-ring) !important;
+}
+
+.header-search :deep(.vs-input.is-focus .vs-input__original) {
+  padding-left: 16px !important;
+  background: transparent !important;
 }
 
 .search-suffix-icon {
-  cursor: pointer;
-  color: var(--meme-text-muted);
-  transition: color 0.2s ease, transform 0.2s ease;
-}
-
-.search-suffix-icon:hover {
-  color: var(--meme-primary);
-  transform: scale(1.1);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .icon-button {
@@ -690,25 +828,31 @@ export default {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  border-radius: 50%;
+  border: 2px solid var(--meme-border);
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.header-avatar-wrapper:hover {
+  border-color: var(--meme-primary);
+  box-shadow: 0 4px 14px var(--meme-focus-ring);
+  transform: translateY(-1px);
 }
 
 .user-dropdown-menu {
   min-width: 180px;
 }
 
-.user-dropdown-menu .el-dropdown-menu__item {
-  font-size: 14px;
-}
-
-.user-dropdown-menu .el-dropdown-menu__item:hover {
-  background-color: var(--meme-primary-soft);
-  color: var(--meme-primary);
-}
-
-.user-dropdown-menu .el-dropdown-menu__item {
+.user-dropdown-menu :deep(.ui-dropdown-item) {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 14px;
+}
+
+.user-dropdown-menu :deep(.ui-dropdown-item:hover:not(:disabled)) {
+  background-color: var(--meme-primary-soft);
+  color: var(--meme-primary);
 }
 
 .user-dropdown-icon {
@@ -716,27 +860,20 @@ export default {
 }
 
 
-/* 右上角悬浮头像：点击展开名片浮窗 */
+/* 右上角悬浮头像 */
 .header-avatar {
   cursor: pointer;
-  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
-  color: var(--meme-text-inverse);
-  font-weight: 600;
-  font-size: 16px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
   flex-shrink: 0;
-  border-radius: 50%;
-}
-.header-avatar:hover {
-  transform: scale(1.06);
-  box-shadow: 0 4px 14px var(--meme-focus-ring);
 }
 
-/* 去掉 Element Plus 下拉触发元素在聚焦时的黑色描边 */
-#app .el-tooltip__trigger:focus,
-#app .el-tooltip__trigger:focus-visible,
-#app .el-dropdown-selfdefine:focus,
-#app .el-dropdown-selfdefine:focus-visible {
+.header-avatar:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* 去掉下拉触发元素在聚焦时的黑色描边 */
+#app .ui-dropdown__trigger:focus,
+#app .ui-dropdown__trigger:focus-visible {
   outline: none;
   box-shadow: none;
 }
@@ -758,7 +895,7 @@ export default {
   transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
 }
 
-.meme-backtop-inner .el-icon {
+.meme-backtop-inner i {
   font-size: 18px;
 }
 
@@ -768,7 +905,9 @@ export default {
 }
 
 .page-main {
-  padding: 16px 32px 32px;
+  padding: 8px 24px 28px;
+  max-width: 1280px;
+  margin: 0 auto;
 }
 
 /* 顶部加载进度条：贴顶、细条、带过渡与高光 */
@@ -788,11 +927,12 @@ export default {
   overflow: hidden;
 }
 
-.route-progress-bar :deep(.el-progress-bar__outer) {
+.route-progress-bar :deep(.ui-progress) {
+  height: 4px;
   border-radius: 0;
 }
 
-.route-progress-bar :deep(.el-progress-bar__inner) {
+.route-progress-bar :deep(.ui-progress__bar) {
   border-radius: 0;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 0 8px rgba(49, 138, 239, 0.5);
@@ -837,7 +977,7 @@ a.meme-card-link:visited {
   color: inherit;
 }
 
-/* 名片浮窗（el-popover 挂载在 body，需全局样式，与页面主题一致） */
+/* 名片浮窗（挂载在 body，需全局样式，与页面主题一致） */
 .profile-card-popover {
   padding: 0;
   border: 1px solid var(--meme-border);
@@ -849,13 +989,13 @@ a.meme-card-link:visited {
 .profile-card-popover .profile-card {
   padding: 16px 20px 20px;
   min-width: 240px;
-  background: linear-gradient(to bottom, var(--el-color-primary-light-9) 0%, var(--meme-bg-card) 24%);
+  background: linear-gradient(to bottom, var(--meme-primary-soft) 0%, var(--meme-bg-card) 24%);
 }
 .profile-card-popover .profile-card-tag {
   display: inline-block;
   padding: 4px 10px;
   border-radius: 999px;
-  background-color: var(--el-color-primary-light-9);
+  background-color: var(--meme-primary-soft);
   color: var(--meme-primary);
   font-size: 12px;
   margin-bottom: 12px;
@@ -897,45 +1037,56 @@ a.meme-card-link:visited {
   flex-wrap: wrap;
   gap: 8px;
 }
-.profile-card-popover .profile-card-actions .el-button--primary {
+.profile-card-popover .profile-card-actions .vs-button {
   box-shadow: 0 2px 6px rgba(49, 138, 239, 0.3);
-}
-.profile-card-popover .profile-card-actions .el-button.is-round {
   border-radius: 999px;
 }
 
-/* 退出登录确认 */
-.logout-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 4000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--meme-overlay);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+/* 退出登录确认（vs-dialog） */
+.logout-dialog.vs-dialog-content,
+.vs-dialog-content.logout-dialog {
+  border-radius: 20px !important;
+  border: 1px solid var(--meme-border) !important;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--meme-primary) 16%, transparent), transparent 55%),
+    var(--meme-bg-elevated) !important;
+  box-shadow: var(--meme-shadow-dialog) !important;
+  overflow: hidden;
 }
 
-.logout-dialog {
-  width: min(100%, 360px);
-  padding: 28px 28px 24px;
-  border-radius: 18px;
-  background:
-    var(--meme-gradient-dialog),
-    var(--meme-bg-card);
-  border: 1px solid var(--meme-border);
-  box-shadow: var(--meme-shadow-dialog);
+.logout-dialog .vs-dialog__header,
+.logout-dialog .vs-dialog-header {
+  display: none !important;
+}
+
+.logout-dialog .vs-dialog__content,
+.logout-dialog .vs-dialog-content {
+  padding: 28px 24px 8px !important;
+}
+
+.logout-dialog .vs-dialog__footer,
+.logout-dialog .vs-dialog-footer {
+  padding: 8px 24px 24px !important;
+  border-top: none !important;
+  background: transparent !important;
+}
+
+.logout-dialog .vs-dialog__close,
+.logout-dialog .vs-dialog-close {
+  top: 12px !important;
+  right: 12px !important;
+  color: var(--meme-text-muted) !important;
+}
+
+.logout-dialog__body {
   text-align: center;
-  transform-origin: center;
 }
 
 .logout-dialog__visual {
   position: relative;
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 18px;
+  width: 76px;
+  height: 76px;
+  margin: 4px auto 18px;
 }
 
 .logout-dialog__ring {
@@ -943,55 +1094,63 @@ a.meme-card-link:visited {
   inset: 0;
   border-radius: 50%;
   background: var(--meme-primary-soft);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--meme-primary) 8%, transparent);
   animation: logout-pulse 2.2s ease-in-out infinite;
 }
 
 .logout-dialog__icon-wrap {
   position: absolute;
-  inset: 10px;
+  inset: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: linear-gradient(145deg, var(--meme-primary), var(--meme-primary-dark));
+  background: var(--meme-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--meme-primary) 28%, var(--meme-border));
   box-shadow: 0 8px 20px var(--meme-focus-ring);
 }
 
 .logout-dialog__icon {
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1;
-  color: var(--meme-text-inverse);
+  color: var(--meme-primary);
 }
 
 .logout-dialog__title {
   margin: 0 0 8px;
   font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
 .logout-dialog__desc {
-  margin: 0 0 24px;
+  margin: 0 auto;
+  max-width: 280px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--meme-text-secondary);
 }
 
 .logout-dialog__actions {
   display: flex;
   gap: 12px;
+  width: 100%;
 }
 
 .logout-dialog__btn {
   flex: 1;
-  height: 42px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: none;
-  border-radius: 11px;
+  border-radius: 12px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .logout-dialog__btn:disabled {
@@ -1005,42 +1164,32 @@ a.meme-card-link:visited {
 
 .logout-dialog__btn--ghost {
   background: var(--meme-bg-muted);
-  color: var(--meme-text-secondary);
+  color: var(--meme-text);
+  border: 1px solid var(--meme-border);
 }
 
 .logout-dialog__btn--ghost:not(:disabled):hover {
-  background: var(--meme-border);
+  background: color-mix(in srgb, var(--meme-bg-muted) 70%, var(--meme-bg-elevated));
 }
 
 .logout-dialog__btn--danger {
-  color: var(--meme-text-inverse);
-  background: linear-gradient(135deg, #ef6b6b, var(--meme-danger));
-  box-shadow: 0 6px 16px rgba(225, 29, 72, 0.28);
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    #fb7185,
+    color-mix(in srgb, var(--meme-danger) 80%, #be123c)
+  );
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--meme-danger) 35%, transparent);
 }
 
 .logout-dialog__btn--danger:not(:disabled):hover {
-  box-shadow: 0 8px 20px rgba(225, 29, 72, 0.36);
+  filter: brightness(1.04);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--meme-danger) 42%, transparent);
 }
 
-.logout-fade-enter-active,
-.logout-fade-leave-active {
-  transition: opacity 0.22s ease;
-}
-
-.logout-fade-enter-active .logout-dialog,
-.logout-fade-leave-active .logout-dialog {
-  transition: transform 0.22s ease, opacity 0.22s ease;
-}
-
-.logout-fade-enter-from,
-.logout-fade-leave-to {
-  opacity: 0;
-}
-
-.logout-fade-enter-from .logout-dialog,
-.logout-fade-leave-to .logout-dialog {
-  opacity: 0;
-  transform: translateY(10px) scale(0.96);
+.logout-dialog__btn-spin {
+  display: inline-block;
+  animation: logout-spin 0.8s linear infinite;
 }
 
 @keyframes logout-pulse {
@@ -1052,6 +1201,12 @@ a.meme-card-link:visited {
   50% {
     transform: scale(1.08);
     opacity: 0.72;
+  }
+}
+
+@keyframes logout-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

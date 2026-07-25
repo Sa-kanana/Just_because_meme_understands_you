@@ -1,14 +1,17 @@
 <template>
   <div v-if="visible" class="list-load-footer">
-    <el-button
+    <vs-button
       v-if="hasMore"
-      round
+      class="meme-load-more-btn"
+      type="border"
+      color="primary"
       :loading="loading"
       :disabled="loading"
       @click="$emit('load-more')"
     >
+      <i v-if="!loading" class="ri-arrow-down-s-line" aria-hidden="true" />
       {{ loading ? '加载中…' : '加载更多' }}
-    </el-button>
+    </vs-button>
     <p v-else class="list-load-footer__end">{{ endText }}</p>
   </div>
 </template>
@@ -47,7 +50,7 @@ export default {
 .list-load-footer {
   display: flex;
   justify-content: center;
-  padding-top: 8px;
+  padding: 12px 0 4px;
 }
 
 .list-load-footer__end {

@@ -28,7 +28,9 @@ import java.util.Set;
  * 采用 PostObject policy 模式：后端生成带前缀限制的 policy 与签名，
  * 前端拿到凭证后直接 POST 表单到 OSS，无需经过后端转发，减轻服务端带宽压力。
  * <p>
- * 通过 fileType 参数将不同业务场景的图片分目录存放，便于管理与清理。
+ * 直传一律落到 {@code tmp/} 前缀；业务写库时由 {@link OssObjectPromoteService}
+ * 复制到正式目录。请在 OSS 控制台为 {@code tmp/} 配置生命周期（建议 3 天过期），
+ * 自动清理未提交的临时图。
  *
  * @author sakana
  */
@@ -48,7 +50,7 @@ public class OssUploadPolicyService {
     /** HMAC-SHA1 算法名 */
     private static final String HMAC_SHA1 = "HmacSHA1";
 
-    /** fileType 白名单：业务目录前缀。新增场景在此登记即可复用 */
+    /** fileType 白名单：映射到 tmp 下的业务子目录 */
     private static final Map<String, String> FILE_TYPE_DIR = new LinkedHashMap<>();
 
     static {
@@ -79,7 +81,7 @@ public class OssUploadPolicyService {
     /**
      * 签发上传凭证。
      *
-     * @param fileType 文件类型，决定 OSS 目录前缀（avatar/meme/comment/home）
+     * @param fileType 文件类型，决定 tmp 子目录（avatar/meme/comment）
      * @return 直传凭证
      */
     public OssUploadPolicyVO generatePolicy(String fileType) {
@@ -96,7 +98,7 @@ public class OssUploadPolicyService {
                 throw new BizException(Result.CODE_UNAUTHORIZED, "请先登录后再上传");
             }
         }
-        String dirPrefix = resolveDir(fileType);
+        String dirPrefix = resolveTmpDir(fileType);
 
         Date expiration = new Date(System.currentTimeMillis() + POLICY_TTL_SECONDS * 1000);
         // policy conditions：限制文件大小与 object key 前缀，防止越权写任意路径
@@ -116,20 +118,19 @@ public class OssUploadPolicyService {
     }
 
     /**
-     * 解析上传目录前缀。
-     * avatar 按 userId 分目录，其余按日期分目录，与现有头像上传目录结构保持一致。
+     * 临时上传目录：tmp/{type}/{userId}/[yyyyMMdd]/
+     * 正式入库前需 promote；未提交对象靠 OSS 生命周期删除。
      */
-    private String resolveDir(String fileType) {
+    private String resolveTmpDir(String fileType) {
         String normalized = StringUtils.hasText(fileType) ? fileType.trim().toLowerCase() : DEFAULT_DIR;
-        String topDir = FILE_TYPE_DIR.getOrDefault(normalized, DEFAULT_DIR);
-
+        String typeSeg = FILE_TYPE_DIR.getOrDefault(normalized, DEFAULT_DIR);
+        Long userId = parseCurrentUserId();
+        String userIdSeg = userId != null ? String.valueOf(userId) : "anonymous";
         if ("avatar".equals(normalized)) {
-            Long userId = parseCurrentUserId();
-            String userIdSeg = userId != null ? String.valueOf(userId) : "anonymous";
-            return topDir + "/" + userIdSeg + "/";
+            return OssObjectPromoteService.TMP_PREFIX + typeSeg + "/" + userIdSeg + "/";
         }
         String dateSeg = LocalDate.now().format(DATE_DIR_FORMATTER);
-        return topDir + "/" + dateSeg + "/";
+        return OssObjectPromoteService.TMP_PREFIX + typeSeg + "/" + userIdSeg + "/" + dateSeg + "/";
     }
 
     private Long parseCurrentUserId() {

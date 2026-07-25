@@ -10,6 +10,7 @@ import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.mapper.MemeCommentImageMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.vo.MemeReplyCommentVO;
@@ -41,6 +42,9 @@ public class MemeCommentSupport {
 
     @Resource
     private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private OssObjectPromoteService ossObjectPromoteService;
 
     public void validateUser(Long userId) {
         if (userId == null || userId <= 0) {
@@ -202,7 +206,7 @@ public class MemeCommentSupport {
         ));
     }
 
-    public void saveImages(Long commentId, List<String> images) {
+    public void saveImages(Long commentId, Long userId, List<String> images) {
         if (commentId == null || images == null || images.isEmpty()) {
             return;
         }
@@ -211,8 +215,7 @@ public class MemeCommentSupport {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
-            String key = ossUrlHelper.normalizeForStorage(url);
-            ossUrlHelper.assertOwnedImageKey(key, "comments/");
+            String key = ossObjectPromoteService.promoteCommentImage(url, userId);
             MemeCommentImage image = new MemeCommentImage();
             image.setMemeCommentId(commentId);
             image.setUrl(key);

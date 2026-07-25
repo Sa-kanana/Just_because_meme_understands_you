@@ -1,27 +1,27 @@
 <template>
   <div class="page meme-detail-page">
     <div v-if="loading" class="detail-loading">
-      <el-skeleton :rows="5" animated />
+      <ui-skeleton :rows="5" animated />
     </div>
     <div v-else-if="error" class="detail-error">
-      <el-result
+      <ui-result
         :icon="detailErrorIcon"
         :title="detailErrorTitle"
         :sub-title="detailErrorSubtitle"
       >
         <template #extra>
           <div class="detail-error-actions">
-            <el-button v-if="authStore.isLoggedIn" round @click="goMyPublished">
+            <vs-button v-if="authStore.isLoggedIn" @click="goMyPublished">
               回到我的发布
-            </el-button>
-            <el-button type="primary" round @click="reload">重试</el-button>
-            <el-button round @click="goHome">返回主页</el-button>
+            </vs-button>
+            <vs-button color="primary" @click="reload">重试</vs-button>
+            <vs-button @click="goHome">返回主页</vs-button>
           </div>
         </template>
-      </el-result>
+      </ui-result>
     </div>
     <div v-else-if="!meme" class="detail-empty">
-      <el-empty description="没有找到这个梗，可能被时光吃掉了～" />
+      <ui-empty description="没有找到这个梗，可能被时光吃掉了～" />
     </div>
     <div v-else class="detail-content" :class="{ 'detail-content--preview': ownerPreview }">
       <MemeDetailPreviewBanner
@@ -33,49 +33,29 @@
         @refresh="handlePreviewRefresh"
       />
 
-      <!-- 顶部大卡片：封面 + 基本信息 -->
-      <el-card class="detail-hero-card" :class="{ 'detail-hero-card--preview': ownerPreview }" shadow="never">
-        <el-row :gutter="20" class="detail-hero-row">
-          <el-col :xs="24" :md="10" :lg="9">
+      <!-- 顶部信息条：封面缩略图 + 信息流 -->
+      <vs-card class="detail-hero-card" :class="{ 'detail-hero-card--preview': ownerPreview }">
+        <template #text>
+          <div class="detail-hero-layout">
             <div class="detail-cover-wrap">
-              <el-image
-                v-if="meme.image"
+              <ui-image
+                v-if="meme.image && !coverLoadFailed"
                 :src="meme.image"
                 :alt="meme.name"
                 fit="cover"
                 class="detail-cover"
-              >
-                <template #error>
-                  <div class="detail-cover-fallback">
-                    <span class="detail-cover-fallback-icon" aria-hidden="true">🖼</span>
-                    <span>封面加载失败</span>
-                  </div>
-                </template>
-              </el-image>
+                @error="coverLoadFailed = true"
+              />
               <div v-else class="detail-cover-fallback">
-                <span class="detail-cover-fallback-icon" aria-hidden="true">🖼</span>
-                <span>暂无封面</span>
+                <i class="ri-image-line detail-cover-fallback-icon" aria-hidden="true" />
+                <span>{{ meme.image && coverLoadFailed ? '加载失败' : '暂无封面' }}</span>
               </div>
               <div v-if="ownerPreview" class="detail-cover-preview-tag">仅发布者可见</div>
-              <div
-                v-if="!ownerPreview"
-                class="detail-cover-overlay detail-cover-overlay--mobile"
-                aria-hidden="true"
-              >
-                <span class="overlay-stat">👁 {{ formatNum(meme.pageViews) }}</span>
-                <span class="overlay-stat">👍 {{ formatNum(meme.likes) }}</span>
-                <span class="overlay-stat">💬 {{ formatNum(meme.comments) }}</span>
-              </div>
-              <div v-else class="detail-cover-overlay detail-cover-overlay--muted detail-cover-overlay--mobile">
-                <span class="overlay-stat overlay-stat--hint">公域暂未展示</span>
-              </div>
             </div>
-          </el-col>
 
-          <el-col :xs="24" :md="14" :lg="15">
             <div class="detail-meta">
-              <div class="detail-meta-head">
-                <div class="detail-title-block">
+              <div class="detail-meta-top">
+                <div class="detail-meta-main">
                   <span
                     v-if="ownerPreview && memeStatusLabel"
                     class="detail-status-chip"
@@ -84,28 +64,33 @@
                     {{ memeStatusLabel }}
                   </span>
                   <h1 class="detail-title">{{ meme.name || '未命名梗' }}</h1>
-                  <button
-                    v-if="authorUserId"
-                    type="button"
-                    class="detail-author"
-                    @click="goUserProfile(authorUserId)"
-                  >
-                    <el-avatar :size="28" :src="authorAvatar" class="detail-author-avatar">
-                      {{ authorAvatarFallback }}
-                    </el-avatar>
-                    <span class="detail-author-name">{{ authorNickname }}</span>
-                  </button>
-                  <FollowButton
-                    v-if="authorUserId && !isAuthorSelf"
-                    :key="`detail-follow-${authorUserId}`"
-                    v-model="authorFollowed"
-                    :user-id="authorUserId"
-                    :mutual="authorMutual"
-                    size="sm"
-                    class="detail-follow-btn"
-                    fetch-on-mount
-                    @change="onAuthorFollowChange"
-                  />
+                  <div class="detail-author-row">
+                    <button
+                      v-if="authorUserId"
+                      type="button"
+                      class="detail-author"
+                      @click="goUserProfile(authorUserId)"
+                    >
+                      <ui-avatar
+                        :src="authorAvatar"
+                        :fallback="authorNickname"
+                        :size="26"
+                        class="detail-author-avatar"
+                      />
+                      <span class="detail-author-name">{{ authorNickname }}</span>
+                    </button>
+                    <FollowButton
+                      v-if="authorUserId && !isAuthorSelf"
+                      :key="`detail-follow-${authorUserId}`"
+                      v-model="authorFollowed"
+                      :user-id="authorUserId"
+                      :mutual="authorMutual"
+                      size="sm"
+                      class="detail-follow-btn"
+                      fetch-on-mount
+                      @change="onAuthorFollowChange"
+                    />
+                  </div>
                 </div>
                 <div class="detail-meta-actions">
                   <MemeDetailLikeBtn
@@ -129,76 +114,75 @@
                 </div>
               </div>
 
-              <div v-if="!ownerPreview" class="detail-stats-row" role="group" aria-label="梗数据统计">
-                <div class="detail-stat-item">
-                  <span class="detail-stat-value">{{ formatNum(meme.pageViews) }}</span>
-                  <span class="detail-stat-label">浏览</span>
-                </div>
-                <span class="detail-stat-divider" aria-hidden="true" />
-                <div class="detail-stat-item">
-                  <span class="detail-stat-value">{{ formatNum(meme.likes) }}</span>
-                  <span class="detail-stat-label">点赞</span>
-                </div>
-                <span class="detail-stat-divider" aria-hidden="true" />
-                <div class="detail-stat-item">
-                  <span class="detail-stat-value">{{ formatNum(meme.comments) }}</span>
-                  <span class="detail-stat-label">评论</span>
-                </div>
+              <div
+                v-if="!ownerPreview"
+                class="detail-stats-inline"
+                role="group"
+                aria-label="梗数据统计"
+              >
+                <span class="detail-stat-pill">
+                  <i class="ri-eye-line" aria-hidden="true" />
+                  <strong>{{ formatNum(meme.pageViews) }}</strong> 浏览
+                </span>
+                <span class="detail-stat-pill">
+                  <i class="ri-thumb-up-line" aria-hidden="true" />
+                  <strong>{{ formatNum(meme.likes) }}</strong> 点赞
+                </span>
+                <span class="detail-stat-pill">
+                  <i class="ri-chat-3-line" aria-hidden="true" />
+                  <strong>{{ formatNum(meme.comments) }}</strong> 评论
+                </span>
               </div>
 
-              <div class="detail-meta-body">
-                <section class="detail-intro-panel">
-                  <p class="detail-intro-label">梗介绍</p>
-                  <p v-if="meme.introduction" class="detail-intro">
-                    {{ meme.introduction }}
-                  </p>
-                  <p v-else class="detail-intro detail-intro--placeholder">
-                    {{ ownerPreview ? '预览模式下暂无介绍，可在发布页补充后再提交审核。' : '这个梗还没有详细介绍，欢迎你在评论区或社区里为它补完故事。' }}
-                  </p>
-                </section>
+              <p
+                class="detail-intro"
+                :class="{ 'detail-intro--placeholder': !meme.introduction }"
+              >
+                <template v-if="meme.introduction">{{ meme.introduction }}</template>
+                <template v-else>
+                  {{ ownerPreview ? '预览模式下暂无介绍，可在发布页补充后再提交审核。' : '这个梗还没有详细介绍，欢迎在评论区补完故事。' }}
+                </template>
+              </p>
 
-                <section v-if="detailTags.length" class="detail-tags-section">
-                  <span class="detail-tags-label">标签</span>
-                  <div class="detail-tags-list">
-                    <button
-                      v-for="tag in detailTags"
-                      :key="tag.id"
-                      type="button"
-                      class="detail-tag-chip"
-                      @click="goSearchByTag(tag)"
-                    >
-                      #{{ tag.name }}
-                    </button>
-                  </div>
-                </section>
-
-                <footer v-if="meme.releaseTime || meme.updateTime" class="detail-meta-footer">
-                  <div class="detail-time">
-                    <span v-if="meme.releaseTime" class="detail-time-item">
-                      首次出现 {{ formatDate(meme.releaseTime) }}
-                    </span>
-                    <span v-if="meme.releaseTime && meme.updateTime" class="detail-time-sep">·</span>
-                    <span v-if="meme.updateTime" class="detail-time-item">
-                      最近更新 {{ formatDate(meme.updateTime) }}
-                    </span>
-                  </div>
-                </footer>
+              <div class="detail-meta-foot">
+                <div v-if="detailTags.length" class="detail-tags-list">
+                  <button
+                    v-for="tag in detailTags"
+                    :key="tag.id"
+                    type="button"
+                    class="detail-tag-chip"
+                    @click="goSearchByTag(tag)"
+                  >
+                    #{{ tag.name }}
+                  </button>
+                </div>
+                <div v-if="meme.releaseTime || meme.updateTime" class="detail-time">
+                  <span v-if="meme.releaseTime" class="detail-time-item">
+                    {{ formatDate(meme.releaseTime) }}
+                  </span>
+                  <span v-if="meme.releaseTime && meme.updateTime" class="detail-time-sep">·</span>
+                  <span v-if="meme.updateTime" class="detail-time-item">
+                    更新于 {{ formatDate(meme.updateTime) }}
+                  </span>
+                </div>
               </div>
             </div>
-          </el-col>
-        </el-row>
-      </el-card>
+          </div>
+        </template>
+      </vs-card>
 
       <!-- 相关链接 / 延伸阅读 -->
-      <el-card v-if="normalizedLinks.length" class="detail-section-card" shadow="never">
-        <template #header>
+      <vs-card v-if="normalizedLinks.length" class="detail-section-card">
+        <template #title>
           <div class="detail-section-header">
+            <p class="meme-section-kicker">RELATED</p>
             <h2 class="detail-section-title">相关链接 · 延伸阅读</h2>
             <span class="detail-section-sub">
               帮你从不同角度更完整地理解这个梗
             </span>
           </div>
         </template>
+        <template #text>
         <div class="detail-links">
           <div
             v-for="link in normalizedLinks"
@@ -206,43 +190,38 @@
             class="detail-link-slot"
           >
             <div v-if="link.isMedia && isImageUrl(link.url)" class="detail-link-image-item">
-              <el-image
+              <ui-image
                 :src="link.url"
                 fit="cover"
                 class="detail-link-image"
-                :preview-src-list="[link.url]"
-                preview-teleported
-              >
-                <template #error>
-                  <div class="detail-link-image-error">图片加载失败</div>
-                </template>
-              </el-image>
+                @click="openImagePreview([link.url], 0)"
+              />
             </div>
-            <el-link
+            <ui-link
               v-else
               :href="link.url"
               target="_blank"
               rel="noopener noreferrer"
-              type="primary"
               class="detail-link-item"
             >
               <span class="detail-link-icon">{{ linkTypeIcon(link.type) }}</span>
               <span class="detail-link-text">{{ link.displayTitle }}</span>
-            </el-link>
+            </ui-link>
           </div>
         </div>
-      </el-card>
+        </template>
+      </vs-card>
 
       <!-- 评论区 -->
-      <el-card
+      <vs-card
         id="meme-comments"
         class="detail-section-card detail-comment-card"
         :class="{ 'detail-comment-card--preview': ownerPreview }"
-        shadow="never"
       >
-        <template #header>
+        <template #title>
           <div class="detail-section-header comment-header-row">
             <div>
+              <p class="meme-section-kicker">COMMENTS</p>
               <h2 class="detail-section-title">
                 {{ ownerPreview ? '评论区（预览未开放）' : '评论区' }}
               </h2>
@@ -250,19 +229,36 @@
                 {{ ownerPreview ? '审核通过后将开放互动' : `共 ${formatNum(commentTotal)} 条评论` }}
               </span>
             </div>
-            <el-radio-group
+            <div
               v-if="commentsEnabled"
-              v-model="commentSortType"
-              size="small"
               class="comment-sort-tabs"
-              @change="reloadComments"
+              role="tablist"
+              aria-label="评论排序"
             >
-              <el-radio-button label="new">最新</el-radio-button>
-              <el-radio-button label="hot">最热</el-radio-button>
-            </el-radio-group>
+              <button
+                type="button"
+                role="tab"
+                class="comment-sort-tab"
+                :class="{ 'is-active': commentSortType === 'new' }"
+                :aria-selected="commentSortType === 'new'"
+                @click="setCommentSort('new')"
+              >
+                最新
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="comment-sort-tab"
+                :class="{ 'is-active': commentSortType === 'hot' }"
+                :aria-selected="commentSortType === 'hot'"
+                @click="setCommentSort('hot')"
+              >
+                最热
+              </button>
+            </div>
           </div>
         </template>
-
+        <template #text>
         <div v-if="ownerPreview" class="comment-preview-disabled">
           <p class="comment-preview-disabled-title">评论区暂未开放</p>
           <p class="comment-preview-disabled-desc">
@@ -273,24 +269,21 @@
         <div v-if="authStore.isLoggedIn" class="comment-composer">
           <div class="comment-editor">
             <div class="comment-editor-row">
-              <el-avatar
-                :size="40"
+              <ui-avatar
                 :src="currentUserAvatar"
+                :fallback="commentAvatarFallback"
                 class="comment-editor-avatar"
                 @click="goCurrentUserProfile"
-              >
-                {{ commentAvatarFallback }}
-              </el-avatar>
+              />
               <div class="comment-editor-main">
                 <div class="comment-editor-input-wrap">
-                  <el-input
+                  <vs-input
                     v-model="commentDraft"
                     type="textarea"
-                    :autosize="{ minRows: 2, maxRows: 8 }"
                     maxlength="2000"
-                    show-word-limit
                     class="comment-editor-input"
                     placeholder="只是一直在等你而已，才不是想被评论呢～"
+                    block
                     @focus="commentEditorFocused = true"
                     @blur="onCommentEditorBlur"
                     @keydown.ctrl.enter.prevent="submitRootComment"
@@ -306,13 +299,11 @@
                     :key="`comment-draft-${idx}`"
                     class="comment-editor-image-item"
                   >
-                    <el-image
+                    <ui-image
                       :src="img"
-                      :preview-src-list="commentImages"
-                      :initial-index="idx"
                       fit="cover"
                       class="comment-editor-image-thumb"
-                      preview-teleported
+                      @click="openImagePreview(commentImages, idx)"
                     />
                     <button
                       type="button"
@@ -343,15 +334,15 @@
                     </label>
                     <span class="comment-editor-hint">Ctrl + Enter 发送 · 最多 3 张图</span>
                   </div>
-                  <el-button
-                    type="primary"
+                  <vs-button
+                    color="primary"
                     class="comment-submit-btn"
                     :loading="commentSubmitting"
                     :disabled="commentSubmitting || (!commentDraft.trim() && !commentImages.length)"
                     @click="submitRootComment"
                   >
                     发表评论
-                  </el-button>
+                  </vs-button>
                 </div>
               </div>
             </div>
@@ -362,14 +353,14 @@
             <strong>登录后参与讨论</strong>
             <span>说说你对这个梗的看法，或补充出处与用法</span>
           </div>
-          <el-button type="primary" @click="goToLogin">去登录</el-button>
+          <vs-button color="primary" @click="goToLogin">去登录</vs-button>
         </div>
 
         <div v-if="commentsLoading" class="comment-loading">
-          <el-skeleton :rows="3" animated />
+          <ui-skeleton :rows="3" animated />
         </div>
         <div v-else-if="!rootComments.length" class="comment-empty">
-          <el-empty description="还没有评论，来做第一个吧" :image-size="72" />
+          <ui-empty description="还没有评论，来做第一个吧" :image-size="72" />
         </div>
         <div v-else class="comment-list">
           <article
@@ -381,14 +372,12 @@
             :data-comment-id="item.id"
           >
             <div class="comment-item-body">
-              <el-avatar
-                :size="40"
+              <ui-avatar
                 :src="getCommentAvatar(item)"
+                :fallback="item.userName || 'U'"
                 class="comment-item-avatar"
                 @click="goUserProfile(item.userId)"
-              >
-                {{ getCommentAvatarFallback(item.userName) }}
-              </el-avatar>
+              />
               <div class="comment-item-main">
                 <div class="comment-item-head">
                   <button type="button" class="comment-user" @click="goUserProfile(item.userId)">
@@ -398,15 +387,13 @@
                 </div>
                 <p v-if="item.content" class="comment-content">{{ item.content }}</p>
                 <div v-if="item.images && item.images.length" class="comment-images">
-                  <el-image
+                  <ui-image
                     v-for="(img, idx) in item.images"
                     :key="`${item.id}-img-${idx}`"
                     :src="img"
-                    :preview-src-list="item.images"
-                    :initial-index="idx"
                     fit="cover"
                     class="comment-image"
-                    preview-teleported
+                    @click="openImagePreview(item.images, idx)"
                   />
                 </div>
                 <div class="comment-item-footer">
@@ -459,7 +446,7 @@
                 >
                   <div v-if="expandedRoots.has(String(item.id))" class="reply-list">
                     <div v-if="repliesLoadingMap[String(item.id)]" class="comment-loading">
-                      <el-skeleton :rows="2" animated />
+                      <ui-skeleton :rows="2" animated />
                     </div>
                     <template v-else>
                       <div
@@ -470,14 +457,12 @@
                         :class="{ 'is-focus-target': String(focusedCommentId) === String(reply.id) }"
                         :data-comment-id="reply.id"
                       >
-                        <el-avatar
-                          :size="32"
+                        <ui-avatar
                           :src="getCommentAvatar(reply)"
+                          :fallback="reply.userName || 'U'"
                           class="comment-item-avatar reply-item-avatar"
                           @click="goUserProfile(reply.userId)"
-                        >
-                          {{ getCommentAvatarFallback(reply.userName) }}
-                        </el-avatar>
+                        />
                         <div class="reply-item-main">
                           <div class="reply-item-head">
                             <button type="button" class="comment-user" @click="goUserProfile(reply.userId)">
@@ -521,38 +506,35 @@
                   </div>
 
                   <div v-if="replyDraftRootId === String(item.id)" class="reply-editor">
-                    <el-avatar
-                      :size="28"
+                    <ui-avatar
                       :src="currentUserAvatar"
+                      :fallback="commentAvatarFallback"
                       class="reply-editor-avatar"
-                    >
-                      {{ commentAvatarFallback }}
-                    </el-avatar>
+                    />
                     <div class="reply-editor-main">
-                      <el-input
+                      <vs-input
                         v-model="replyDraft"
                         type="textarea"
-                        :autosize="{ minRows: 2, maxRows: 6 }"
                         maxlength="2000"
-                        show-word-limit
                         class="reply-editor-input"
                         :placeholder="`回复 ${replyToName || 'TA'}…`"
+                        block
                         @keydown.ctrl.enter.prevent="submitReply()"
                         @keydown.meta.enter.prevent="submitReply()"
                       />
                       <div class="reply-editor-actions">
                         <span class="comment-editor-hint">Ctrl + Enter 发送</span>
                         <div class="reply-editor-btns">
-                          <el-button size="small" @click="cancelReply">取消</el-button>
-                          <el-button
+                          <vs-button size="small" @click="cancelReply">取消</vs-button>
+                          <vs-button
                             size="small"
-                            type="primary"
+                            color="primary"
                             :loading="replySubmitting"
                             :disabled="replySubmitting || !replyDraft.trim()"
                             @click="submitReply()"
                           >
                             发送回复
-                          </el-button>
+                          </vs-button>
                         </div>
                       </div>
                     </div>
@@ -564,10 +546,20 @@
         </div>
 
         <div v-if="commentHasMore" class="comment-load-more">
-          <el-button :loading="commentsLoading" @click="loadMoreComments">加载更多评论</el-button>
+          <vs-button
+            class="meme-load-more-btn"
+            type="border"
+            color="primary"
+            :loading="commentsLoading"
+            @click="loadMoreComments"
+          >
+            <i v-if="!commentsLoading" class="ri-arrow-down-s-line" aria-hidden="true" />
+            加载更多评论
+          </vs-button>
         </div>
         </template>
-      </el-card>
+        </template>
+      </vs-card>
 
       <!-- 底部提示 -->
       <div class="detail-footer-tip">
@@ -576,75 +568,170 @@
     </div>
 
     <!-- 收藏夹选择弹窗 -->
-    <el-dialog
+    <vs-dialog
       v-model="favoriteDialogVisible"
-      :title="isFavorited ? '管理收藏' : '收藏到收藏夹'"
       width="440px"
-      append-to-body
       class="favorite-folder-dialog"
     >
-      <div v-loading="favoriteFoldersLoading" class="favorite-folder-picker">
-        <div
-          v-for="f in favoriteFolders"
-          :key="f.id"
-          class="favorite-folder-item"
-          :class="{ active: sameFolderId(selectedFolderId, f.id) }"
-          @click="selectedFolderId = normalizeFolderId(f.id)"
-        >
-          <div class="favorite-folder-icon">{{ f.isDefault ? '☆' : '📁' }}</div>
-          <div class="favorite-folder-meta">
-            <div class="favorite-folder-name">
-              {{ f.name }}
-              <el-tag v-if="f.isDefault" size="small" type="info" effect="plain">默认</el-tag>
-              <el-tag v-else-if="Number(f.isPublic) === 0" size="small" type="warning" effect="plain">私密</el-tag>
-            </div>
-            <div class="favorite-folder-count">{{ f.memeCount || 0 }} 个梗图</div>
-          </div>
-          <span v-if="sameFolderId(selectedFolderId, f.id)" class="favorite-folder-check">✓</span>
-        </div>
-        <div class="favorite-folder-item favorite-folder-create" @click="openCreateFolderDialog">
-          <div class="favorite-folder-icon favorite-folder-icon-create">＋</div>
-          <div class="favorite-folder-meta">
-            <div class="favorite-folder-name">新建收藏夹</div>
-            <div class="favorite-folder-count">创建自定义分类</div>
-          </div>
-        </div>
+      <template #header>
+        {{ isFavorited ? '管理收藏' : '收藏到收藏夹' }}
+      </template>
+      <div class="favorite-folder-picker">
+        <ui-skeleton v-if="favoriteFoldersLoading" :rows="4" animated />
+        <template v-else>
+          <button
+            v-for="f in favoriteFolders"
+            :key="f.id"
+            type="button"
+            class="favorite-folder-item"
+            :class="{ active: sameFolderId(selectedFolderId, f.id) }"
+            @click="selectedFolderId = normalizeFolderId(f.id)"
+          >
+            <span class="favorite-folder-icon" aria-hidden="true">
+              <i :class="f.isDefault ? 'ri-star-line' : 'ri-folder-3-line'" />
+            </span>
+            <span class="favorite-folder-meta">
+              <span class="favorite-folder-name">
+                {{ f.name }}
+                <ui-tag v-if="f.isDefault" size="small" plain>默认</ui-tag>
+                <ui-tag v-else-if="Number(f.isPublic) === 0" type="warning" size="small" plain>私密</ui-tag>
+              </span>
+              <span class="favorite-folder-count">{{ f.memeCount || 0 }} 个梗图</span>
+            </span>
+            <i
+              v-if="sameFolderId(selectedFolderId, f.id)"
+              class="ri-check-line favorite-folder-check"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            class="favorite-folder-item favorite-folder-create"
+            @click="openCreateFolderDialog"
+          >
+            <span class="favorite-folder-icon favorite-folder-icon-create" aria-hidden="true">
+              <i class="ri-add-line" />
+            </span>
+            <span class="favorite-folder-meta">
+              <span class="favorite-folder-name">新建收藏夹</span>
+              <span class="favorite-folder-count">创建自定义分类</span>
+            </span>
+          </button>
+        </template>
       </div>
       <template #footer>
-        <el-button v-if="isFavorited" @click="removeFavoriteFromDialog" :loading="favoriteLoading">
-          取消收藏
-        </el-button>
-        <el-button @click="favoriteDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="favoriteLoading" @click="confirmFavorite">
-          {{ isFavorited && Number(selectedFolderId) === Number(currentFavoriteFolderId) ? '确定' : (isFavorited ? '移动到此夹' : '收藏到此夹') }}
-        </el-button>
+        <div class="favorite-folder-dialog__actions">
+          <button
+            v-if="isFavorited"
+            type="button"
+            class="fav-dlg-btn fav-dlg-btn--danger"
+            :disabled="favoriteLoading"
+            @click="removeFavoriteFromDialog"
+          >
+            取消收藏
+          </button>
+          <div class="favorite-folder-dialog__actions-end">
+            <button
+              type="button"
+              class="fav-dlg-btn fav-dlg-btn--ghost"
+              :disabled="favoriteLoading"
+              @click="favoriteDialogVisible = false"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="fav-dlg-btn fav-dlg-btn--primary"
+              :disabled="favoriteLoading"
+              @click="confirmFavorite"
+            >
+              <i
+                v-if="favoriteLoading"
+                class="ri-loader-4-line fav-dlg-btn__spin"
+                aria-hidden="true"
+              />
+              {{
+                isFavorited && Number(selectedFolderId) === Number(currentFavoriteFolderId)
+                  ? '确定'
+                  : isFavorited
+                    ? '移动到此夹'
+                    : '收藏到此夹'
+              }}
+            </button>
+          </div>
+        </div>
       </template>
-    </el-dialog>
+    </vs-dialog>
 
-    <!-- 新建收藏夹弹窗 -->
-    <el-dialog
+    <vs-dialog
       v-model="createFolderDialogVisible"
-      title="新建收藏夹"
       width="400px"
-      append-to-body
-      :close-on-click-modal="false"
+      class="favorite-folder-dialog create-folder-dialog"
     >
-      <el-form label-width="72px" @submit.prevent>
-        <el-form-item label="名称">
-          <el-input v-model="createFolderForm.name" maxlength="64" show-word-limit placeholder="收藏夹名称" />
-        </el-form-item>
-        <el-form-item label="可见性">
-          <el-radio-group v-model="createFolderForm.isPublic">
-            <el-radio :label="1">公开</el-radio>
-            <el-radio :label="0">私密</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
+      <template #header>新建收藏夹</template>
+      <ui-form label-position="top" class="create-folder-form" @submit.prevent>
+        <ui-form-item label="名称">
+          <vs-input
+            v-model="createFolderForm.name"
+            maxlength="64"
+            placeholder="收藏夹名称"
+            block
+            class="create-folder-input"
+          />
+        </ui-form-item>
+        <ui-form-item label="可见性">
+          <div class="folder-visibility-toggle">
+            <button
+              type="button"
+              class="folder-visibility-toggle__btn"
+              :class="{ 'is-active': createFolderForm.isPublic === 1 }"
+              @click="createFolderForm.isPublic = 1"
+            >
+              公开
+            </button>
+            <button
+              type="button"
+              class="folder-visibility-toggle__btn"
+              :class="{ 'is-active': createFolderForm.isPublic === 0 }"
+              @click="createFolderForm.isPublic = 0"
+            >
+              私密
+            </button>
+          </div>
+        </ui-form-item>
+      </ui-form>
       <template #footer>
-        <el-button @click="createFolderDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="createFolderSubmitting" @click="submitCreateFolder">创建</el-button>
+        <div class="favorite-folder-dialog__actions favorite-folder-dialog__actions--end">
+          <button
+            type="button"
+            class="fav-dlg-btn fav-dlg-btn--ghost"
+            :disabled="createFolderSubmitting"
+            @click="createFolderDialogVisible = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="fav-dlg-btn fav-dlg-btn--primary"
+            :disabled="createFolderSubmitting"
+            @click="submitCreateFolder"
+          >
+            <i
+              v-if="createFolderSubmitting"
+              class="ri-loader-4-line fav-dlg-btn__spin"
+              aria-hidden="true"
+            />
+            {{ createFolderSubmitting ? '创建中...' : '创建' }}
+          </button>
+        </div>
       </template>
-    </el-dialog>
+    </vs-dialog>
+
+    <vs-dialog v-model="imagePreviewVisible" width="90vw" class="image-preview-dialog">
+      <div class="image-preview-body">
+        <ui-image :src="imagePreviewSrc" fit="contain" class="image-preview-img" />
+      </div>
+    </vs-dialog>
   </div>
 </template>
 
@@ -663,7 +750,7 @@ import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { toast, confirmBox } from '@/utils/uiFeedback'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import { buildUserProfileLocation, buildSearchLocation } from '@/utils/pageBreadcrumb'
 
@@ -718,7 +805,6 @@ const authorAvatar = computed(() => {
   const avatar = authorInfo.value?.avatar
   return avatar != null ? String(avatar).trim() : ''
 })
-const authorAvatarFallback = computed(() => authorNickname.value.charAt(0).toUpperCase())
 
 const authorFollowed = ref(false)
 const authorMutual = ref(false)
@@ -810,6 +896,28 @@ const normalizedLinks = computed(() => {
 })
 
 const memeId = computed(() => route.params.id || route.query.memeId)
+const coverLoadFailed = ref(false)
+const imagePreviewVisible = ref(false)
+const imagePreviewSrc = ref('')
+
+watch(memeId, () => {
+  coverLoadFailed.value = false
+})
+
+function openImagePreview(srcOrList, index = 0) {
+  const list = Array.isArray(srcOrList) ? srcOrList.filter(Boolean) : [srcOrList].filter(Boolean)
+  if (!list.length) return
+  const idx = Math.max(0, Math.min(index, list.length - 1))
+  imagePreviewSrc.value = String(list[idx])
+  imagePreviewVisible.value = true
+}
+
+function setCommentSort(type) {
+  if (commentSortType.value === type) return
+  commentSortType.value = type
+  reloadComments()
+}
+
 const favoriteLoading = ref(false)
 const likeLoading = ref(false)
 const previewRefreshing = ref(false)
@@ -985,12 +1093,12 @@ async function handlePreviewRefresh() {
     const nextStatus = Number(memeDetailStore.meme?.status)
     const stillPreview = memeDetailStore.isOwnerPreview
     if (!stillPreview && prevStatus === 2 && nextStatus === 1) {
-      ElMessage.success('审核已通过，已进入公开展示')
+      toast.success('审核已通过，已进入公开展示')
       loadComments(true)
       return
     }
     if (stillPreview) {
-      ElMessage.success('状态已刷新')
+      toast.success('状态已刷新')
     }
   } finally {
     previewRefreshing.value = false
@@ -1077,7 +1185,7 @@ async function focusCommentFromRoute() {
           repliesMap[ensureKey] = Array.isArray(data?.list) ? data.list : []
         } catch (e) {
           if (seq !== commentFocusSeq) return
-          ElMessage.error(e.message || '加载回复失败')
+          toast.error(e.message || '加载回复失败')
           return
         } finally {
           repliesLoadingMap[ensureKey] = false
@@ -1163,7 +1271,7 @@ async function loadComments(reset = false) {
     commentHasMore.value = !!data.hasMore
   } catch (e) {
     if (commentsEnabled.value) {
-      ElMessage.error(e.message || '加载评论失败')
+      toast.error(e.message || '加载评论失败')
     }
   } finally {
     commentsLoading.value = false
@@ -1221,7 +1329,7 @@ function goCurrentUserProfile() {
   const rawId = user?.id ?? user?.userId
   const userId = rawId != null ? String(rawId).trim() : ''
   if (!userId || !/^\d+$/.test(userId)) {
-    ElMessage.warning('登录态中的用户ID异常，请重新登录后再试')
+    toast.warning('登录态中的用户ID异常，请重新登录后再试')
     goToLogin()
     return
   }
@@ -1231,11 +1339,6 @@ function goCurrentUserProfile() {
 function getCommentAvatar(comment) {
   const avatar = comment?.userAvatar ?? comment?.avatar
   return avatar != null ? String(avatar).trim() : ''
-}
-
-function getCommentAvatarFallback(name) {
-  const label = name || 'U'
-  return String(label).charAt(0).toUpperCase()
 }
 
 function onCommentEditorBlur() {
@@ -1261,11 +1364,11 @@ async function onCommentImageChange(event) {
   event.target.value = ''
   if (!file) return
   if (commentImages.value.length >= 3) {
-    ElMessage.warning('最多上传 3 张图片')
+    toast.warning('最多上传 3 张图片')
     return
   }
   if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('单张图片不能超过 10MB')
+    toast.warning('单张图片不能超过 10MB')
     return
   }
   commentImageUploading.value = true
@@ -1273,7 +1376,7 @@ async function onCommentImageChange(event) {
     const url = await uploadToOss(file, 'comment')
     commentImages.value.push(url)
   } catch (e) {
-    ElMessage.error(e.message || '图片上传失败')
+    toast.error(e.message || '图片上传失败')
   } finally {
     commentImageUploading.value = false
   }
@@ -1316,10 +1419,10 @@ async function submitRootComment() {
     if (meme.value) {
       meme.value.comments = (Number(meme.value.comments) || 0) + 1
     }
-    ElMessage.success('评论成功')
+    toast.success('评论成功')
   } catch (e) {
     if (isAuthErrorHandled(e)) return
-    ElMessage.error(e.message || '发表评论失败')
+    toast.error(e.message || '发表评论失败')
   } finally {
     commentSubmitting.value = false
   }
@@ -1386,10 +1489,10 @@ async function submitReply() {
     if (meme.value) {
       meme.value.comments = (Number(meme.value.comments) || 0) + 1
     }
-    ElMessage.success('回复成功')
+    toast.success('回复成功')
   } catch (e) {
     if (isAuthErrorHandled(e)) return
-    ElMessage.error(e.message || '发表回复失败')
+    toast.error(e.message || '发表回复失败')
   } finally {
     replySubmitting.value = false
   }
@@ -1410,7 +1513,7 @@ async function toggleReplies(item) {
     const data = await getMemeCommentReplies(item.id, { page: 1, size: 50 })
     repliesMap[key] = Array.isArray(data?.list) ? data.list : []
   } catch (e) {
-    ElMessage.error(e.message || '加载回复失败')
+    toast.error(e.message || '加载回复失败')
     expandedRoots.value.delete(key)
   } finally {
     repliesLoadingMap[key] = false
@@ -1441,7 +1544,7 @@ async function toggleCommentLike(comment) {
     comment.liked = prevLiked
     comment.likes = prevCount
     if (isAuthErrorHandled(e)) return
-    ElMessage.error(e.message || (nextLiked ? '点赞失败' : '取消点赞失败'))
+    toast.error(e.message || (nextLiked ? '点赞失败' : '取消点赞失败'))
   } finally {
     commentLikeLoadingMap[key] = false
   }
@@ -1454,12 +1557,13 @@ async function removeComment(comment, rootItem = null) {
   if (commentDeleteLoadingMap[key]) return
 
   try {
-    await ElMessageBox.confirm('确认删除这条评论？删除后不可恢复。', '删除评论', {
+    await confirmBox('确认删除这条评论？删除后不可恢复。', '删除评论', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-  } catch (_) {
+  } catch (e) {
+    if (e === 'cancel') return
     return
   }
 
@@ -1486,10 +1590,10 @@ async function removeComment(comment, rootItem = null) {
         meme.value.comments = Math.max(0, (Number(meme.value.comments) || 0) - 1)
       }
     }
-    ElMessage.success('已删除')
+    toast.success('已删除')
   } catch (e) {
     if (isAuthErrorHandled(e)) return
-    ElMessage.error(e.message || '删除失败')
+    toast.error(e.message || '删除失败')
   } finally {
     commentDeleteLoadingMap[key] = false
   }
@@ -1533,7 +1637,7 @@ async function toggleLike() {
   } catch (e) {
     memeDetailStore.applyLikeState({ liked: prevLiked, likeCount: prevCount })
     if (!isAuthErrorHandled(e)) {
-      ElMessage.error(e.message || (prevLiked ? '取消点赞失败' : '点赞失败'))
+      toast.error(e.message || (prevLiked ? '取消点赞失败' : '点赞失败'))
     }
   } finally {
     likeLoading.value = false
@@ -1567,7 +1671,7 @@ async function openFavoriteDialog() {
       }
     }
   } catch (e) {
-    ElMessage.error((e && e.message) || '加载收藏夹失败')
+    toast.error((e && e.message) || '加载收藏夹失败')
     favoriteDialogVisible.value = false
   } finally {
     favoriteFoldersLoading.value = false
@@ -1585,22 +1689,22 @@ async function confirmFavorite() {
       if (current != null && sameFolderId(current, folderId)) {
         await removeMemeFavorite(id)
         memeDetailStore.setFavorited(false)
-        ElMessage.success('已取消收藏')
+        toast.success('已取消收藏')
       } else {
         await moveMemeFavorite(id, folderId)
         currentFavoriteFolderId.value = folderId
-        ElMessage.success('已移动到「' + folderName(folderId) + '」')
+        toast.success('已移动到「' + folderName(folderId) + '」')
       }
     } else {
       await addMemeFavorite(id, folderId)
       memeDetailStore.setFavorited(true)
       currentFavoriteFolderId.value = folderId
-      ElMessage.success('已收藏到「' + folderName(folderId) + '」')
+      toast.success('已收藏到「' + folderName(folderId) + '」')
     }
     favoriteDialogVisible.value = false
   } catch (e) {
     if (isAuthErrorHandled(e)) return
-    ElMessage.error((e && e.message) || '操作失败，请稍后重试')
+    toast.error((e && e.message) || '操作失败，请稍后重试')
   } finally {
     favoriteLoading.value = false
   }
@@ -1619,7 +1723,7 @@ function openCreateFolderDialog() {
 async function submitCreateFolder() {
   const name = (createFolderForm.value.name || '').trim()
   if (!name) {
-    ElMessage.warning('请输入收藏夹名称')
+    toast.warning('请输入收藏夹名称')
     return
   }
   createFolderSubmitting.value = true
@@ -1635,9 +1739,9 @@ async function submitCreateFolder() {
       selectedFolderId.value = newId
     }
     createFolderDialogVisible.value = false
-    ElMessage.success('收藏夹已创建')
+    toast.success('收藏夹已创建')
   } catch (e) {
-    ElMessage.error((e && e.message) || '创建失败')
+    toast.error((e && e.message) || '创建失败')
   } finally {
     createFolderSubmitting.value = false
   }
@@ -1650,10 +1754,10 @@ async function removeFavoriteFromDialog() {
   try {
     await removeMemeFavorite(id)
     memeDetailStore.setFavorited(false)
-    ElMessage.success('已取消收藏')
+    toast.success('已取消收藏')
     favoriteDialogVisible.value = false
   } catch (e) {
-    ElMessage.error((e && e.message) || '取消收藏失败')
+    toast.error((e && e.message) || '取消收藏失败')
   } finally {
     favoriteLoading.value = false
   }
@@ -1737,11 +1841,11 @@ function goSearchByTag(tag) {
 
 <style scoped>
 .page {
-  padding: 24px 32px;
+  padding: 4px 0 24px;
 }
 
 .meme-detail-page {
-  max-width: 1200px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -1761,44 +1865,46 @@ function goSearchByTag(tag) {
 .detail-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .detail-content--preview {
-  gap: 16px;
+  gap: 14px;
 }
 
 .detail-hero-card {
-  border-radius: var(--meme-radius-xl);
+  width: 100%;
+  max-width: none;
+  border-radius: var(--meme-radius-xl) !important;
   border: 1px solid var(--meme-border);
-  background: var(--meme-gradient-hero);
-  box-shadow: var(--meme-shadow-card);
+  background: var(--meme-gradient-hero) !important;
+  box-shadow: var(--meme-shadow-card) !important;
   overflow: hidden;
 }
 
-.detail-hero-card :deep(.el-card__body) {
-  padding: 20px 24px;
+.detail-hero-card :deep(.vs-card__text) {
+  padding: 16px;
 }
 
 .detail-hero-card--preview {
   border: 1px solid var(--meme-border-accent);
-  background: var(--meme-gradient-card);
+  background: var(--meme-gradient-card) !important;
 }
 
-.detail-hero-row {
-  align-items: stretch;
+.detail-hero-layout {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
 }
 
 .detail-cover-wrap {
   position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  min-height: 180px;
-  max-height: 280px;
-  border-radius: var(--meme-radius-lg);
-  background:
-    radial-gradient(circle at 20% 20%, var(--meme-primary-soft), transparent 45%),
-    var(--meme-bg-cover);
+  width: 148px;
+  height: 148px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: var(--meme-bg-cover);
   overflow: hidden;
   border: 1px solid var(--meme-border);
   box-shadow: var(--meme-shadow-soft);
@@ -1808,6 +1914,14 @@ function goSearchByTag(tag) {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: cover;
+}
+
+.detail-cover :deep(img),
+.detail-cover :deep(.ui-image) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .detail-cover-fallback {
@@ -1817,66 +1931,39 @@ function goSearchByTag(tag) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--meme-text-muted);
-  font-size: 13px;
+  font-size: 12px;
+  background:
+    radial-gradient(circle at 30% 20%, var(--meme-primary-soft), transparent 55%),
+    var(--meme-bg-cover);
 }
 
 .detail-cover-fallback-icon {
-  font-size: 28px;
+  font-size: 22px;
   opacity: 0.55;
 }
 
-.detail-cover-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 10px 12px;
-  background: linear-gradient(transparent, rgba(15, 23, 42, 0.78));
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-}
-
-.detail-cover-overlay--mobile {
-  display: flex;
-}
-
-.detail-cover-overlay--muted {
-  background: linear-gradient(transparent, rgba(15, 23, 42, 0.72));
-  justify-content: center;
-}
-
-.overlay-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  letter-spacing: 0.02em;
-}
-
-.overlay-stat--hint {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
 .detail-meta {
-  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 2px 0 0;
+  gap: 8px;
+  min-width: 0;
 }
 
-.detail-meta-head {
+.detail-meta-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.detail-meta-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .detail-meta-actions {
@@ -1884,41 +1971,32 @@ function goSearchByTag(tag) {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.detail-meta-like,
-.detail-meta-favorite {
-  flex-shrink: 0;
-}
-
-.detail-title-block {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.detail-title-block .detail-title {
-  flex: 1 1 100%;
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .detail-title {
   margin: 0;
-  font-size: clamp(20px, 2.2vw, 26px);
+  font-size: clamp(18px, 2vw, 22px);
   font-weight: 800;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
   color: var(--meme-text);
+}
+
+.detail-author-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail-author {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   max-width: 100%;
-  margin: 2px 0 0;
+  margin: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -1927,7 +2005,6 @@ function goSearchByTag(tag) {
 }
 
 .detail-follow-btn {
-  margin: 2px 0 0;
   flex-shrink: 0;
 }
 
@@ -1937,16 +2014,13 @@ function goSearchByTag(tag) {
 
 .detail-author-avatar {
   flex-shrink: 0;
-  background: var(--meme-bg-muted);
-  color: var(--meme-text-secondary);
-  font-size: 12px;
 }
 
 .detail-author-name {
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.3;
   color: var(--meme-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1954,104 +2028,58 @@ function goSearchByTag(tag) {
   transition: color 0.15s ease;
 }
 
-.detail-stats-row {
-  display: none;
-  align-items: center;
-  gap: 0;
-  padding: 8px 12px;
-  border-radius: var(--meme-radius-md);
-  background: var(--meme-bg-muted);
-  border: 1px solid var(--meme-border);
-}
-
-.detail-stat-item {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-}
-
-.detail-stat-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--meme-border-strong);
-  flex-shrink: 0;
-}
-
-.detail-stat-value {
-  display: block;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--meme-text);
-}
-
-.detail-stat-label {
-  display: block;
-  margin-top: 1px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--meme-text-muted);
-}
-
-.detail-meta-body {
-  flex: 1;
+.detail-stats-inline {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
   background: var(--meme-bg-muted);
-  border: 1px solid var(--meme-border);
-}
-
-.detail-intro-panel {
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-.detail-intro-label {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
   color: var(--meme-text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
-.detail-intro-panel .detail-intro {
-  padding-left: 10px;
-  border-left: 3px solid var(--meme-primary);
+.detail-stat-pill i {
+  font-size: 13px;
+  color: var(--meme-primary);
+}
+
+.detail-stat-pill strong {
+  font-weight: 700;
+  color: var(--meme-text);
 }
 
 .detail-intro {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--meme-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .detail-intro--placeholder {
   color: var(--meme-text-muted);
-  font-style: normal;
 }
 
-.detail-tags-section {
+.detail-meta-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding-top: 2px;
-}
-
-.detail-tags-label {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--meme-text-secondary);
+  justify-content: space-between;
+  gap: 8px 12px;
 }
 
 .detail-tags-list {
@@ -2061,83 +2089,55 @@ function goSearchByTag(tag) {
 }
 
 .detail-tag-chip {
+  padding: 3px 10px;
   border: 1px solid var(--meme-border-accent);
-  background: var(--meme-primary-soft);
-  color: var(--meme-accent-text);
-  padding: 4px 10px;
   border-radius: 999px;
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.12s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .detail-tag-chip:hover {
-  background: var(--meme-primary-soft);
   border-color: var(--meme-primary);
 }
 
-.detail-tag-chip:active {
-  transform: scale(0.98);
-}
-
-.detail-meta-footer {
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--meme-border);
-}
-
 .detail-time {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .detail-time-item {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--meme-text-muted);
 }
 
 .detail-time-sep {
   color: var(--meme-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   user-select: none;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 720px) {
+  .detail-hero-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .detail-cover-wrap {
-    height: 100%;
-    max-height: none;
-    aspect-ratio: auto;
-    min-height: 220px;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-height: 200px;
   }
 
-  .detail-cover-overlay--mobile:not(.detail-cover-overlay--muted) {
-    display: none;
-  }
-
-  .detail-stats-row {
-    display: flex;
-  }
-}
-
-@media (max-width: 767px) {
-  .detail-hero-card :deep(.el-card__body) {
-    padding: 16px;
-  }
-
-  .detail-meta {
-    gap: 10px;
-    padding-top: 2px;
-  }
-
-  .detail-meta-head {
+  .detail-meta-top {
     flex-wrap: wrap;
-    align-items: flex-start;
   }
 
   .detail-meta-actions {
@@ -2149,13 +2149,13 @@ function goSearchByTag(tag) {
     flex: 1;
   }
 
-  .detail-stat-value {
-    font-size: 14px;
+  .detail-meta-foot {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .detail-meta-body {
-    padding: 10px 12px;
-    gap: 8px;
+  .detail-time {
+    margin-left: 0;
   }
 }
 
@@ -2191,7 +2191,7 @@ function goSearchByTag(tag) {
   background: var(--meme-bg-muted);
 }
 
-.detail-comment-card--preview :deep(.el-card__header) {
+.detail-comment-card--preview :deep(.vs-card__title) {
   background: var(--meme-bg-muted);
 }
 
@@ -2218,33 +2218,40 @@ function goSearchByTag(tag) {
 }
 
 .detail-section-card {
-  border-radius: 20px;
+  width: 100%;
+  max-width: none;
+  border-radius: 16px !important;
   border: 1px solid var(--meme-border);
-  background: var(--meme-bg-card);
-  box-shadow: var(--meme-shadow-card);
+  background: var(--meme-bg-card) !important;
+  box-shadow: var(--meme-shadow-card) !important;
   overflow: hidden;
 }
 
-.detail-section-card :deep(.el-card__header) {
-  padding: 18px 24px 14px;
+.detail-section-card :deep(.vs-card__title) {
+  padding: 12px 16px 10px;
   border-bottom: 1px solid var(--meme-border);
   background: var(--meme-gradient-card);
 }
 
-.detail-section-card :deep(.el-card__body) {
-  padding: 20px 24px 24px;
+.detail-section-card :deep(.vs-card__text) {
+  padding: 14px 16px 16px;
 }
 
 .detail-section-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+
+.detail-section-header .meme-section-kicker {
+  margin: 0 0 2px;
 }
 
 .detail-section-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
@@ -2255,37 +2262,34 @@ function goSearchByTag(tag) {
 }
 
 .detail-links {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.detail-link-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
 }
 
 .detail-link-slot {
-  display: inline-flex;
-  align-items: flex-start;
+  display: flex;
+  min-width: 0;
 }
 
 .detail-link-item {
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: var(--meme-radius-md);
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--meme-border);
   background: var(--meme-bg-muted);
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .detail-link-item:hover {
   background: var(--meme-bg-elevated);
-  border-color: var(--meme-border-accent);
+  border-color: color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border));
+  box-shadow: var(--meme-shadow-soft);
+  transform: translateY(-1px);
 }
 
 .detail-link-image-item {
@@ -2339,38 +2343,54 @@ function goSearchByTag(tag) {
   gap: 12px;
 }
 
-.comment-sort-tabs :deep(.el-radio-button__inner) {
-  border: none;
-  border-radius: 999px !important;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--meme-text-secondary);
-  background: transparent;
-  box-shadow: none !important;
-}
-
-.comment-sort-tabs :deep(.el-radio-button:first-child .el-radio-button__inner) {
-  border-left: none;
-}
-
-.comment-sort-tabs :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  color: var(--meme-text-inverse);
-  background: var(--meme-primary);
-}
-
 .comment-sort-tabs {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
   padding: 3px;
   border-radius: 999px;
   background: var(--meme-bg-muted);
+  border: 1px solid var(--meme-border);
+  flex-shrink: 0;
+}
+
+.comment-sort-tab {
+  min-width: 64px;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.comment-sort-tab:hover:not(.is-active) {
+  color: var(--meme-text);
+  background: color-mix(in srgb, var(--meme-bg-elevated) 70%, transparent);
+}
+
+.comment-sort-tab.is-active {
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
+  color: #fff;
+  box-shadow: 0 4px 12px var(--meme-focus-ring);
+}
+
+.comment-sort-tab:active {
+  transform: scale(0.98);
 }
 
 .comment-composer {
-  margin-bottom: 22px;
-  padding: 18px;
-  border-radius: 16px;
-  background: var(--meme-bg-muted);
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 90%, transparent);
   border: 1px solid var(--meme-border);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .comment-editor {
@@ -2385,6 +2405,8 @@ function goSearchByTag(tag) {
 
 .comment-editor-avatar {
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
   transition: opacity 0.2s ease;
 }
@@ -2405,7 +2427,7 @@ function goSearchByTag(tag) {
   min-width: 0;
 }
 
-.comment-editor-input :deep(.el-textarea__inner) {
+.comment-editor-input :deep(textarea) {
   min-height: 72px;
   padding: 12px 14px;
   line-height: 1.6;
@@ -2417,18 +2439,13 @@ function goSearchByTag(tag) {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.comment-editor-input :deep(.el-textarea__inner::placeholder) {
+.comment-editor-input :deep(textarea::placeholder) {
   color: var(--meme-text-muted);
 }
 
-.comment-editor-input :deep(.el-textarea__inner:focus) {
+.comment-editor-input :deep(textarea:focus) {
   border-color: var(--meme-primary);
   box-shadow: 0 0 0 3px var(--meme-focus-ring);
-}
-
-.comment-editor-input :deep(.el-input__count) {
-  background: transparent;
-  color: var(--meme-text-muted);
 }
 
 .comment-editor-toolbar {
@@ -2639,6 +2656,8 @@ function goSearchByTag(tag) {
 
 .comment-item-avatar {
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
   transition: opacity 0.2s ease;
 }
@@ -2784,6 +2803,8 @@ function goSearchByTag(tag) {
 
 .reply-item-avatar {
   margin-top: 2px;
+  width: 32px;
+  height: 32px;
 }
 
 .reply-editor {
@@ -2798,6 +2819,8 @@ function goSearchByTag(tag) {
 .reply-editor-avatar {
   flex-shrink: 0;
   margin-top: 2px;
+  width: 28px;
+  height: 28px;
 }
 
 .reply-editor-main {
@@ -2808,7 +2831,7 @@ function goSearchByTag(tag) {
   gap: 10px;
 }
 
-.reply-editor-input :deep(.el-textarea__inner) {
+.reply-editor-input :deep(textarea) {
   padding: 10px 12px;
   line-height: 1.55;
   border: 1px solid var(--meme-border-strong);
@@ -2818,15 +2841,10 @@ function goSearchByTag(tag) {
   box-shadow: none;
 }
 
-.reply-editor-input :deep(.el-textarea__inner:focus) {
+.reply-editor-input :deep(textarea:focus) {
   border-color: var(--meme-primary);
   box-shadow: 0 0 0 3px var(--meme-focus-ring);
   background: var(--meme-bg-card);
-}
-
-.reply-editor-input :deep(.el-input__count) {
-  background: transparent;
-  color: var(--meme-text-muted);
 }
 
 .reply-editor-actions {
@@ -2851,15 +2869,15 @@ function goSearchByTag(tag) {
 
 @media (max-width: 768px) {
   .page {
-    padding: 16px;
+    padding: 0 0 16px;
   }
 
   .detail-hero-card {
-    padding: 16px;
+    padding: 0;
   }
 
   .detail-cover-wrap {
-    margin-bottom: 12px;
+    margin-bottom: 0;
   }
 
   .comment-composer {
@@ -2894,77 +2912,286 @@ function goSearchByTag(tag) {
 }
 
 /* 收藏夹选择弹窗 */
+.favorite-folder-dialog.vs-dialog-content,
+.vs-dialog-content.favorite-folder-dialog,
+:deep(.favorite-folder-dialog.vs-dialog-content),
+:deep(.vs-dialog-content.favorite-folder-dialog) {
+  border-radius: 18px !important;
+  border: 1px solid var(--meme-border) !important;
+  background: var(--meme-bg-elevated) !important;
+  box-shadow: var(--meme-shadow-dialog) !important;
+  overflow: hidden;
+}
+
+:deep(.favorite-folder-dialog .vs-dialog__header),
+:deep(.favorite-folder-dialog .vs-dialog-header) {
+  padding: 18px 20px 8px !important;
+  text-align: center;
+  border-bottom: none !important;
+}
+
+:deep(.favorite-folder-dialog .vs-dialog__header h3),
+:deep(.favorite-folder-dialog .vs-dialog-header),
+:deep(.favorite-folder-dialog .vs-dialog__header *) {
+  font-size: 17px !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.02em;
+  color: var(--meme-text) !important;
+}
+
+:deep(.favorite-folder-dialog .vs-dialog__content),
+:deep(.favorite-folder-dialog .vs-dialog-content) {
+  padding: 8px 20px 4px !important;
+}
+
+:deep(.favorite-folder-dialog .vs-dialog__footer),
+:deep(.favorite-folder-dialog .vs-dialog-footer) {
+  padding: 12px 20px 20px !important;
+  border-top: 1px solid var(--meme-border) !important;
+  background: transparent !important;
+}
+
+:deep(.favorite-folder-dialog .vs-dialog__close),
+:deep(.favorite-folder-dialog .vs-dialog-close) {
+  top: 12px !important;
+  right: 12px !important;
+  color: var(--meme-text-muted) !important;
+}
+
 .favorite-folder-picker {
   max-height: 360px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 4px 2px;
+  padding: 4px 0 8px;
 }
+
 .favorite-folder-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--meme-border);
+  border-radius: 12px;
+  background: var(--meme-bg-elevated);
   cursor: pointer;
-  transition: all 0.18s ease;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
+
 .favorite-folder-item:hover {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
+  border-color: color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border));
+  background: var(--meme-primary-soft);
 }
+
 .favorite-folder-item.active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  border-color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-primary) 35%, transparent);
 }
+
 .favorite-folder-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   flex-shrink: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--el-fill-color-light);
-  font-size: 22px;
-  color: var(--el-text-color-secondary);
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font-size: 20px;
 }
+
+.favorite-folder-icon i {
+  line-height: 1;
+}
+
 .favorite-folder-meta {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+
 .favorite-folder-name {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  color: var(--el-text-color-primary);
+  color: var(--meme-text);
 }
+
 .favorite-folder-count {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-top: 2px;
+  color: var(--meme-text-secondary);
 }
+
 .favorite-folder-check {
-  color: var(--el-color-primary);
-  font-weight: 700;
-  font-size: 16px;
+  color: var(--meme-primary);
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
 }
+
 .favorite-folder-create {
   border-style: dashed;
-  color: var(--el-color-primary);
 }
+
 .favorite-folder-create:hover {
-  border-color: var(--el-color-primary);
+  border-color: var(--meme-primary);
 }
+
 .favorite-folder-icon-create {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--el-color-primary);
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
+.favorite-folder-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.favorite-folder-dialog__actions--end,
+.favorite-folder-dialog__actions-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.fav-dlg-btn {
+  height: 40px;
+  min-width: 88px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fav-dlg-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.fav-dlg-btn--ghost {
+  color: var(--meme-text);
+  background: var(--meme-bg-muted);
+  border-color: var(--meme-border);
+}
+
+.fav-dlg-btn--ghost:hover:not(:disabled) {
+  background: var(--meme-bg-elevated);
+  border-color: var(--meme-border-strong);
+}
+
+.fav-dlg-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
+  box-shadow: 0 6px 14px var(--meme-focus-ring);
+}
+
+.fav-dlg-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.fav-dlg-btn--danger {
+  color: var(--meme-danger);
+  background: var(--meme-danger-soft);
+  border-color: color-mix(in srgb, var(--meme-danger) 28%, transparent);
+}
+
+.fav-dlg-btn--danger:hover:not(:disabled) {
+  filter: brightness(0.98);
+}
+
+.fav-dlg-btn__spin {
+  display: inline-block;
+  animation: fav-dlg-spin 0.8s linear infinite;
+}
+
+@keyframes fav-dlg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.create-folder-form :deep(.ui-form-item) {
+  margin-bottom: 14px;
+}
+
+.create-folder-input :deep(.vs-input__wrapper) {
+  min-height: 42px;
+  border-radius: 10px !important;
+  background: var(--meme-bg-muted) !important;
+}
+
+.create-folder-input :deep(.vs-input__original) {
+  min-height: 42px;
+  border: none !important;
+  background: transparent !important;
+  color: var(--meme-text) !important;
+  box-shadow: none !important;
+}
+
+.folder-visibility-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--meme-bg-muted);
+}
+
+.folder-visibility-toggle__btn {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.folder-visibility-toggle__btn.is-active {
+  color: var(--meme-primary);
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.folder-visibility-toggle__btn:hover:not(.is-active) {
+  color: var(--meme-text);
+}
+
+.image-preview-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  padding: 8px;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 80vh;
+  cursor: zoom-out;
 }
 </style>

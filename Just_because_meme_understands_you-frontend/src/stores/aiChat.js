@@ -242,7 +242,11 @@ export const useAiChatStore = defineStore('aiChat', {
       this._abortController = controller
       this.streaming = true
 
-      const payload = { query: text }
+      const requestId = localId('req').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)
+      userMsg.requestId = requestId
+      assistantMsg.requestId = requestId
+
+      const payload = { query: text, requestId }
       if (this.currentSessionId) {
         payload.sessionId = this.currentSessionId
       }

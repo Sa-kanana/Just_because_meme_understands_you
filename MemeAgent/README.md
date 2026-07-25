@@ -36,8 +36,14 @@ psql "postgresql://memeagent:memeagent@127.0.0.1:5433/memeagent_vector" \
 
 ```bash
 conda activate memeagent
+# 方式一（推荐）
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 方式二
+python -m app.main
 ```
+
+> `VECTOR_DATABASE_URL` 必须带账号密码，例如 `postgresql://postgres:密码@192.168.x.x:5432/postgres`。
+> 若写成 `postgresql://host:5432/db`（无用户），Windows 会用系统用户名登录并报 `password authentication failed`。
 
 - 健康检查：`GET http://127.0.0.1:8000/health`
 - OpenAPI：`http://127.0.0.1:8000/docs`（仅内网）

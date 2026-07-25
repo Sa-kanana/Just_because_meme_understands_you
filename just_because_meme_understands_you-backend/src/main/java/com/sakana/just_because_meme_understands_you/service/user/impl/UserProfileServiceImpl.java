@@ -22,6 +22,7 @@ import com.sakana.just_because_meme_understands_you.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserStatsMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.oss.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
@@ -109,6 +110,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
     @Resource
     private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private OssObjectPromoteService ossObjectPromoteService;
 
     @Resource
     private IUserFavoriteFolderService userFavoriteFolderService;
@@ -465,8 +469,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             if (!StringUtils.hasText(avatarRaw)) {
                 user.setAvatar(null);
             } else {
-                String avatarKey = ossUrlHelper.normalizeForStorage(avatarRaw);
-                ossUrlHelper.assertOwnedImageKey(avatarKey, "avatar/" + userId + "/");
+                String avatarKey = ossObjectPromoteService.promoteAvatar(avatarRaw, userId);
                 user.setAvatar(avatarKey);
             }
         }

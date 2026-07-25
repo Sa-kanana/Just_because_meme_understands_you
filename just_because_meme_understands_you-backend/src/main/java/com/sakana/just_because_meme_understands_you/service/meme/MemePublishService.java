@@ -14,7 +14,7 @@ import com.sakana.just_because_meme_understands_you.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserProfileService;
-import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.service.oss.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.vo.MemeCreateResponseVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -72,7 +72,7 @@ public class MemePublishService {
     private IUserProfileService userProfileService;
 
     @Resource
-    private OssUrlHelper ossUrlHelper;
+    private OssObjectPromoteService ossObjectPromoteService;
 
     /**
      * 发布梗。
@@ -86,17 +86,19 @@ public class MemePublishService {
         validate(userId, request);
 
         List<Integer> tagIds = normalizeTagIds(request.getTagIds());
-        validateTagsExist(tagIds);
+        if (!tagIds.isEmpty()) {
+            validateTagsExist(tagIds);
+        }
 
         LocalDateTime now = LocalDateTime.now();
 
-        String imageKey = ossUrlHelper.normalizeForStorage(request.getImage());
-        ossUrlHelper.assertOwnedImageKey(imageKey, "memes/");
+        String imageKey = ossObjectPromoteService.promoteMemeImage(request.getImage(), userId);
 
         // 1. 写入 meme 主表
         Meme meme = new Meme();
         meme.setName(request.getName().trim());
-        meme.setIntroduction(request.getIntroduction().trim());
+        String introduction = request.getIntroduction() == null ? "" : request.getIntroduction().trim();
+        meme.setIntroduction(introduction);
         meme.setImage(imageKey);
         meme.setPageViews(0);
         meme.setLikes(0);
@@ -112,7 +114,7 @@ public class MemePublishService {
         }
 
         // 2. 写入 meme_resource 资源表
-        saveMediaResources(memeId, request.getResourceUrls());
+        saveMediaResources(userId, memeId, request.getResourceUrls());
         saveStructuredLinks(memeId, request.getResources());
 
         // 3. 写入 meme_tag_relation 关联表
@@ -138,9 +140,6 @@ public class MemePublishService {
         if (!StringUtils.hasText(request.getName())) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称不能为空");
         }
-        if (!StringUtils.hasText(request.getIntroduction())) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "梗介绍不能为空");
-        }
         if (!StringUtils.hasText(request.getImage())) {
             throw new BizException(Result.CODE_BAD_REQUEST, "封面图不能为空");
         }
@@ -148,7 +147,7 @@ public class MemePublishService {
 
     private List<Integer> normalizeTagIds(List<Integer> tagIds) {
         if (tagIds == null || tagIds.isEmpty()) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "至少选择一个标签");
+            return List.of();
         }
         Set<Integer> distinct = new HashSet<>();
         for (Integer id : tagIds) {
@@ -157,7 +156,7 @@ public class MemePublishService {
             }
         }
         if (distinct.isEmpty()) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "标签 id 不合法");
+            return List.of();
         }
         return distinct.stream().toList();
     }
@@ -182,7 +181,7 @@ public class MemePublishService {
         }
     }
 
-    private void saveMediaResources(Integer memeId, List<String> resourceUrls) {
+    private void saveMediaResources(Long userId, Integer memeId, List<String> resourceUrls) {
         if (resourceUrls == null || resourceUrls.isEmpty()) {
             return;
         }
@@ -195,10 +194,7 @@ public class MemePublishService {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
-            String normalized = ossUrlHelper.normalizeForStorage(url);
-            if (!normalized.toLowerCase().startsWith("http")) {
-                ossUrlHelper.assertOwnedImageKey(normalized, "memes/", "home/", "common/");
-            }
+            String normalized = ossObjectPromoteService.promoteMemeMediaOrKeepExternal(url, userId);
             MemeResource resource = new MemeResource();
             resource.setMemeId(memeId.longValue());
             resource.setResourceUrl(normalized);

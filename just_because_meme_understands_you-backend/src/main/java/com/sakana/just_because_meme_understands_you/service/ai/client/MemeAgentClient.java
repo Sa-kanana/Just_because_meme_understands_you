@@ -6,7 +6,9 @@ import com.sakana.just_because_meme_understands_you.dto.MemeAgentIngestRequestDT
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentStreamRequestDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -22,6 +24,10 @@ public class MemeAgentClient {
 
     private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
 
+    private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
+            new ParameterizedTypeReference<>() {
+            };
+
     private final WebClient memeAgentWebClient;
     private final MemeAgentProperties properties;
 
@@ -31,7 +37,10 @@ public class MemeAgentClient {
         this.properties = properties;
     }
 
-    public Flux<String> stream(MemeAgentStreamRequestDTO request) {
+    /**
+     * 以 ServerSentEvent 解码上游 SSE，保留 event 名（token/meta/cite/done/error）。
+     */
+    public Flux<ServerSentEvent<String>> stream(MemeAgentStreamRequestDTO request) {
         String path = properties.getAgent().getStreamPath();
         return memeAgentWebClient.post()
                 .uri(path)
@@ -40,7 +49,16 @@ public class MemeAgentClient {
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToFlux(String.class)
+                .onStatus(status -> status.value() == 422, response ->
+                        response.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(body -> {
+                                    log.error("MemeAgent /stream 422 requestId={} body={}",
+                                            request.getRequestId(), body);
+                                    return response.createException();
+                                }))
+                .bodyToFlux(SSE_TYPE)
+                .map(this::normalizeSse)
                 .doOnError(e -> log.error("MemeAgent stream failed requestId={}", request.getRequestId(), e));
     }
 
@@ -60,5 +78,16 @@ public class MemeAgentClient {
     public boolean isConfigured() {
         return StringUtils.hasText(properties.getAgent().getApiKey())
                 && StringUtils.hasText(properties.getAgent().getBaseUrl());
+    }
+
+    private ServerSentEvent<String> normalizeSse(ServerSentEvent<String> sse) {
+        String event = StringUtils.hasText(sse.event()) ? sse.event() : "message";
+        String data = sse.data() != null ? sse.data() : "";
+        return ServerSentEvent.<String>builder()
+                .event(event)
+                .data(data)
+                .id(sse.id())
+                .comment(sse.comment())
+                .build();
     }
 }

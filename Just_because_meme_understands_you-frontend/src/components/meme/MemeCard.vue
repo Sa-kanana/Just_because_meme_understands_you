@@ -7,25 +7,22 @@
     @click="handleClick"
   >
     <div class="meme-card__cover">
-      <el-image
-        v-if="image"
+      <ui-image
+        v-if="image && !imageError"
         :src="image"
         :alt="displayName"
         fit="cover"
         class="meme-card__img"
         :lazy="lazy"
-      >
-        <template #error>
-          <div class="meme-card__placeholder">
-            <MemeStatIcon type="views" class="meme-card__placeholder-icon" />
-            <span>封面加载失败</span>
-          </div>
-        </template>
-      </el-image>
-      <div v-else class="meme-card__placeholder">
-        <MemeStatIcon type="views" class="meme-card__placeholder-icon" />
-        <span>暂无封面</span>
-      </div>
+        @error="imageError = true"
+      />
+      <MemeCoverPlaceholder
+        v-else
+        :name="displayName"
+        :seed="displayName"
+        abstract
+        class="meme-card__ph"
+      />
 
       <div v-if="showStats" class="meme-card__shade" aria-hidden="true" />
       <div v-if="showStats" class="meme-card__stats">
@@ -47,9 +44,12 @@
       </div>
       <slot name="footer">
         <div v-if="hasAuthor" class="meme-card__author" @click.stop.prevent="goAuthor">
-          <el-avatar :size="20" :src="authorAvatar" class="meme-card__author-avatar">
-            {{ authorFallback }}
-          </el-avatar>
+          <ui-avatar
+            :size="20"
+            :src="authorAvatar"
+            :fallback="authorFallback"
+            class="meme-card__author-avatar"
+          />
           <span class="meme-card__author-name">{{ authorNickname }}</span>
         </div>
         <p v-else-if="footerText" class="meme-card__meta">{{ footerText }}</p>
@@ -60,7 +60,7 @@
 
 <script>
 import MemeCardStats from '@/components/meme/MemeCardStats.vue'
-import MemeStatIcon from '@/components/meme/MemeStatIcon.vue'
+import MemeCoverPlaceholder from '@/components/meme/MemeCoverPlaceholder.vue'
 import { formatDateShort } from '@/utils/formatDate'
 import { buildUserProfileLocation } from '@/utils/pageBreadcrumb'
 
@@ -68,7 +68,7 @@ export default {
   name: 'MemeCard',
   components: {
     MemeCardStats,
-    MemeStatIcon,
+    MemeCoverPlaceholder,
   },
   props: {
     to: {
@@ -127,6 +127,11 @@ export default {
     },
   },
   emits: ['click'],
+  data() {
+    return {
+      imageError: false,
+    }
+  },
   computed: {
     isLink() {
       return this.to != null && this.to !== ''
@@ -161,6 +166,11 @@ export default {
       return formatDateShort(this.releaseTime || this.updateTime)
     },
   },
+  watch: {
+    image() {
+      this.imageError = false
+    },
+  },
   methods: {
     handleClick(event) {
       this.$emit('click', event)
@@ -185,8 +195,10 @@ export default {
   width: 100%;
   text-decoration: none;
   color: inherit;
-  border-radius: 6px;
-  transition: transform 0.15s ease;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .meme-card--link {
@@ -194,7 +206,10 @@ export default {
 }
 
 .meme-card--link:hover {
-  transform: translateY(-1px);
+  transform: translateY(-3px);
+  border-color: var(--meme-border);
+  background: var(--meme-bg-elevated);
+  box-shadow: var(--meme-shadow-soft);
 }
 
 .meme-card--link:hover .meme-card__title {
@@ -205,15 +220,25 @@ export default {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
-  border-radius: 6px;
+  border-radius: 14px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 18% 22%, var(--meme-primary-soft), transparent 42%),
-    var(--meme-bg-cover);
+  background: var(--meme-bg-cover);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.meme-card--link:hover .meme-card__cover {
+  border-radius: 14px 14px 0 0;
+  box-shadow: none;
+}
+
+.meme-card__ph {
+  position: absolute;
+  inset: 0;
 }
 
 .meme-card__img,
-.meme-card__img :deep(.el-image__inner) {
+.meme-card__img :deep(.ui-image),
+.meme-card__img :deep(.ui-image img) {
   width: 100%;
   height: 100%;
   display: block;
@@ -221,25 +246,6 @@ export default {
 
 .meme-card__img {
   height: 100%;
-}
-
-.meme-card__placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--meme-text-muted);
-  font-size: 12px;
-}
-
-.meme-card__placeholder-icon {
-  width: 28px;
-  height: 28px;
-  color: var(--meme-border-strong);
-  opacity: 0.7;
 }
 
 .meme-card__shade {
@@ -267,7 +273,7 @@ export default {
 }
 
 .meme-card__body {
-  padding: 8px 2px 0;
+  padding: 10px 10px 12px;
   min-width: 0;
 }
 
@@ -283,7 +289,7 @@ export default {
   min-width: 0;
   margin: 0;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.45;
   color: var(--meme-text);
   display: -webkit-box;
@@ -318,9 +324,6 @@ export default {
 
 .meme-card__author-avatar {
   flex-shrink: 0;
-  background: var(--meme-bg-muted);
-  color: var(--meme-text-secondary);
-  font-size: 10px;
 }
 
 .meme-card__author-name {

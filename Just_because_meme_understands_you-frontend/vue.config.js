@@ -34,6 +34,14 @@ module.exports = defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
         pathRewrite: { '^/api': '' },
+        // AI 流式：避免代理缓冲整段 SSE
+        onProxyRes(proxyRes) {
+          const ct = String(proxyRes.headers['content-type'] || '')
+          if (ct.includes('text/event-stream')) {
+            proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+            proxyRes.headers['x-accel-buffering'] = 'no'
+          }
+        },
       },
     },
   },

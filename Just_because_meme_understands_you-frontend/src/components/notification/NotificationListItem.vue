@@ -4,14 +4,12 @@
     :class="{ 'is-unread': !item.isRead }"
     @click="$emit('open', item)"
   >
-    <el-avatar
-      :size="44"
+    <ui-avatar
       :src="item.actor?.avatar || ''"
+      :fallback="item.actor?.nickname || item.title || '消'"
       class="notification-item__avatar"
       @click.stop="$emit('profile', item)"
-    >
-      {{ avatarFallback }}
-    </el-avatar>
+    />
 
     <div class="notification-item__body">
       <div class="notification-item__row">
@@ -46,7 +44,7 @@
         v-if="item.extra?.memeCover || item.extra?.memeName"
         class="notification-item__meme"
       >
-        <el-image
+        <ui-image
           v-if="item.extra.memeCover"
           :src="item.extra.memeCover"
           fit="cover"
@@ -103,7 +101,6 @@ export default {
       const fromType = TYPE_ACTIONS[type]
       if (fromType) return fromType
       const title = String(this.item?.title || '').trim()
-      // 标题里若已带昵称，去掉开头昵称，避免「昵称 昵称 评论了你的梗」
       if (this.actorName && title.startsWith(this.actorName)) {
         return title.slice(this.actorName.length).trim() || title
       }
@@ -147,6 +144,8 @@ export default {
 
 .notification-item__avatar {
   flex-shrink: 0;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
 }
 

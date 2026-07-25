@@ -25,20 +25,18 @@
         </div>
 
         <div class="error-actions">
-          <el-button
-            type="primary"
-            round
+          <vs-button
+            color="primary"
             @click="goPrimary"
           >
             {{ primaryText }}
-          </el-button>
-          <el-button
+          </vs-button>
+          <vs-button
             v-if="secondaryText"
-            round
             @click="goSecondary"
           >
             {{ secondaryText }}
-          </el-button>
+          </vs-button>
         </div>
       </div>
 
@@ -468,4 +466,3 @@ export default {
   }
 }
 </style>
-

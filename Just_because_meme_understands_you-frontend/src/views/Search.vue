@@ -26,7 +26,7 @@
           <li>可使用排序筛选：最多点击 / 点赞 / 评论</li>
         </ul>
       </div>
-      <el-empty v-else description="请输入关键字进行搜索" />
+      <ui-empty v-else description="请输入关键字进行搜索" />
     </div>
     <template v-else>
       <div v-if="loading" class="meme-loading">
@@ -34,35 +34,28 @@
         <span>搜索中...</span>
       </div>
       <div v-else-if="error" class="meme-error">
-        <el-alert :title="error" type="warning" show-icon :closable="false" />
+        <vs-alert :title="error" color="warn" />
       </div>
       <div v-else-if="!list.length" class="meme-empty">
-        <el-empty :description="`未找到与「${keyword}」相关的内容`" />
+        <ui-empty :description="`未找到与「${keyword}」相关的内容`" />
       </div>
       <div v-else class="meme-list-wrap">
-        <el-row :gutter="16" class="meme-row">
-          <el-col
+        <div class="meme-grid">
+          <MemeCard
             v-for="item in list"
             :key="item.id"
-            :xs="24"
-            :sm="12"
-            :md="8"
-            :lg="6"
-            class="meme-col"
-          >
-            <MemeCard
-              :to="memeDetailLocation(item.id)"
-              :name="item.name"
-              :image="item.image"
-              :page-views="item.pageViews"
-              :likes="item.likes"
-              :comments="item.comments"
-              :release-time="item.releaseTime"
-              :update-time="item.updateTime"
-              :author="item.author"
-            />
-          </el-col>
-        </el-row>
+            class="meme-grid__item"
+            :to="memeDetailLocation(item.id)"
+            :name="item.name"
+            :image="item.image"
+            :page-views="item.pageViews"
+            :likes="item.likes"
+            :comments="item.comments"
+            :release-time="item.releaseTime"
+            :update-time="item.updateTime"
+            :author="item.author"
+          />
+        </div>
         <!-- 无限滚动触底哨兵 -->
         <div
           v-if="list.length && !noMore"
@@ -311,12 +304,14 @@ export default {
   font-size: 14px;
 }
 
-.meme-row {
-  margin: 0 -8px;
+.meme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.meme-col {
-  margin-bottom: 20px;
+.meme-grid__item {
+  min-width: 0;
 }
 
 .meme-loading,
@@ -348,6 +343,18 @@ export default {
 @keyframes search-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 960px) {
+  .meme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .meme-grid {
+    gap: 10px;
   }
 }
 </style>
