@@ -157,6 +157,11 @@ export function appendNavigationTrail(items, from, ctx = {}) {
     return
   }
 
+  if (source === 'feedback') {
+    items.push({ label: '提交反馈', to: { name: 'feedback' } })
+    return
+  }
+
   if (source === 'publish') {
     items.push({ label: '发布梗', to: { name: 'publishMeme' } })
     return
@@ -337,6 +342,12 @@ export function resolveRouteBreadcrumbs(route, context = {}) {
       })
     case 'help':
       return buildHelpBreadcrumbs(route.query, authStore)
+    case 'feedback': {
+      const items = [homeItem()]
+      appendToolOrigin(items, route.query, authStore)
+      items.push({ label: '提交反馈' })
+      return markCurrent(items)
+    }
     case 'memeDetail':
       return buildMemeDetailBreadcrumbs({
         route,
@@ -595,7 +606,7 @@ export function buildSearchLocation(options = {}) {
 
 /**
  * 发布 / 设置 / 帮助等工具页，带上进入前的逻辑路径。
- * @param {'publishMeme'|'accountSettings'|'help'|'notifications'|'aiSearch'} name
+ * @param {'publishMeme'|'accountSettings'|'help'|'notifications'|'aiSearch'|'feedback'} name
  * @param {Object} [options]
  * @param {import('vue-router').RouteLocationNormalizedLoaded} [options.fromRoute]
  * @param {string} [options.memeName]
@@ -638,6 +649,8 @@ export function buildToolPageLocation(name, options = {}) {
     query.from = 'settings'
   } else if (route.name === 'help') {
     query.from = 'help'
+  } else if (route.name === 'feedback') {
+    query.from = 'feedback'
   } else if (route.name === 'publishMeme') {
     query.from = 'publish'
   } else if (route.name === 'notifications') {

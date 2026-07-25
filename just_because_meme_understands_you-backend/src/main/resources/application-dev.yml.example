@@ -53,6 +53,9 @@ app:
   cors:
     enabled: true
     allowed-origins: http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:8080
+  feedback:
+    to-email: 827278063@qq.com
+    rate-limit-per-minute: 3
 
 # ---------- MemeAgent（FastAPI AI 搜索）----------
 meme:

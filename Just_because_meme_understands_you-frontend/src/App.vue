@@ -431,7 +431,7 @@ export default {
     goFeedback() {
       const patch = useBreadcrumbStore().patch || {}
       this.$router.push(
-        buildToolPageLocation('help', {
+        buildToolPageLocation('feedback', {
           fromRoute: this.$route,
           memeName: patch.meme?.name || '',
           profileName: patch.nickname || '',

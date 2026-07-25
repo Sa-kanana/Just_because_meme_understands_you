@@ -112,7 +112,7 @@ auth:
   # 锁定时长（分钟）
   login-lockout-minutes: 15
 
-# ---------- 安全头 / CORS / 反代 ----------
+# ---------- 安全头 / CORS / 反代 / 反馈 ----------
 app:
   security:
     # 可信反向代理 IP（逗号分隔）；仅来自这些 IP 时才信任 X-Forwarded-For
@@ -126,6 +126,10 @@ app:
     enabled: ${CORS_ENABLED:true}
     # 允许的前端 Origin（逗号分隔）；生产必须改成正式域名
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://127.0.0.1}
+  feedback:
+    # 运营收件邮箱
+    to-email: ${FEEDBACK_TO_EMAIL:827278063@qq.com}
+    rate-limit-per-minute: ${FEEDBACK_RATE_LIMIT_PER_MINUTE:3}
 
 # ---------- 业务参数 ----------
 user-favorite:

@@ -29,6 +29,12 @@ const routes = [
     component: () => import('@/views/HelpDocs.vue'),
   },
   {
+    path: '/feedback',
+    name: 'feedback',
+    component: () => import('@/views/Feedback.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: '提交反馈' },
+  },
+  {
     path: '/publish',
     name: 'publishMeme',
     component: () => import('@/views/PublishMeme.vue'),
