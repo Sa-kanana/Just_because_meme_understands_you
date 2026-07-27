@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # 不打印完整 base_url / key，避免日志泄露
+    logger.info(
+        "MemeAgent boot env=%s chat_model=%s write_key_separated=%s",
+        settings.app_env,
+        settings.openai_chat_model,
+        bool((settings.internal_api_key_write or "").strip()),
+    )
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",

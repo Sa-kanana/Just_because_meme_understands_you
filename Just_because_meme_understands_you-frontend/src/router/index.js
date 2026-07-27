@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 
-const GUEST_AUTH_PATHS = new Set(['/login', '/register', '/forgot-password'])
+const GUEST_AUTH_PATHS = new Set(['/login', '/register', '/forgot-password', '/login/oauth/callback'])
 const guestOnlyMeta = { guestOnly: true }
 
 const routes = [
@@ -75,6 +75,12 @@ const routes = [
     name: 'forgotPassword',
     component: () => import('@/views/ForgotPassword.vue'),
     meta: { ...guestOnlyMeta, breadcrumbLabel: '找回密码' },
+  },
+  {
+    path: '/login/oauth/callback',
+    name: 'oauthCallback',
+    component: () => import('@/views/OauthCallback.vue'),
+    meta: { ...guestOnlyMeta, hideBreadcrumb: true },
   },
   {
     path: '/user/me',

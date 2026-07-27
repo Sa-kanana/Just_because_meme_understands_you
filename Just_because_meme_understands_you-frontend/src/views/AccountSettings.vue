@@ -63,17 +63,32 @@
                     class="settings-form"
                   >
                     <div class="avatar-block">
-                      <div class="avatar-preview-wrap">
+                      <div
+                        class="avatar-preview-wrap"
+                        :class="{ 'is-previewable': !!profileForm.avatar }"
+                        :role="profileForm.avatar ? 'button' : undefined"
+                        :tabindex="profileForm.avatar ? 0 : undefined"
+                        :aria-label="profileForm.avatar ? '点击查看头像' : undefined"
+                        @click="openAvatarPreview"
+                        @keydown.enter.prevent="openAvatarPreview"
+                      >
                         <ui-avatar
                           :size="88"
                           :src="profileForm.avatar"
                           :fallback="profileForm.nickname || 'U'"
                           class="avatar-preview"
                         />
+                        <span
+                          v-if="profileForm.avatar"
+                          class="avatar-zoom-hint"
+                          aria-hidden="true"
+                        >
+                          <i class="ri-zoom-in-line" />
+                        </span>
                       </div>
                       <div class="avatar-actions">
                         <p class="avatar-actions__title">头像</p>
-                        <p class="avatar-hint">支持 jpg / png / webp，建议正方形</p>
+                        <p class="avatar-hint">支持 jpg / png / webp，建议正方形；点击头像可放大查看</p>
                         <ui-upload
                           accept="image/jpeg,image/png,image/webp"
                           :http-request="handleAvatarUpload"
@@ -474,6 +489,32 @@
         </section>
       </div>
     </div>
+
+    <vs-dialog
+      v-model="avatarPreviewVisible"
+      full-screen
+      not-padding
+      class="settings-avatar-viewer"
+    >
+      <div class="settings-avatar-viewer__body" @click="closeAvatarPreview">
+        <button
+          type="button"
+          class="settings-avatar-viewer__close"
+          aria-label="关闭预览"
+          @click.stop="closeAvatarPreview"
+        >
+          <i class="ri-close-line" />
+        </button>
+        <ui-image
+          v-if="avatarPreviewSrc"
+          :src="avatarPreviewSrc"
+          fit="contain"
+          class="settings-avatar-viewer__img"
+          @click.stop
+        />
+        <p class="settings-avatar-viewer__tip">点击空白处关闭</p>
+      </div>
+    </vs-dialog>
   </div>
 </template>
 
@@ -546,6 +587,8 @@ export default {
       activeTab: 'profile',
       passwordPanelOpen: false,
       avatarUploading: false,
+      avatarPreviewVisible: false,
+      avatarPreviewSrc: '',
       profileSaving: false,
       passwordSaving: false,
       revoking: false,
@@ -737,6 +780,16 @@ export default {
     },
     goForgotPassword() {
       this.$router.push({ path: '/forgot-password' })
+    },
+    openAvatarPreview() {
+      const src = String(this.profileForm.avatar || '').trim()
+      if (!src) return
+      this.avatarPreviewSrc = src
+      this.avatarPreviewVisible = true
+    },
+    closeAvatarPreview() {
+      this.avatarPreviewVisible = false
+      this.avatarPreviewSrc = ''
     },
     async handleAvatarUpload({ file }) {
       const okType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
@@ -1066,6 +1119,7 @@ export default {
 }
 
 .avatar-preview-wrap {
+  position: relative;
   flex-shrink: 0;
   padding: 3px;
   border-radius: 50%;
@@ -1077,12 +1131,36 @@ export default {
   box-shadow: 0 8px 20px var(--meme-focus-ring);
 }
 
+.avatar-preview-wrap.is-previewable {
+  cursor: zoom-in;
+}
+
+.avatar-preview-wrap.is-previewable:hover .avatar-zoom-hint,
+.avatar-preview-wrap.is-previewable:focus-visible .avatar-zoom-hint {
+  opacity: 1;
+}
+
 .avatar-preview {
   display: block;
   border: 3px solid var(--meme-bg-elevated);
   background: var(--meme-bg-muted);
   color: var(--meme-text-secondary);
   font-weight: 700;
+}
+
+.avatar-zoom-hint {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.42);
+  color: #fff;
+  font-size: 22px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
 }
 
 .avatar-actions__title {
@@ -1701,5 +1779,58 @@ export default {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.settings-avatar-viewer :deep(.vs-dialog__content) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-avatar-viewer__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 48px 24px 32px;
+  background: rgba(15, 23, 42, 0.88);
+  cursor: zoom-out;
+}
+
+.settings-avatar-viewer__close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.settings-avatar-viewer__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.settings-avatar-viewer__img {
+  max-width: min(92vw, 720px);
+  max-height: 82vh;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  cursor: default;
+}
+
+.settings-avatar-viewer__tip {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
 }
 </style>

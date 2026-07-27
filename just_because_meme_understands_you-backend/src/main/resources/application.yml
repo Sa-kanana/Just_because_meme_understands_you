@@ -130,6 +130,16 @@ app:
     # 运营收件邮箱
     to-email: ${FEEDBACK_TO_EMAIL:827278063@qq.com}
     rate-limit-per-minute: ${FEEDBACK_RATE_LIMIT_PER_MINUTE:3}
+  oauth:
+    github:
+      # GitHub OAuth App Client ID / Secret（勿提交真实值）
+      client-id: ${GITHUB_CLIENT_ID:}
+      client-secret: ${GITHUB_CLIENT_SECRET:}
+      # 须与 GitHub 应用「Authorization callback URL」完全一致
+      redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:8080/login/oauth/github/callback}
+      # 授权成功后浏览器跳转的前端页
+      frontend-callback-url: ${GITHUB_FRONTEND_CALLBACK_URL:http://localhost/login/oauth/callback}
+      scope: ${GITHUB_OAUTH_SCOPE:read:user user:email}
 
 # ---------- 业务参数 ----------
 user-favorite:
@@ -163,10 +173,15 @@ meme:
     # FastAPI MemeAgent 内网地址（生产用环境变量覆盖）
     base-url: ${MEME_AGENT_BASE_URL:http://127.0.0.1:8000}
     api-key: ${MEME_AGENT_API_KEY:}
+    # 写密钥：ingest/crawl；空则回退 api-key
+    write-api-key: ${MEME_AGENT_WRITE_API_KEY:}
     connect-timeout-ms: ${MEME_AGENT_CONNECT_TIMEOUT_MS:2000}
-    response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:60000}
+    # B站理解 + Firecrawl 细节/图片 + LLM，默认 10 分钟
+    response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:600000}
     stream-path: /stream
     ingest-path: /ingest
+    # 逐条 enrichment 可能较慢，建议 >=600000
+    crawl-path: /crawl/hot-memes
   ai:
     max-history-tokens: ${MEME_AI_MAX_HISTORY_TOKENS:3000}
     max-output-tokens: ${MEME_AI_MAX_OUTPUT_TOKENS:512}
@@ -174,3 +189,17 @@ meme:
     rate-limit-per-minute: ${MEME_AI_RATE_LIMIT_PER_MINUTE:20}
     chars-per-token-estimate: ${MEME_AI_CHARS_PER_TOKEN:3}
     backfill-enabled: ${MEME_AI_BACKFILL_ENABLED:true}
+  ops:
+    # crawl/ingest 手动入口需 ROLE_ADMIN，或命中白名单（在 application-dev.yml 配置）
+    require-admin: ${MEME_OPS_REQUIRE_ADMIN:true}
+    admin-user-ids: []
+  crawl:
+    enabled: ${MEME_CRAWL_ENABLED:true}
+    schedule-enabled: ${MEME_CRAWL_SCHEDULE_ENABLED:true}
+    # 每月 4 次：1/8/15/22 日 10:00（Firecrawl 交互抓投稿前 5 条）
+    cron: '${MEME_CRAWL_CRON:0 0 10 1,8,15,22 * *}'
+    limit: ${MEME_CRAWL_LIMIT:5}
+    publisher-user-id: ${MEME_CRAWL_PUBLISHER_USER_ID:0}
+    live-limit: ${MEME_CRAWL_LIVE_LIMIT:8}
+    live-hours: ${MEME_CRAWL_LIVE_HOURS:48}
+

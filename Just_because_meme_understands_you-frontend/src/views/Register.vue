@@ -26,6 +26,14 @@
         </vs-input>
       </ui-form-item>
 
+      <ui-form-item label="人机验证" prop="captchaCode">
+        <CaptchaField
+          ref="captchaRef"
+          v-model:captcha-id="form.captchaId"
+          v-model:captcha-code="form.captchaCode"
+        />
+      </ui-form-item>
+
       <ui-form-item label="邮箱验证码" prop="verificationCode">
         <div class="auth-form__code">
           <vs-input
@@ -118,10 +126,11 @@
 import { toast } from '@/utils/uiFeedback'
 import { sendRegisterCode, register } from '@/api/auth'
 import AuthPageLayout from '@/components/auth/AuthPageLayout.vue'
+import CaptchaField from '@/components/auth/CaptchaField.vue'
 
 export default {
   name: 'RegisterPage',
-  components: { AuthPageLayout },
+  components: { AuthPageLayout, CaptchaField },
   data() {
     const validateConfirmPassword = (_rule, value, callback) => {
       if (!value) {
@@ -141,6 +150,8 @@ export default {
         verificationCode: '',
         password: '',
         confirmPassword: '',
+        captchaId: '',
+        captchaCode: '',
       },
       submitting: false,
       sendingCode: false,
@@ -154,6 +165,9 @@ export default {
             message: '请输入正确的邮箱格式',
             trigger: ['blur', 'change'],
           },
+        ],
+        captchaCode: [
+          { required: true, message: '请输入人机验证码', trigger: 'blur' },
         ],
         verificationCode: [
           { required: true, message: '请输入验证码', trigger: 'blur' },
@@ -205,6 +219,12 @@ export default {
     }
   },
   methods: {
+    refreshCaptcha() {
+      const ref = this.$refs.captchaRef
+      if (ref && typeof ref.refresh === 'function') {
+        ref.refresh()
+      }
+    },
     startCountdown(seconds) {
       const start = Number(seconds) || 60
       this.countdown = start
@@ -242,10 +262,22 @@ export default {
         toast.error('请输入正确的邮箱格式')
         return
       }
+      const captchaMsg =
+        this.$refs.captchaRef && this.$refs.captchaRef.validateLocal
+          ? this.$refs.captchaRef.validateLocal()
+          : '请完成人机验证'
+      if (captchaMsg) {
+        toast.warning(captchaMsg)
+        return
+      }
 
       this.sendingCode = true
 
-      sendRegisterCode(email)
+      sendRegisterCode({
+        email,
+        captchaId: this.form.captchaId,
+        captchaCode: this.form.captchaCode,
+      })
         .then(({ retryAfter, message }) => {
           toast.success(message || '验证码已发送至你的邮箱')
           const now = Date.now()
@@ -271,6 +303,7 @@ export default {
         })
         .finally(() => {
           this.sendingCode = false
+          this.refreshCaptcha()
         })
     },
     handleSubmit() {
@@ -278,6 +311,14 @@ export default {
 
       this.$refs.registerFormRef.validate((valid) => {
         if (!valid) return
+        const captchaMsg =
+          this.$refs.captchaRef && this.$refs.captchaRef.validateLocal
+            ? this.$refs.captchaRef.validateLocal()
+            : ''
+        if (captchaMsg) {
+          toast.warning(captchaMsg)
+          return
+        }
         this.submitting = true
 
         const payload = {
@@ -285,6 +326,8 @@ export default {
           password: this.form.password,
           confirmPassword: this.form.confirmPassword,
           verificationCode: this.form.verificationCode,
+          captchaId: this.form.captchaId,
+          captchaCode: this.form.captchaCode,
         }
 
         register(payload)
@@ -300,6 +343,7 @@ export default {
             const msg =
               (err && (err.message || err.msg)) || '注册失败，请稍后重试'
             toast.error(msg)
+            this.refreshCaptcha()
           })
           .finally(() => {
             this.submitting = false

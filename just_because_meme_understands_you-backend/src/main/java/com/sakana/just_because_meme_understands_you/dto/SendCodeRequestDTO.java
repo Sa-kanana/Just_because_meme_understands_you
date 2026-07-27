@@ -13,5 +13,15 @@ public class SendCodeRequestDTO {
      * 用户提供的邮箱
      */
     private String email;
+
+    /**
+     * 图形验证码会话 id（GET /captcha）
+     */
+    private String captchaId;
+
+    /**
+     * 用户输入的图形验证码
+     */
+    private String captchaCode;
 }
 

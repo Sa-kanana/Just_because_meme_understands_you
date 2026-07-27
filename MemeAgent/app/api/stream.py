@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.agents.search_agent import stream_ai_search
-from app.api.deps import InternalAuth
+from app.api.deps import StreamAuth
 from app.schemas.stream import StreamRequest
 
 router = APIRouter(tags=["stream"])
@@ -13,7 +13,7 @@ router = APIRouter(tags=["stream"])
 @router.post("/stream")
 async def stream_search(
     payload: StreamRequest,
-    _auth: InternalAuth,
+    _auth: StreamAuth,
 ) -> StreamingResponse:
     async def event_generator() -> AsyncIterator[str]:
         async for chunk in stream_ai_search(payload):

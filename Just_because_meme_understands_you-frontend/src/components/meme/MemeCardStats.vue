@@ -21,9 +21,9 @@
       <span
         v-for="item in rightItems"
         :key="item.key"
-        class="meme-card-stats__chip"
+        class="meme-card-stats__chip meme-card-stats__chip--trail"
         :class="item.chipClass"
-        :title="item.label"
+        :title="`${item.label} ${formatCompactNumber(item.value)}`"
       >
         <MemeStatIcon :type="item.key" class="meme-card-stats__icon" />
         <span class="meme-card-stats__value">{{ formatCompactNumber(item.value) }}</span>
@@ -137,6 +137,7 @@ export default {
 .meme-card-stats--spread {
   width: 100%;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .meme-card-stats__group {
@@ -144,6 +145,7 @@ export default {
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .meme-card-stats__chip {
@@ -158,11 +160,18 @@ export default {
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.meme-card-stats__chip--trail {
+  flex: 0 0 auto;
+  min-width: auto;
+  max-width: none;
+}
+
 .meme-card-stats__icon {
   flex-shrink: 0;
 }
 
 .meme-card-stats__value {
+  flex-shrink: 0;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;

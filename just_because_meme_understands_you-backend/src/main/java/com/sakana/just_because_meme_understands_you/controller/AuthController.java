@@ -1,21 +1,24 @@
 package com.sakana.just_because_meme_understands_you.controller;
 
-import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.BizException;
+import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.dto.ForgotPasswordSendCodeRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.OauthExchangeRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.SendCodeRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.VerifyCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.auth.IGithubOAuthService;
 import com.sakana.just_because_meme_understands_you.service.auth.LoginRateLimiter;
 import com.sakana.just_because_meme_understands_you.util.ClientIpResolver;
 import com.sakana.just_because_meme_understands_you.util.DigestUtil;
-import com.sakana.just_because_meme_understands_you.dto.ForgotPasswordSendCodeRequestDTO;
-import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.AuthTokenBundleVO;
+import com.sakana.just_because_meme_understands_you.vo.GithubOAuthTicketVO;
 import com.sakana.just_because_meme_understands_you.vo.LoginResponseVO;
-import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.RegisterResponseVO;
-import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
-import com.sakana.just_because_meme_understands_you.dto.SendCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.SendCodeResponseVO;
-import com.sakana.just_because_meme_understands_you.dto.VerifyCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.VerifyCodeResponseVO;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,9 +29,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseCookie;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -42,6 +47,9 @@ public class AuthController {
 
     @Resource
     private IAuthService authService;
+
+    @Resource
+    private IGithubOAuthService githubOAuthService;
 
     @Resource
     private LoginRateLimiter loginRateLimiter;
@@ -64,8 +72,6 @@ public class AuthController {
     /**
      * 登录
      * POST /login
-     * 请求体：{ "email": "...", "password": "...", "loginType": "email" }
-     * 响应：Result<DataResponse>，其中 data 包含 token 和 user 信息
      */
     @PostMapping("/login")
     public Result<LoginResponseVO> login(
@@ -77,8 +83,7 @@ public class AuthController {
             AuthTokenBundleVO tokenBundle = authService.login(request);
             loginRateLimiter.onSuccess(request.getEmail());
             writeRefreshTokenCookie(response, tokenBundle.getRefreshToken());
-            LoginResponseVO responseVO = buildLoginResponse(tokenBundle);
-            return Result.success(responseVO);
+            return Result.success(buildLoginResponse(tokenBundle));
         } catch (BizException e) {
             if (e.getCode() == Result.CODE_ERROR && "账号或密码错误".equals(e.getMessage())) {
                 loginRateLimiter.onFailure(request.getEmail());
@@ -88,9 +93,60 @@ public class AuthController {
     }
 
     /**
+     * 跳转 GitHub 授权页。
+     * GET /login/oauth/github?redirect=/
+     */
+    @GetMapping("/login/oauth/github")
+    public void githubAuthorize(
+            @RequestParam(value = "redirect", required = false) String redirect,
+            HttpServletResponse response) throws java.io.IOException {
+        String authorizeUrl = githubOAuthService.buildAuthorizeUrl(redirect);
+        response.sendRedirect(authorizeUrl);
+    }
+
+    /**
+     * GitHub OAuth 回调：换 ticket 后跳转前端。
+     * GET /login/oauth/github/callback
+     */
+    @GetMapping("/login/oauth/github/callback")
+    public void githubCallback(
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "error", required = false) String error,
+            @RequestParam(value = "error_description", required = false) String errorDescription,
+            HttpServletResponse response) throws java.io.IOException {
+        try {
+            if (StringUtils.hasText(error)) {
+                String message = StringUtils.hasText(errorDescription) ? errorDescription : "GitHub 授权已取消";
+                response.sendRedirect(githubOAuthService.buildFrontendErrorRedirect(message));
+                return;
+            }
+            GithubOAuthTicketVO ticketVO = githubOAuthService.handleCallback(code, state);
+            response.sendRedirect(githubOAuthService.buildFrontendSuccessRedirect(
+                    ticketVO.getTicket(), ticketVO.getRedirectPath()));
+        } catch (BizException e) {
+            response.sendRedirect(githubOAuthService.buildFrontendErrorRedirect(e.getMessage()));
+        } catch (Exception e) {
+            response.sendRedirect(githubOAuthService.buildFrontendErrorRedirect("GitHub 登录失败，请重试"));
+        }
+    }
+
+    /**
+     * 用一次性 ticket 兑换登录态（与邮箱登录响应一致）。
+     * POST /login/oauth/exchange
+     */
+    @PostMapping("/login/oauth/exchange")
+    public Result<LoginResponseVO> exchangeOauthTicket(
+            @Valid @RequestBody OauthExchangeRequestDTO request,
+            HttpServletResponse response) {
+        AuthTokenBundleVO tokenBundle = githubOAuthService.exchangeTicket(request.getTicket());
+        writeRefreshTokenCookie(response, tokenBundle.getRefreshToken());
+        return Result.success(buildLoginResponse(tokenBundle));
+    }
+
+    /**
      * 登录自动续航
      * POST /login/renew（兼容 /login/refresh）
-     * refreshToken 从 HttpOnly Cookie 中读取。
      */
     @PostMapping({"/login/renew", "/login/refresh"})
     public Result<LoginResponseVO> renewLogin(
@@ -101,8 +157,7 @@ public class AuthController {
         try {
             AuthTokenBundleVO tokenBundle = authService.renewLogin(refreshToken);
             writeRefreshTokenCookie(response, tokenBundle.getRefreshToken());
-            LoginResponseVO responseVO = buildLoginResponse(tokenBundle);
-            return Result.success(responseVO);
+            return Result.success(buildLoginResponse(tokenBundle));
         } catch (BizException e) {
             if (e.getCode() == Result.CODE_UNAUTHORIZED || e.getCode() == Result.CODE_REFRESH_TOKEN_EXPIRED) {
                 clearRefreshTokenCookie(response);
@@ -111,71 +166,36 @@ public class AuthController {
         }
     }
 
-    /**
-     * 注册
-     * POST /register
-     * 请求体：按 Apifox 文档中的 email、password、confirmPassword、verificationCode、nickname
-     */
     @PostMapping("/register")
     public Result<RegisterResponseVO> register(@RequestBody RegisterRequestDTO request) {
         RegisterResponseVO responseVO = authService.register(request);
         return Result.success("注册成功", responseVO);
     }
 
-    /**
-     * 发送注册验证码
-     * POST /register/send-code
-     * 请求体：{ "email": "xxx@xxx.com" }
-     */
     @PostMapping("/register/send-code")
     public Result<SendCodeResponseVO> sendRegisterCode(@RequestBody SendCodeRequestDTO request) {
-        SendCodeResponseVO responseVO = authService.sendRegisterCode(request.getEmail());
-        // 首次发送或被限频时都返回业务成功，失败情况通过异常处理器统一接管
-        // 此处按接口文档要求返回自定义提示文案
+        SendCodeResponseVO responseVO = authService.sendRegisterCode(request);
         return Result.success("验证码已发送，请注意查收。", responseVO);
     }
 
-    // ---------- 忘记密码三步 ----------
-
-    /**
-     * 第一步：请求重置（发邮件）
-     * POST /password/reset/send-code
-     * 请求体：{ "email": "xxx@xxx.com" }
-     */
     @PostMapping("/password/reset/request")
     public Result<SendCodeResponseVO> sendForgotPasswordCode(@RequestBody ForgotPasswordSendCodeRequestDTO request) {
         SendCodeResponseVO responseVO = authService.sendForgotPasswordCode(request.getEmail());
         return Result.success("验证码已发送，请注意查收。", responseVO);
     }
 
-    /**
-     * 第二步：验证验证码，获取重置令牌
-     * POST /password/reset/verify-code
-     * 请求体：{ "email": "xxx@xxx.com", "code": "123456" }
-     * 响应 data.token 供第三步使用
-     */
     @PostMapping("/password/reset/verify")
     public Result<VerifyCodeResponseVO> verifyForgotPasswordCode(@RequestBody VerifyCodeRequestDTO request) {
         VerifyCodeResponseVO responseVO = authService.verifyForgotPasswordCode(request.getEmail(), request.getCode());
         return Result.success(responseVO);
     }
 
-    /**
-     * 第三步：执行重置
-     * POST /password/reset/confirm
-     * 请求体：{ "token": "temp-uuid-xxxx", "newPassword": "..." }
-     */
     @PostMapping("/password/reset/confirm")
     public Result<Void> resetPassword(@RequestBody ResetPasswordRequestDTO request) {
         authService.resetPassword(request);
-        return Result.success("密码重置成功",null);
+        return Result.success("密码重置成功", null);
     }
 
-    /**
-     * 退出登录
-     * POST /logout，需携带有效的 Authorization: Bearer &lt;token&gt;
-     * refreshToken 从 Cookie 删除，accessToken 写入 Redis 黑名单。
-     */
     @PostMapping("/logout")
     public Result<Void> logout(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -238,6 +258,4 @@ public class AuthController {
             throw new BizException(Result.CODE_TOO_MANY_REQUESTS, "刷新请求过于频繁，请稍后重试");
         }
     }
-
 }
-

@@ -1,0 +1,27 @@
+{
+  "query_used": [
+    "interact-scrape:https://space.bilibili.com/94510621/upload/video",
+    "interact-scrape-home:https://space.bilibili.com/94510621",
+    "detail-search:看懂别人玩的梗 是什么梗"
+  ],
+  "credits_hint": "bilibili_then_firecrawl",
+  "n": 1,
+  "candidates": [
+    {
+      "title": "看懂别人玩的梗",
+      "introduction": "玩梗是Z世代的社会方言，懂我的梗就是懂我的心，这种语言密码能快速建立社交连接，成为不同群体间的认同桥梁。",
+      "source_url": "https://search.bilibili.com/all?keyword=%E7%9C%8B%E6%87%82%E5%88%AB%E4%BA%BA%E7%8E%A9%E7%9A%84%E6%A2%97",
+      "image_url": "https://i1.hdslb.com/bfs/archive/fc6e4d8fae63b9e0956e781af54e3d1054cc238c.jpg@1200w_630h",
+      "detail_url": "https://wenhui.whb.cn/third/zaker/202208/06/479703.html",
+      "tags": [
+        "实时",
+        "热搜",
+        "B站",
+        "search",
+        "看懂别人玩的梗"
+      ],
+      "has_noise": false,
+      "is_bilibili": true
+    }
+  ]
+}

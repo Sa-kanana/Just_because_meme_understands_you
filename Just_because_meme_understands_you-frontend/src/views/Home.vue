@@ -33,6 +33,7 @@
       <HomeFeedTabs
         v-model="feedSort"
         :is-logged-in="isLoggedIn"
+        :disabled="feedSwitching"
       />
 
       <div v-if="bootstrapLoading && !memeList.length" class="meme-loading">
@@ -45,7 +46,12 @@
         <vs-button color="primary" transparent class="meme-retry-btn" @click="loadBootstrap">重试</vs-button>
       </div>
 
-      <div v-else class="meme-list-wrap">
+      <div
+        v-else
+        class="meme-list-wrap"
+        :class="{ 'is-switching': feedSwitching }"
+        :aria-busy="feedSwitching"
+      >
         <div class="meme-grid">
           <MemeCard
             v-for="item in memeList"
@@ -65,7 +71,7 @@
 
         <ListLoadFooter
           :has-more="feedHasMore"
-          :loading="feedLoading"
+          :loading="feedLoading && !feedSwitching"
           :item-count="memeList.length"
           @load-more="loadMoreFeed"
         />
@@ -105,7 +111,7 @@ import {
 const DEFAULT_QUICK_ACTIONS = [
   { key: 'publish', label: '发布梗', route: '/publish', requireLogin: true },
   { key: 'ai', label: 'AI 搜梗', route: '/ai', requireLogin: true },
-  { key: 'search', label: '搜梗', route: '/search', requireLogin: false },
+  { key: 'following', label: '我的关注', route: '/?feed=following', requireLogin: true },
   { key: 'favorites', label: '我的收藏', route: '/user/me?tab=favorite', requireLogin: true },
 ]
 
@@ -132,6 +138,8 @@ export default {
       feedHasMore: false,
       bootstrapLoading: false,
       feedLoading: false,
+      feedSwitching: false,
+      feedRequestSeq: 0,
       bootstrapError: '',
       feedError: '',
     }
@@ -158,14 +166,30 @@ export default {
     },
   },
   watch: {
-    feedSort() {
-      this.reloadFeed()
+    feedSort(next, prev) {
+      if (next === prev) return
+      this.reloadFeed({ preserveList: true })
+    },
+    '$route.query.feed': {
+      immediate: true,
+      handler(feed) {
+        this.applyFeedQuery(feed)
+      },
     },
   },
   mounted() {
     this.loadBootstrap()
   },
   methods: {
+    applyFeedQuery(feed = this.$route.query.feed) {
+      const value = feed != null ? String(feed).trim().toLowerCase() : ''
+      if (value !== 'following') return
+      if (!this.isLoggedIn) return
+      if (this.feedSort !== 'following') {
+        this.feedSort = 'following'
+      }
+      this.$nextTick(() => this.scrollToFeed())
+    },
     scrollToFeed() {
       const el = this.$refs.feedSection
       if (el && typeof el.scrollIntoView === 'function') {
@@ -196,7 +220,18 @@ export default {
           feedSize: this.feedPageSize,
         })
         if (Array.isArray(data.quickActions) && data.quickActions.length) {
-          const fromApi = data.quickActions
+          const fromApi = data.quickActions.map((action) => {
+            if (action && String(action.key || '') === 'search') {
+              return {
+                ...action,
+                key: 'following',
+                label: '我的关注',
+                route: '/?feed=following',
+                requireLogin: true,
+              }
+            }
+            return action
+          })
           const hasAi = fromApi.some((a) => a && String(a.key || '') === 'ai')
           this.quickActions = hasAi
             ? fromApi
@@ -224,23 +259,34 @@ export default {
         this.bootstrapLoading = false
       }
     },
-    async reloadFeed() {
+    async reloadFeed({ preserveList = false } = {}) {
       if (this.feedSort === 'following' && !this.isLoggedIn) {
         this.memeList = []
         this.feedHasMore = false
         this.feedError = ''
+        this.feedSwitching = false
+        this.feedLoading = false
         return
       }
+
+      const requestId = ++this.feedRequestSeq
+      const keepPrevious = preserveList && this.memeList.length > 0
       this.feedLoading = true
+      this.feedSwitching = keepPrevious
       this.feedError = ''
       this.feedPage = 1
-      this.memeList = []
+      // 保留旧列表撑住高度，避免 Tab 切换时页面塌陷跳动
+      if (!keepPrevious) {
+        this.memeList = []
+      }
+
       try {
         const data = await getMemeList({
           page: 1,
           sort: this.feedSort,
           size: this.feedPageSize,
         })
+        if (requestId !== this.feedRequestSeq) return
         this.memeList = data.list || []
         this.feedPage = data.page || 1
         this.feedPageSize = data.size || this.feedPageSize
@@ -251,16 +297,23 @@ export default {
           this.memeList.length,
         )
       } catch (e) {
+        if (requestId !== this.feedRequestSeq) return
         this.feedError = e.message || '加载梗图列表失败'
-        this.memeList = []
+        if (!keepPrevious) {
+          this.memeList = []
+        }
         this.feedHasMore = false
       } finally {
-        this.feedLoading = false
+        if (requestId === this.feedRequestSeq) {
+          this.feedLoading = false
+          this.feedSwitching = false
+        }
       }
     },
     async loadMoreFeed() {
-      if (this.feedLoading || !this.feedHasMore || this.feedError) return
+      if (this.feedLoading || this.feedSwitching || !this.feedHasMore || this.feedError) return
       if (this.feedSort === 'following' && !this.isLoggedIn) return
+      const requestId = ++this.feedRequestSeq
       this.feedLoading = true
       this.feedError = ''
       try {
@@ -270,6 +323,7 @@ export default {
           sort: this.feedSort,
           size: this.feedPageSize,
         })
+        if (requestId !== this.feedRequestSeq) return
         const existingIds = new Set(this.memeList.map((item) => item.id))
         const newItems = (data.list || []).filter((item) => !existingIds.has(item.id))
         this.memeList = this.memeList.concat(newItems)
@@ -281,9 +335,12 @@ export default {
           this.memeList.length,
         )
       } catch (e) {
+        if (requestId !== this.feedRequestSeq) return
         this.feedError = e.message || '加载更多失败'
       } finally {
-        this.feedLoading = false
+        if (requestId === this.feedRequestSeq) {
+          this.feedLoading = false
+        }
       }
     },
     handleQuickAction(action) {
@@ -308,6 +365,15 @@ export default {
 
       const target = resolveQuickActionTarget(action, ctx)
       if (!target) return
+
+      if (target.kind === 'home-feed') {
+        const sort = target.sort != null ? String(target.sort).trim() : ''
+        if (sort && this.feedSort !== sort) {
+          this.feedSort = sort
+        }
+        this.$nextTick(() => this.scrollToFeed())
+        return
+      }
 
       if (target.kind === 'external') {
         const safeUrl = sanitizeExternalUrl(target.url)
@@ -342,7 +408,15 @@ export default {
 }
 
 .meme-list-wrap {
+  position: relative;
   min-height: 120px;
+  overflow-anchor: none;
+  transition: opacity 0.15s ease;
+}
+
+.meme-list-wrap.is-switching {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .meme-grid {

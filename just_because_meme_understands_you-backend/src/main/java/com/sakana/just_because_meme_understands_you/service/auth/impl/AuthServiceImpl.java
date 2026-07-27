@@ -9,6 +9,7 @@ import com.sakana.just_because_meme_understands_you.entity.User;
 import com.sakana.just_because_meme_understands_you.entity.UserAuth;
 import com.sakana.just_because_meme_understands_you.mapper.UserAuthMapper;
 import com.sakana.just_because_meme_understands_you.service.auth.IAuthService;
+import com.sakana.just_because_meme_understands_you.service.auth.ICaptchaService;
 import com.sakana.just_because_meme_understands_you.service.auth.UserSessionRevoker;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserService;
@@ -18,6 +19,7 @@ import com.sakana.just_because_meme_understands_you.util.PasswordPolicy;
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.SendCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.AuthTokenBundleVO;
 import com.sakana.just_because_meme_understands_you.vo.LoginUserVO;
 import com.sakana.just_because_meme_understands_you.vo.RegisterResponseVO;
@@ -76,6 +78,9 @@ public class AuthServiceImpl implements IAuthService {
     @Resource
     private UserSessionRevoker userSessionRevoker;
 
+    @Resource
+    private ICaptchaService captchaService;
+
     /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
     @Value("${spring.mail.username}")
     private String mailFrom;
@@ -91,6 +96,8 @@ public class AuthServiceImpl implements IAuthService {
     @Transactional
     @Override
     public AuthTokenBundleVO login(LoginRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
         String email = request.getEmail();
         String rawPassword = request.getPassword();
         String loginType = request.getLoginType();
@@ -175,11 +182,102 @@ public class AuthServiceImpl implements IAuthService {
         return buildTokenBundle(newAccessToken, newRefreshToken, user);
     }
 
+    @Transactional
+    @Override
+    public AuthTokenBundleVO loginOrRegisterGithub(
+            String githubUserId,
+            String loginName,
+            String displayName,
+            String avatarUrl,
+            String email) {
+        if (!StringUtils.hasText(githubUserId)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "GitHub 用户标识缺失");
+        }
+        String githubId = githubUserId.trim();
+
+        UserAuth githubAuth = userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_GITHUB, githubId);
+        User user;
+        if (githubAuth != null) {
+            user = userService.getById(githubAuth.getUserId());
+            if (user == null) {
+                throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+            }
+            ensureUserActive(user);
+            // 已有账号：补头像（仅当本地为空）
+            if (!StringUtils.hasText(user.getAvatar()) && StringUtils.hasText(avatarUrl)) {
+                user.setAvatar(avatarUrl.trim());
+                userService.updateById(user);
+            }
+        } else {
+            user = new User();
+            user.setNickname(resolveUniqueNickname(loginName, displayName, githubId));
+            if (StringUtils.hasText(avatarUrl)) {
+                user.setAvatar(avatarUrl.trim());
+            }
+            user.setRole("ROLE_USER");
+            user.setStatus(UserStatusConstants.ACTIVE);
+            userService.save(user);
+
+            UserAuth auth = new UserAuth();
+            auth.setUserId(user.getId());
+            auth.setIdentityType(AuthConstants.LOGIN_TYPE_GITHUB);
+            auth.setIdentifier(githubId);
+            auth.setCredential(null);
+            userAuthMapper.insert(auth);
+
+            // 可选：绑定未占用的 GitHub 邮箱，便于后续找回/通知
+            if (StringUtils.hasText(email)) {
+                String normalizedEmail = email.trim().toLowerCase();
+                if (EmailValidatorUtil.isValidEmail(normalizedEmail)
+                        && userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, normalizedEmail) == null) {
+                    UserAuth emailAuth = new UserAuth();
+                    emailAuth.setUserId(user.getId());
+                    emailAuth.setIdentityType(AuthConstants.LOGIN_TYPE_EMAIL);
+                    emailAuth.setIdentifier(normalizedEmail);
+                    emailAuth.setCredential(null);
+                    userAuthMapper.insert(emailAuth);
+                }
+            }
+        }
+
+        String userId = String.valueOf(user.getId());
+        String accessToken = generateAccessToken(user, AuthConstants.LOGIN_TYPE_GITHUB);
+        String refreshToken = generateRefreshToken(userId, AuthConstants.LOGIN_TYPE_GITHUB);
+        storeRefreshToken(refreshToken, userId);
+        return buildTokenBundle(accessToken, refreshToken, user);
+    }
+
+    private String resolveUniqueNickname(String loginName, String displayName, String githubId) {
+        String base = StringUtils.hasText(displayName) ? displayName.trim()
+                : (StringUtils.hasText(loginName) ? loginName.trim() : ("gh_" + githubId));
+        base = base.replaceAll("\\s+", " ").trim();
+        if (base.length() > 40) {
+            base = base.substring(0, 40);
+        }
+        if (!StringUtils.hasText(base)) {
+            base = "gh_" + githubId;
+        }
+        if (userService.lambdaQuery().eq(User::getNickname, base).count() == 0) {
+            return base;
+        }
+        String suffix = githubId.length() > 6 ? githubId.substring(githubId.length() - 6) : githubId;
+        String candidate = base + "_" + suffix;
+        if (candidate.length() > 50) {
+            candidate = candidate.substring(0, 50);
+        }
+        if (userService.lambdaQuery().eq(User::getNickname, candidate).count() == 0) {
+            return candidate;
+        }
+        return ("u" + githubId);
+    }
+
     // ==================== 注册 ====================
 
     @Transactional
     @Override
     public RegisterResponseVO register(RegisterRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
         String email = request.getEmail();
         String password = request.getPassword();
         String confirmPassword = request.getConfirmPassword();
@@ -238,7 +336,9 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     @Override
-    public SendCodeResponseVO sendRegisterCode(String email) {
+    public SendCodeResponseVO sendRegisterCode(SendCodeRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+        String email = request.getEmail();
         validateEmailFormat(email);
         // 已注册用户不允许重复发送注册验证码
         if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {

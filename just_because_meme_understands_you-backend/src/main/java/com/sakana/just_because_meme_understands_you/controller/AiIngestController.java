@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.controller;
 
 import com.sakana.just_because_meme_understands_you.common.Result;
 import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
+import com.sakana.just_because_meme_understands_you.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.service.ai.IAiIngestService;
 import com.sakana.just_because_meme_understands_you.service.meme.MemeApproveService;
 import com.sakana.just_because_meme_understands_you.vo.AiIngestBackfillVO;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * AI 向量灌库运维入口（需登录；回填受 meme.ai.backfill-enabled 控制）。
+ * AI 向量灌库运维入口（管理员；回填受 meme.ai.backfill-enabled 控制）。
  */
 @RestController
 @RequestMapping("/ai/ingest")
@@ -28,6 +29,9 @@ public class AiIngestController {
     @Resource
     private MemeApproveService memeApproveService;
 
+    @Resource
+    private MemeAgentProperties memeAgentProperties;
+
     /**
      * 回填已发布梗到 pgvector。
      * POST /ai/ingest/backfill?limit=500
@@ -35,7 +39,7 @@ public class AiIngestController {
     @PostMapping("/backfill")
     public Result<AiIngestBackfillVO> backfill(@RequestParam(required = false) Integer limit,
                                                HttpServletRequest request) {
-        AuthContext.requireCurrentUserId(request);
+        requireOpsAdmin(request);
         return Result.success(aiIngestService.backfillPublished(limit));
     }
 
@@ -46,7 +50,7 @@ public class AiIngestController {
     @PostMapping("/sync/{memeId}")
     public Result<Map<String, Object>> syncOne(@PathVariable String memeId,
                                                HttpServletRequest request) {
-        AuthContext.requireCurrentUserId(request);
+        requireOpsAdmin(request);
         Long id = AuthContext.parseLongId(memeId, "memeId");
         boolean queued = aiIngestService.syncMeme(id);
         return Result.success(Map.of(
@@ -62,7 +66,7 @@ public class AiIngestController {
     @PostMapping("/approve/{memeId}")
     public Result<Map<String, Object>> approve(@PathVariable String memeId,
                                                HttpServletRequest request) {
-        AuthContext.requireCurrentUserId(request);
+        requireOpsAdmin(request);
         Long id = AuthContext.parseLongId(memeId, "memeId");
         memeApproveService.approveToPublished(id);
         return Result.success(Map.of(
@@ -70,5 +74,14 @@ public class AiIngestController {
                 "status", 1,
                 "statusDesc", "正常"
         ));
+    }
+
+    private void requireOpsAdmin(HttpServletRequest request) {
+        MemeAgentProperties.Ops ops = memeAgentProperties.getOps();
+        if (ops != null && !ops.isRequireAdmin()) {
+            AuthContext.requireCurrentUserId(request);
+            return;
+        }
+        AuthContext.requireAdmin(request, ops == null ? null : ops.getAdminUserIds());
     }
 }

@@ -1,4 +1,4 @@
-"""LangChain tools：站内梗检索（pgvector + MySQL hint 融合）。"""
+"""LangChain tools：站内梗检索 + Firecrawl 实时网页热梗。"""
 
 from __future__ import annotations
 
@@ -9,12 +9,15 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.settings import get_settings
+from app.crawl.service import crawl_hot_memes
 from app.retrieval.repository import (
     RetrievedChunk,
     fetch_chunks_by_meme_ids,
     merge_retrieved,
     similarity_search,
 )
+from app.schemas.crawl import CrawlHotMemesRequest
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +41,6 @@ class SearchMemeInput(BaseModel):
                 return []
             if text.startswith("["):
                 try:
-                    import json
-
                     parsed = json.loads(text)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed if str(x).strip()]
@@ -49,6 +50,11 @@ class SearchMemeInput(BaseModel):
         if isinstance(value, list):
             return [str(x).strip() for x in value if str(x).strip()]
         return [str(value).strip()]
+
+
+class SearchLiveWebInput(BaseModel):
+    query: str = Field(description="需要联网补充的热梗 / 流行语关键词")
+    limit: int = Field(default=5, ge=1, le=10, description="返回条数")
 
 
 async def retrieve_meme_chunks(
@@ -136,7 +142,6 @@ def build_search_meme_tool(
 
     hints = list(default_hint_ids or [])
     snippets = list(default_snippets or [])
-    top_k = default_top_k
 
     async def _run(query: str, hint_meme_ids: list[str] | None = None, top_k: int = 5) -> str:
         merged_hints = list(hint_meme_ids or []) or hints
@@ -158,4 +163,39 @@ def build_search_meme_tool(
             "回答用户搜梗问题前必须先调用本工具；不要编造 meme_id。"
         ),
         args_schema=SearchMemeInput,
+    )
+
+
+def build_search_live_web_tool() -> StructuredTool:
+    """Firecrawl 联网补强：站内命中不足或用户问「最新/今天」热梗时使用。"""
+
+    async def _run(query: str, limit: int = 5) -> str:
+        settings = get_settings()
+        if not settings.firecrawl_enabled:
+            return json.dumps({"disabled": True, "items": []}, ensure_ascii=False)
+        resp = await crawl_hot_memes(
+            CrawlHotMemesRequest(query=query, limit=limit, include_markdown=True),
+            settings=settings,
+        )
+        items = [
+            {
+                "title": c.title,
+                "introduction": c.introduction[:800],
+                "source_url": c.source_url,
+                "tags": c.tags,
+            }
+            for c in resp.candidates
+        ]
+        logger.info("search_live_meme_web hits=%s query=%s", len(items), query[:80])
+        return json.dumps({"items": items}, ensure_ascii=False)
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name="search_live_meme_web",
+        description=(
+            "用 Firecrawl 从 B 站梗指南相关内容补充最新热梗摘要。"
+            "当站内 search_meme_knowledge 结果不足，或用户明确问「今天/最新/刚火」的梗时调用。"
+            "返回仅供参考的网页摘要，无站内 meme_id。"
+        ),
+        args_schema=SearchLiveWebInput,
     )

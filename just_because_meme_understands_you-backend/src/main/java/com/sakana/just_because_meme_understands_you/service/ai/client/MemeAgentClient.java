@@ -2,6 +2,8 @@ package com.sakana.just_because_meme_understands_you.service.ai.client;
 
 import com.sakana.just_because_meme_understands_you.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.config.MemeAgentWebClientConfig;
+import com.sakana.just_because_meme_understands_you.dto.MemeAgentCrawlRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.MemeAgentCrawlResponseDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentStreamRequestDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +39,14 @@ public class MemeAgentClient {
         this.properties = properties;
     }
 
+    private String resolveWriteApiKey() {
+        String write = properties.getAgent().getWriteApiKey();
+        if (StringUtils.hasText(write)) {
+            return write;
+        }
+        return properties.getAgent().getApiKey();
+    }
+
     /**
      * 以 ServerSentEvent 解码上游 SSE，保留 event 名（token/meta/cite/done/error）。
      */
@@ -66,13 +76,28 @@ public class MemeAgentClient {
         String path = properties.getAgent().getIngestPath();
         return memeAgentWebClient.post()
                 .uri(path)
-                .header(INTERNAL_API_KEY_HEADER, properties.getAgent().getApiKey())
+                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
                 .toBodilessEntity()
                 .then()
                 .doOnError(e -> log.error("MemeAgent ingest failed", e));
+    }
+
+    /**
+     * 触发 Firecrawl 热梗采集，返回结构化候选。
+     */
+    public Mono<MemeAgentCrawlResponseDTO> crawlHotMemes(MemeAgentCrawlRequestDTO request) {
+        String path = properties.getAgent().getCrawlPath();
+        return memeAgentWebClient.post()
+                .uri(path)
+                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(MemeAgentCrawlResponseDTO.class)
+                .doOnError(e -> log.error("MemeAgent crawl failed", e));
     }
 
     public boolean isConfigured() {

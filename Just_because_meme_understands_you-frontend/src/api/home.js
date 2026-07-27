@@ -45,6 +45,7 @@ export function getHomeBootstrap(params = {}) {
         quickActions: Array.isArray(data.quickActions) ? data.quickActions : [],
         hotTags: Array.isArray(data.hotTags) ? data.hotTags : [],
         hotMemes: normalizeMemeList(data.hotMemes),
+        liveMemes: normalizeMemeList(data.liveMemes),
         feed: {
           sort: feed.sort || feedSort,
           list: normalizeMemeList(feed.list),

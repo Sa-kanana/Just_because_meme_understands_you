@@ -4,11 +4,12 @@
  */
 
 export const FAVORITES_REDIRECT_PATH = '/user/me?tab=favorite'
+export const FOLLOWING_REDIRECT_PATH = '/?feed=following'
 
 /**
  * @param {Object|null|undefined} action
  * @param {{ isLoggedIn?: boolean, currentUserId?: string }} ctx
- * @returns {{ kind: 'route', route: object|string } | { kind: 'login', redirect: string } | { kind: 'external', url: string } | null}
+ * @returns {{ kind: 'route', route: object|string } | { kind: 'login', redirect: string } | { kind: 'external', url: string } | { kind: 'home-feed', sort: string } | null}
  */
 export function resolveQuickActionTarget(action, ctx = {}) {
   if (!action || typeof action !== 'object') return null
@@ -24,6 +25,8 @@ export function resolveQuickActionTarget(action, ctx = {}) {
         kind: 'route',
         route: { name: 'search', query: { from: 'home', focus: '1' } },
       }
+    case 'following':
+      return resolveFollowingTarget(ctx)
     case 'favorites':
       return resolveFavoritesTarget(ctx)
     default:
@@ -40,6 +43,14 @@ function resolveAiSearchTarget(ctx) {
     kind: 'route',
     route: { name: 'aiSearch', query: { from: 'home' } },
   }
+}
+
+function resolveFollowingTarget(ctx) {
+  const { isLoggedIn = false } = ctx
+  if (!isLoggedIn) {
+    return { kind: 'login', redirect: FOLLOWING_REDIRECT_PATH }
+  }
+  return { kind: 'home-feed', sort: 'following' }
 }
 
 function resolveFavoritesTarget(ctx) {
@@ -67,6 +78,10 @@ function resolveLegacyRoute(route, ctx) {
 
   if (raw.includes('/user/me')) {
     return resolveFavoritesTarget(ctx)
+  }
+
+  if (raw.includes('feed=following') || raw === '/?feed=following') {
+    return resolveFollowingTarget(ctx)
   }
 
   if (raw.startsWith('/search')) {

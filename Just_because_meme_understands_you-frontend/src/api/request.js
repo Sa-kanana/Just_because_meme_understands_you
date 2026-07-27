@@ -51,11 +51,9 @@ function shouldForceLogoutOn401(originalConfig, response) {
   if (!response || response.status !== 401) return false
   const cfg = originalConfig || {}
   if (cfg.__isRetryAfterRefresh === true) return true
-  if (cfg.__skipAuthRefresh === true) {
-    const hasAccessToken =
-      typeof authLifecycle.getAccessToken === 'function' &&
-      !!authLifecycle.getAccessToken()
-    return hasAccessToken
+  // 公开鉴权接口（验证码/登录等）：401 只表示业务失败，不清本地会话
+  if (cfg.__skipAuthRefresh === true || cfg.__skipAuthHeader === true) {
+    return false
   }
   return false
 }
@@ -98,6 +96,14 @@ function normalizeResponse(response) {
 http.interceptors.request.use((config) => {
   const cfg = config || {}
   const headers = cfg.headers || {}
+
+  // 公开接口（登录/验证码等）不附带旧 token，避免误触 401 清会话
+  if (cfg.__skipAuthHeader === true) {
+    delete headers.Authorization
+    delete headers.authorization
+    cfg.headers = headers
+    return cfg
+  }
 
   // 已显式传入 Authorization 时不覆盖，兼容登录/退出等特殊请求
   if (!headers.Authorization && !headers.authorization && typeof authLifecycle.getAccessToken === 'function') {
@@ -220,6 +226,7 @@ export async function request(url, options = {}) {
           ? options.withCredentials
           : true,
       __skipAuthRefresh: options.skipAuthRefresh === true,
+      __skipAuthHeader: options.skipAuthHeader === true,
     })
     const payload = normalizeResponse(response)
     if (

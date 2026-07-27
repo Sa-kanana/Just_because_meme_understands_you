@@ -20,6 +20,7 @@
 const ICON_MAP = {
   publish: 'ri-add-circle-line',
   search: 'ri-search-2-line',
+  following: 'ri-user-heart-line',
   favorites: 'ri-star-line',
   ai: 'ri-sparkling-2-line',
 }

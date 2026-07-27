@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.service.auth;
 
 import com.sakana.just_because_meme_understands_you.dto.LoginRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.RegisterRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.SendCodeRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.RegisterResponseVO;
 import com.sakana.just_because_meme_understands_you.dto.ResetPasswordRequestDTO;
 import com.sakana.just_because_meme_understands_you.vo.AuthTokenBundleVO;
@@ -23,23 +24,25 @@ public interface IAuthService {
 
     /**
      * 注册逻辑：
-     * 1. 校验参数与两次密码一致性
-     * 2. 校验邮箱验证码（Redis）
-     * 3. 查重（邮箱是否已注册）
-     * 4. 保存 user 与 user_auth
-     * 5. 删除验证码缓存
+     * 1. 校验图形人机验证码
+     * 2. 校验参数与两次密码一致性
+     * 3. 校验邮箱验证码（Redis）
+     * 4. 查重（邮箱是否已注册）
+     * 5. 保存 user 与 user_auth
+     * 6. 删除验证码缓存
      */
     RegisterResponseVO register(RegisterRequestDTO request);
 
     /**
      * 发送注册验证码逻辑：
-     * 1. 校验邮箱格式
-     * 2. 查重（邮箱是否已注册）
-     * 3. Redis 限流，限制 60s 内重复发送
-     * 4. 生成 6 位数字验证码并写入 Redis（5-10 分钟过期）
-     * 5. 通过 QQ 邮箱 SMTP 发送验证码邮件
+     * 1. 校验图形人机验证码
+     * 2. 校验邮箱格式
+     * 3. 查重（邮箱是否已注册）
+     * 4. Redis 限流，限制 60s 内重复发送
+     * 5. 生成 6 位数字验证码并写入 Redis（5-10 分钟过期）
+     * 6. 通过 QQ 邮箱 SMTP 发送验证码邮件
      */
-    SendCodeResponseVO sendRegisterCode(String email);
+    SendCodeResponseVO sendRegisterCode(SendCodeRequestDTO request);
 
     // ---------- 忘记密码三步流程 ----------
 
@@ -65,5 +68,21 @@ public interface IAuthService {
      * 退出登录：删除 refreshToken（Redis）并将 accessToken 加入黑名单（Redis）。
      */
     void logout(String accessToken, String refreshToken);
+
+    /**
+     * GitHub OAuth：按 github identity 登录或注册，签发与邮箱登录一致的令牌包。
+     *
+     * @param githubUserId GitHub 数字用户 id（写入 user_auth.identifier）
+     * @param loginName    GitHub login，用于昵称候选
+     * @param displayName  GitHub name，可为空
+     * @param avatarUrl    GitHub 头像 URL，可为空
+     * @param email        已验证邮箱，可为空；未占用时可顺带绑定 email identity
+     */
+    AuthTokenBundleVO loginOrRegisterGithub(
+            String githubUserId,
+            String loginName,
+            String displayName,
+            String avatarUrl,
+            String email);
 }
 

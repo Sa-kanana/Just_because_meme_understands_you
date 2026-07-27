@@ -10,7 +10,12 @@ export const POST_LOGIN_REDIRECT_KEY = 'post_login_redirect'
 /** 与后端 Result.CODE_* 对齐 */
 export const AUTH_EXPIRED_CODES = new Set([401, 1002])
 
-const GUEST_AUTH_PATHS = new Set(['/login', '/register', '/forgot-password'])
+const GUEST_AUTH_PATHS = new Set([
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/login/oauth/callback',
+])
 
 let sessionLogoutInProgress = false
 

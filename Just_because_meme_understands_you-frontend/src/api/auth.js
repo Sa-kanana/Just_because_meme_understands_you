@@ -12,6 +12,9 @@ const AUTH_ENDPOINTS = {
   login: '/login',
   renewLogin: '/login/refresh',
   logout: '/logout',
+  githubAuthorize: '/login/oauth/github',
+  oauthExchange: '/login/oauth/exchange',
+  captcha: '/captcha',
 }
 
 function normalizeAuthToken(rawToken) {
@@ -39,7 +42,36 @@ function assertDataResponseSuccess(res, fallbackMessage) {
  * @property {string} email - 邮箱，对应后端 identifier（必填）
  * @property {string} password - 密码（必填）
  * @property {string} [loginType] - 标识登录方式，对应 identity_type，如 'email'（必填，默认 'email'）
+ * @property {string} captchaId - 图形验证码会话 id
+ * @property {string} captchaCode - 用户输入的图形验证码
  */
+
+/**
+ * 获取图形人机验证码。
+ * GET /captcha → { captchaId, imageBase64, expireSeconds }
+ *
+ * @returns {Promise<{ captchaId: string, imageBase64: string, expireSeconds: number }>}
+ */
+export function fetchCaptcha() {
+  return request(AUTH_ENDPOINTS.captcha, {
+    method: 'GET',
+    skipAuthRefresh: true,
+    skipAuthHeader: true,
+  }).then((res) => {
+    const data = assertDataResponseSuccess(res, '验证码获取失败')
+    const captchaId = data.captchaId != null ? String(data.captchaId).trim() : ''
+    const imageBase64 =
+      data.imageBase64 != null ? String(data.imageBase64).trim() : ''
+    if (!captchaId || !imageBase64) {
+      throw new Error('验证码返回数据不完整')
+    }
+    return {
+      captchaId,
+      imageBase64,
+      expireSeconds: Number(data.expireSeconds) || 300,
+    }
+  })
+}
 
 /**
  * @typedef {Object} LoginUser
@@ -53,7 +85,7 @@ function assertDataResponseSuccess(res, fallbackMessage) {
 
 /**
  * 登录
- * 按 Apifox 接口文档：POST /login，Body 必填 email、password、loginType；
+ * 按 Apifox 接口文档：POST /login，Body 必填 email、password、loginType、captchaId、captchaCode；
  * 响应 DataRespose，成功时 data 含 token（JWT）、user（用户信息）。
  *
  * @param {LoginPayload} payload
@@ -63,9 +95,16 @@ export function login(payload = {}) {
   const email = payload.email != null ? String(payload.email).trim() : ''
   const password = payload.password != null ? String(payload.password) : ''
   const loginType = payload.loginType || 'email'
+  const captchaId =
+    payload.captchaId != null ? String(payload.captchaId).trim() : ''
+  const captchaCode =
+    payload.captchaCode != null ? String(payload.captchaCode).trim() : ''
 
   if (!email || !password) {
     return Promise.reject(new Error('请输入邮箱和密码'))
+  }
+  if (!captchaId || !captchaCode) {
+    return Promise.reject(new Error('请完成人机验证'))
   }
 
   return request(AUTH_ENDPOINTS.login, {
@@ -74,6 +113,8 @@ export function login(payload = {}) {
       email,
       password,
       loginType,
+      captchaId,
+      captchaCode,
     }),
     skipAuthRefresh: true,
     withCredentials: true,
@@ -93,6 +134,54 @@ export function login(payload = {}) {
       throw new Error('登录返回缺少 access 或用户信息')
     }
 
+    return {
+      token: accessToken,
+      user: data.user,
+    }
+  })
+}
+
+/**
+ * 拼装 GitHub OAuth 授权跳转地址（走后端 302）。
+ * @param {string} [redirectPath]
+ * @returns {string}
+ */
+export function buildGithubAuthorizeUrl(redirectPath = '/') {
+  const base = process.env.VUE_APP_API_BASE_URL || '/api'
+  const redirect = redirectPath != null ? String(redirectPath).trim() : '/'
+  const q = new URLSearchParams({ redirect: redirect || '/' })
+  return `${base}${AUTH_ENDPOINTS.githubAuthorize}?${q.toString()}`
+}
+
+/**
+ * 用一次性 ticket 兑换登录态
+ * POST /login/oauth/exchange
+ * @param {string} ticket
+ * @returns {Promise<{ token: string, user: LoginUser }>}
+ */
+export function exchangeOauthTicket(ticket) {
+  const value = ticket != null ? String(ticket).trim() : ''
+  if (!value) {
+    return Promise.reject(new Error('缺少登录凭证'))
+  }
+  return request(AUTH_ENDPOINTS.oauthExchange, {
+    method: 'POST',
+    body: JSON.stringify({ ticket: value }),
+    skipAuthRefresh: true,
+    withCredentials: true,
+  }).then((res) => {
+    const data = assertDataResponseSuccess(res, 'GitHub 登录失败')
+    const accessToken =
+      data.access != null
+        ? String(data.access).trim()
+        : data.token != null
+          ? String(data.token).trim()
+          : data.accessToken != null
+            ? String(data.accessToken).trim()
+            : ''
+    if (!accessToken || !data.user) {
+      throw new Error('登录返回缺少 access 或用户信息')
+    }
     return {
       token: accessToken,
       user: data.user,
@@ -173,26 +262,40 @@ export function logout(token) {
 /**
  * 发送注册验证码
  *
- * 严格按照 Apifox 接口文档：
- * - URL: POST /register/send-code
- * - Content-Type: application/json
- * - Body: { email }
- * - 响应：{ code, message, data: { retryAfter } }
+ * POST /register/send-code
+ * Body: { email, captchaId, captchaCode }
  *
- * @param {string} email
+ * @param {string|Object} emailOrPayload - 邮箱，或含 captcha 的对象
+ * @param {string} [emailOrPayload.email]
+ * @param {string} [emailOrPayload.captchaId]
+ * @param {string} [emailOrPayload.captchaCode]
  * @returns {Promise<{ retryAfter: number, message: string }>}
  */
-export function sendRegisterCode(email) {
-  const normalizedEmail = email != null ? String(email).trim() : ''
+export function sendRegisterCode(emailOrPayload) {
+  const payload =
+    emailOrPayload != null && typeof emailOrPayload === 'object'
+      ? emailOrPayload
+      : { email: emailOrPayload }
+  const normalizedEmail =
+    payload.email != null ? String(payload.email).trim() : ''
+  const captchaId =
+    payload.captchaId != null ? String(payload.captchaId).trim() : ''
+  const captchaCode =
+    payload.captchaCode != null ? String(payload.captchaCode).trim() : ''
 
   if (!normalizedEmail) {
     return Promise.reject(new Error('请输入邮箱'))
+  }
+  if (!captchaId || !captchaCode) {
+    return Promise.reject(new Error('请完成人机验证'))
   }
 
   return request('/register/send-code', {
     method: 'POST',
     body: JSON.stringify({
       email: normalizedEmail,
+      captchaId,
+      captchaCode,
     }),
   }).then((res) => {
     if (!res || typeof res !== 'object') {
@@ -240,6 +343,8 @@ export function sendRegisterCode(email) {
  * @param {string} payload.confirmPassword
  * @param {string} payload.verificationCode
  * @param {string} [payload.nickname] - 用户名，不传则默认取邮箱前缀
+ * @param {string} payload.captchaId
+ * @param {string} payload.captchaCode
  * @returns {Promise<{ userId: number|string, email: string, nickname: string, createdAt: string, message: string }>}
  */
 export function register(payload = {}) {
@@ -255,6 +360,10 @@ export function register(payload = {}) {
       : ''
   const nickname =
     payload.nickname != null ? String(payload.nickname).trim() : ''
+  const captchaId =
+    payload.captchaId != null ? String(payload.captchaId).trim() : ''
+  const captchaCode =
+    payload.captchaCode != null ? String(payload.captchaCode).trim() : ''
 
   if (!email) {
     return Promise.reject(new Error('请输入邮箱'))
@@ -267,6 +376,9 @@ export function register(payload = {}) {
   }
   if (!verificationCode) {
     return Promise.reject(new Error('请输入验证码'))
+  }
+  if (!captchaId || !captchaCode) {
+    return Promise.reject(new Error('请完成人机验证'))
   }
 
   const finalNickname =
@@ -282,6 +394,8 @@ export function register(payload = {}) {
       confirmPassword,
       verificationCode,
       nickname: finalNickname,
+      captchaId,
+      captchaCode,
     }),
   }).then((res) => {
     if (!res || typeof res !== 'object') {

@@ -56,12 +56,22 @@ app:
   feedback:
     to-email: 827278063@qq.com
     rate-limit-per-minute: 3
+  oauth:
+    github:
+      client-id: # 请自行填写 GitHub OAuth App Client ID
+      client-secret: # 请自行填写 GitHub OAuth App Client Secret
+      # GitHub 应用回调须指向后端（不要走前端代理）
+      redirect-uri: http://localhost:8080/login/oauth/github/callback
+      # 本地前端（vue serve 默认 80 端口）
+      frontend-callback-url: http://localhost/login/oauth/callback
+      scope: read:user user:email
 
 # ---------- MemeAgent（FastAPI AI 搜索）----------
 meme:
   agent:
     base-url: http://127.0.0.1:8000
     api-key: # 请自行填写，与 MemeAgent INTERNAL_API_KEY 一致
+    # write-api-key: # 可选；与 INTERNAL_API_KEY_WRITE 一致，空则回退 api-key
   ai:
     max-history-tokens: 3000
     max-output-tokens: 512
@@ -69,3 +79,23 @@ meme:
     rate-limit-per-minute: 20
     chars-per-token-estimate: 3
     backfill-enabled: true
+  ops:
+    require-admin: true
+    # 本地无 ROLE_ADMIN 时可把本人 userId 加入白名单
+    admin-user-ids: []
+
+# ---------- Firecrawl 热梗采集 ----------
+meme:
+  agent:
+    base-url: http://127.0.0.1:8000
+    api-key: # 与 MemeAgent INTERNAL_API_KEY 一致
+  crawl:
+    enabled: true
+    schedule-enabled: true
+    # 每月 4 次：1/8/15/22 日 10:00
+    cron: '0 0 10 1,8,15,22 * *'
+    publisher-user-id: # 请填写已存在的用户雪花 ID
+    limit: 5
+    live-limit: 8
+    live-hours: 48
+

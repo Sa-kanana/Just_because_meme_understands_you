@@ -9,7 +9,8 @@
         class="home-feed-tabs__tab"
         :class="{ 'is-active': modelValue === tab.value }"
         :aria-selected="modelValue === tab.value"
-        @click="$emit('update:modelValue', tab.value)"
+        :disabled="disabled"
+        @click="selectTab(tab.value)"
       >
         {{ tab.label }}
       </button>
@@ -20,7 +21,8 @@
         class="home-feed-tabs__tab"
         :class="{ 'is-active': modelValue === 'following' }"
         :aria-selected="modelValue === 'following'"
-        @click="$emit('update:modelValue', 'following')"
+        :disabled="disabled"
+        @click="selectTab('following')"
       >
         关注
       </button>
@@ -47,11 +49,21 @@ export default {
       type: Boolean,
       default: false,
     },
+    disabled: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['update:modelValue'],
   computed: {
     visibleTabs() {
       return BASE_TABS
+    },
+  },
+  methods: {
+    selectTab(value) {
+      if (this.disabled || value === this.modelValue) return
+      this.$emit('update:modelValue', value)
     },
   },
 }
@@ -88,8 +100,13 @@ export default {
   transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.home-feed-tabs__tab:hover {
+.home-feed-tabs__tab:hover:not(:disabled) {
   color: var(--meme-text);
+}
+
+.home-feed-tabs__tab:disabled {
+  cursor: wait;
+  opacity: 0.75;
 }
 
 .home-feed-tabs__tab.is-active {

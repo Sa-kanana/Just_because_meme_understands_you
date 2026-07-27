@@ -70,5 +70,15 @@ public class MemeListItemVO {
      * 兼容旧字段：标签列表（与 memeTag 同形，避免回传实体）
      */
     private List<MemeTagVO> label;
+
+    /**
+     * 首条外链来源（如采集入库的 B 站原视频），无则 null
+     */
+    private String sourceUrl;
+
+    /**
+     * 来源展示标题
+     */
+    private String sourceTitle;
 }
 

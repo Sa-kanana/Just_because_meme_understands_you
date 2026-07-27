@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.service.home.impl;
 
 import com.sakana.just_because_meme_understands_you.service.home.IHomePageService;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.vo.HomeBootstrapVO;
 import com.sakana.just_because_meme_understands_you.vo.HomeFeedVO;
 import com.sakana.just_because_meme_understands_you.vo.HomeHotTagVO;
@@ -32,6 +33,9 @@ public class HomePageServiceImpl implements IHomePageService {
     @Resource
     private HomeHotTagSupport homeHotTagSupport;
 
+    @Resource
+    private MemeAgentProperties memeAgentProperties;
+
     @Override
     public HomeBootstrapVO bootstrap(int hotLimit, int tagLimit, String feedSort, int feedSize) {
         int safeHotLimit = clamp(hotLimit, DEFAULT_HOT_LIMIT, MAX_HOT_LIMIT);
@@ -43,6 +47,12 @@ public class HomePageServiceImpl implements IHomePageService {
         vo.setQuickActions(buildQuickActions());
         vo.setHotTags(homeHotTagSupport.listHotTags(safeTagLimit));
         vo.setHotMemes(memeService.listHotMemes(safeHotLimit));
+
+        MemeAgentProperties.Crawl crawl = memeAgentProperties.getCrawl();
+        int liveLimit = crawl != null ? Math.max(1, Math.min(crawl.getLiveLimit(), 16)) : 8;
+        int liveHours = crawl != null ? Math.max(1, crawl.getLiveHours()) : 48;
+        long publisherId = crawl != null ? crawl.getPublisherUserId() : 0L;
+        vo.setLiveMemes(memeService.listLiveMemes(publisherId, liveHours, liveLimit));
 
         PageVO<MemeListItemVO> feedPage = memeService.pageMemeFeed(1, safeFeedSize, safeSort, null);
         vo.setFeed(toHomeFeedVO(feedPage, safeSort));
@@ -60,7 +70,7 @@ public class HomePageServiceImpl implements IHomePageService {
     private static List<HomeQuickActionVO> buildQuickActions() {
         List<HomeQuickActionVO> actions = new ArrayList<>(3);
         actions.add(quickAction("publish", "发布梗", "/publish", true));
-        actions.add(quickAction("search", "搜梗", "/search", false));
+        actions.add(quickAction("following", "我的关注", "/?feed=following", true));
         actions.add(quickAction("favorites", "我的收藏", "/user/me?tab=favorite", true));
         return actions;
     }

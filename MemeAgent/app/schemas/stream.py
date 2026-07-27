@@ -6,7 +6,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 class ChatMessage(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    role: Literal["system", "user", "assistant"]
+    role: Literal["user", "assistant"]
     content: str = Field(
         default="",
         max_length=8000,
@@ -19,6 +19,15 @@ class ChatMessage(BaseModel):
         if value is None:
             return ""
         return str(value)
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: Any) -> str:
+        role = str(value or "user").strip().lower()
+        if role not in {"user", "assistant"}:
+            # 非法/system 角色统一降为 user，避免提权；后续 list 校验可再丢弃空内容
+            return "user"
+        return role
 
 
 class BusinessContext(BaseModel):

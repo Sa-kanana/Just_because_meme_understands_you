@@ -33,5 +33,15 @@ public class RegisterRequestDTO {
      * 用户昵称
      */
     private String nickname;
+
+    /**
+     * 图形验证码会话 id（GET /captcha）
+     */
+    private String captchaId;
+
+    /**
+     * 用户输入的图形验证码
+     */
+    private String captchaCode;
 }
 

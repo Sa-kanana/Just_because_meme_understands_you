@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.meme_agent import build_meme_search_agent
 from app.agents.prompts import build_context_block
 from app.agents.tools import (
+    build_search_live_web_tool,
     build_search_meme_tool,
     parse_tool_payload,
     retrieve_meme_chunks,
@@ -26,6 +27,14 @@ from app.schemas.stream import (
     StreamMetaEvent,
     StreamRequest,
     StreamTokenEvent,
+)
+from app.security.sanitize import (
+    looks_like_prompt_injection,
+    sanitize_business_extra,
+    sanitize_chat_messages,
+    sanitize_hint_meme_ids,
+    sanitize_user_text,
+    wrap_untrusted_user_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,7 +68,7 @@ def _snippets_from_context(extra: dict[str, Any]) -> list[dict]:
 
 def _history_messages(request: StreamRequest) -> list:
     history = []
-    for msg in request.messages:
+    for msg in sanitize_chat_messages(request.messages):
         if msg.role == "user":
             history.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
@@ -86,13 +95,21 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
     settings = get_settings()
     apply_langsmith_env(settings)
     max_tokens = min(request.max_tokens, settings.max_output_tokens)
-    snippets = _snippets_from_context(request.context.extra or {})
-    hint_ids = list(request.context.hint_meme_ids or [])
+    safe_query = sanitize_user_text(request.query, max_len=2000)
+    injection_flag = looks_like_prompt_injection(safe_query)
+    if injection_flag:
+        logger.warning(
+            "prompt_injection_suspected request_id=%s",
+            request.request_id,
+        )
+    extra = sanitize_business_extra(request.context.extra or {})
+    snippets = _snippets_from_context(extra)
+    hint_ids = sanitize_hint_meme_ids(list(request.context.hint_meme_ids or []))
 
     try:
         # 产品侧需要稳定的 cite 事件：先确定性检索一次
         retrieved = await retrieve_meme_chunks(
-            query=request.query,
+            query=safe_query,
             hint_meme_ids=hint_ids,
             mysql_snippets=snippets,
             top_k=settings.retrieval_top_k,
@@ -118,7 +135,7 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
 
         llm = _build_llm(settings, max_tokens)
         if llm is None:
-            fallback = _fallback_answer(request.query, retrieved)
+            fallback = _fallback_answer(safe_query, retrieved)
             for piece in _chunk_text(fallback, 24):
                 yield _format_sse("token", StreamTokenEvent(text=piece).model_dump())
             yield _format_sse(
@@ -135,17 +152,19 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             default_snippets=snippets,
             default_top_k=settings.retrieval_top_k,
         )
-        executor = build_meme_search_agent(llm, [tool])
+        live_tool = build_search_live_web_tool()
+        executor = build_meme_search_agent(llm, [tool, live_tool], max_iterations=4)
 
         context_block = build_context_block(
-            request.context.locale,
+            request.context.locale or "zh-CN",
             hint_ids,
             snippets=snippets,
         )
         agent_input = (
             f"{context_block}\n\n"
-            f"<user_query>\n{request.query}\n</user_query>\n\n"
-            "请先调用 search_meme_knowledge，再基于工具结果用中文回答。"
+            f"{wrap_untrusted_user_payload(safe_query, flagged=injection_flag)}\n\n"
+            "请先调用 search_meme_knowledge；若结果不足或问题涉及最新热梗，"
+            "再调用 search_live_meme_web。基于工具结果用中文回答。"
             "回答中不要出现 meme_id、score 等内部字段，只写用户可读内容。"
         )
 
@@ -194,7 +213,7 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
                 request.request_id,
             )
             if completion_chars == 0:
-                fallback = _fallback_answer(request.query, retrieved)
+                fallback = _fallback_answer(safe_query, retrieved)
                 for piece in _chunk_text(fallback, 24):
                     yield _format_sse("token", StreamTokenEvent(text=piece).model_dump())
                 yield _format_sse(

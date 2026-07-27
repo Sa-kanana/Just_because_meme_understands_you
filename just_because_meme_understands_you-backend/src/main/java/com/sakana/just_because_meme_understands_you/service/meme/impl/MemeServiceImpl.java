@@ -36,6 +36,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -138,6 +139,28 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     @Override
+    public List<MemeListItemVO> listLiveMemes(long publisherUserId, int hours, int limit) {
+        if (limit <= 0) {
+            limit = 8;
+        }
+        limit = Math.min(limit, 16);
+        int safeHours = hours > 0 ? Math.min(hours, 168) : 48;
+        LocalDateTime since = LocalDateTime.now().minusHours(safeHours);
+
+        Page<Meme> mpPage = new Page<>(1, limit);
+        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getStatus, STATUS_NORMAL)
+                .ge(Meme::getReleaseTime, since)
+                .orderByDesc(Meme::getReleaseTime)
+                .orderByDesc(Meme::getId);
+        if (publisherUserId > 0L) {
+            wrapper.eq(Meme::getUserId, publisherUserId);
+        }
+        Page<Meme> resultPage = this.page(mpPage, wrapper);
+        return toMemeListItemVOs(resultPage.getRecords());
+    }
+
+    @Override
     public List<MemeListItemVO> searchByKeyword(String keyword, int page) {
         if (keyword == null || keyword.isBlank()) {
             return Collections.emptyList();
@@ -153,31 +176,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         if (memeList == null || memeList.isEmpty()) {
             return Collections.emptyList();
         }
-
-        List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
-        Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
-        Map<Long, User> authorMap = loadAuthorMap(memeList);
-
-        List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
-        for (Meme meme : memeList) {
-            MemeListItemVO vo = new MemeListItemVO();
-            vo.setId(meme.getId());
-            vo.setName(meme.getName());
-            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            vo.setPageViews(meme.getPageViews());
-            vo.setLikes(meme.getLikes());
-            vo.setComments(meme.getComments());
-            vo.setReleaseTime(meme.getReleaseTime());
-            vo.setUpdateTime(meme.getUpdateTime());
-            vo.setStatus(meme.getStatus());
-            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
-            List<MemeTagVO> tagVos = toMemeTagVOList(
-                    memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList()));
-            vo.setMemeTag(tagVos);
-            vo.setLabel(tagVos);
-            voList.add(vo);
-        }
-        return voList;
+        return toMemeListItemVOs(memeList);
     }
 
     @Override
@@ -458,6 +457,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
         Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
         Map<Long, User> authorMap = loadAuthorMap(memeList);
+        Map<Integer, MemeResource> sourceByMemeId = loadFirstSourceLinkByMemeIds(memeIds);
 
         List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
@@ -476,9 +476,59 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
                     memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList()));
             vo.setMemeTag(tagVos);
             vo.setLabel(tagVos);
+            MemeResource source = sourceByMemeId.get(meme.getId());
+            if (source != null && StringUtils.hasText(source.getResourceUrl())) {
+                vo.setSourceUrl(source.getResourceUrl().trim());
+                String sourceTitle = StringUtils.hasText(source.getTitle())
+                        ? source.getTitle().trim()
+                        : "查看来源";
+                vo.setSourceTitle(sourceTitle);
+            }
             voList.add(vo);
         }
         return voList;
+    }
+
+    /**
+     * 批量取每个梗的首条外链（link / video / article），供列表卡片展示来源。
+     */
+    private Map<Integer, MemeResource> loadFirstSourceLinkByMemeIds(List<Integer> memeIds) {
+        if (memeIds == null || memeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> longIds = memeIds.stream()
+                .filter(Objects::nonNull)
+                .map(Integer::longValue)
+                .distinct()
+                .toList();
+        if (longIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeResource> resources = memeResourceService.list(new LambdaQueryWrapper<MemeResource>()
+                .in(MemeResource::getMemeId, longIds)
+                .eq(MemeResource::getStatus, 1)
+                .in(MemeResource::getResourceType, List.of(
+                        MemeResourceType.LINK.getCode(),
+                        MemeResourceType.VIDEO.getCode(),
+                        MemeResourceType.ARTICLE.getCode()))
+                .orderByAsc(MemeResource::getSortOrder)
+                .orderByAsc(MemeResource::getId));
+        if (resources == null || resources.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Integer, MemeResource> firstByMeme = new HashMap<>();
+        for (MemeResource resource : resources) {
+            if (resource.getMemeId() == null || !StringUtils.hasText(resource.getResourceUrl())) {
+                continue;
+            }
+            String url = resource.getResourceUrl().trim();
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                continue;
+            }
+            int memeId = resource.getMemeId().intValue();
+            firstByMeme.putIfAbsent(memeId, resource);
+        }
+        return firstByMeme;
     }
 
     private void applyFeedSort(LambdaQueryWrapper<Meme> wrapper, String sort, Long followingUserId) {

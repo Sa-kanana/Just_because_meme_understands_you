@@ -13,9 +13,18 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # reload / 新 worker 启动时强制重读 .env，避免沿用旧模型配置
+    get_settings.cache_clear()
     settings = get_settings()
     configure_logging(settings.log_level)
-    logger.info("Starting %s (env=%s)", settings.app_name, settings.app_env)
+    logger.info(
+        "Starting %s (env=%s) chat_model=%s embed_model=%s base_url=%s",
+        settings.app_name,
+        settings.app_env,
+        settings.openai_chat_model,
+        settings.openai_embedding_model,
+        settings.openai_base_url,
+    )
 
     if settings.vector_database_url:
         try:

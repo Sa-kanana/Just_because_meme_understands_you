@@ -187,7 +187,8 @@ public class AiSearchServiceImpl implements IAiSearchService {
                 continue;
             }
             String role = msg.getRole().trim().toLowerCase();
-            if (!"user".equals(role) && !"assistant".equals(role) && !"system".equals(role)) {
+            // 仅转发 user/assistant，禁止把 system 历史交给 Agent（防提示注入提权）
+            if (!"user".equals(role) && !"assistant".equals(role)) {
                 continue;
             }
             messages.add(MemeAgentStreamRequestDTO.ChatMessage.builder()

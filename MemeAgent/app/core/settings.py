@@ -2,9 +2,10 @@ from functools import lru_cache
 import logging
 import os
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # 固定指向 MemeAgent 根目录，避免从仓库根/IDE 启动时读不到 .env
 _MEMEAGENT_ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,14 @@ class Settings(BaseSettings):
     internal_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("INTERNAL_API_KEY", "internal_api_key"),
+    )
+    # 写接口密钥（ingest/crawl）；空则与 INTERNAL_API_KEY 相同（仅建议开发环境）
+    internal_api_key_write: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "INTERNAL_API_KEY_WRITE",
+            "internal_api_key_write",
+        ),
     )
 
     vector_database_url: str = Field(
@@ -82,6 +91,90 @@ class Settings(BaseSettings):
         default=512,
         validation_alias=AliasChoices("MAX_OUTPUT_TOKENS", "max_output_tokens"),
     )
+
+    # Firecrawl（实时热梗采集 / Agent 联网补强）
+    firecrawl_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("FIRECRAWL_API_KEY", "firecrawl_api_key"),
+    )
+    firecrawl_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FIRECRAWL_ENABLED", "firecrawl_enabled"),
+    )
+    firecrawl_default_queries: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "网络流行语",
+            "网络梗",
+        ],
+        validation_alias=AliasChoices(
+            "FIRECRAWL_DEFAULT_QUERIES",
+            "firecrawl_default_queries",
+        ),
+    )
+    # B 站投稿视频页（SPA，需 Firecrawl actions 交互滚动）
+    firecrawl_bilibili_upload_url: str = Field(
+        default="https://space.bilibili.com/94510621/upload/video",
+        validation_alias=AliasChoices(
+            "FIRECRAWL_BILIBILI_UPLOAD_URL",
+            "firecrawl_bilibili_upload_url",
+        ),
+    )
+    # 每次取投稿列表前 N 条视频总结梗
+    firecrawl_bilibili_top_videos: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        validation_alias=AliasChoices(
+            "FIRECRAWL_BILIBILI_TOP_VIDEOS",
+            "firecrawl_bilibili_top_videos",
+        ),
+    )
+    # scrape proxy: auto | basic | stealth（空则不传）
+    firecrawl_scrape_proxy: str = Field(
+        default="stealth",
+        validation_alias=AliasChoices(
+            "FIRECRAWL_SCRAPE_PROXY",
+            "firecrawl_scrape_proxy",
+        ),
+    )
+    # B 站发现源：空间主页兜底
+    firecrawl_bilibili_dynamic_url: str = Field(
+        default="https://space.bilibili.com/94510621",
+        validation_alias=AliasChoices(
+            "FIRECRAWL_BILIBILI_DYNAMIC_URL",
+            "firecrawl_bilibili_dynamic_url",
+        ),
+    )
+    # 额外抓取 URL，| 分隔；默认同账号动态页（有内容时补充）
+    firecrawl_bilibili_extra_urls: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "https://space.bilibili.com/94510621/dynamic",
+        ],
+        validation_alias=AliasChoices(
+            "FIRECRAWL_BILIBILI_EXTRA_URLS",
+            "firecrawl_bilibili_extra_urls",
+        ),
+    )
+
+    @field_validator("firecrawl_default_queries", "firecrawl_bilibili_extra_urls", mode="before")
+    @classmethod
+    def parse_pipe_list(cls, value, info):
+        field = getattr(info, "field_name", "") or ""
+        defaults = {
+            "firecrawl_default_queries": ["网络流行语", "网络梗"],
+            "firecrawl_bilibili_extra_urls": [
+                "https://space.bilibili.com/94510621/dynamic",
+            ],
+        }
+        fallback = defaults.get(field, [])
+        if value is None or value == "":
+            return fallback
+        if isinstance(value, str):
+            parts = [p.strip() for p in value.split("|") if p.strip()]
+            return parts or fallback
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+        return value
 
     @field_validator("internal_api_key")
     @classmethod

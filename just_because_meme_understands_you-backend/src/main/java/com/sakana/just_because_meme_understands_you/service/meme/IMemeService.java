@@ -43,6 +43,15 @@ public interface IMemeService extends IService<Meme> {
     List<MemeListItemVO> listHotMemes(int limit);
 
     /**
+     * 实时新梗（Firecrawl 采集入库），按发布时间倒序。
+     *
+     * @param publisherUserId 系统发布者；&lt;=0 时退化为全站最新
+     * @param hours           时间窗小时数
+     * @param limit           条数
+     */
+    List<MemeListItemVO> listLiveMemes(long publisherUserId, int hours, int limit);
+
+    /**
      * 关键字搜索梗，按名称、介绍或标签名模糊匹配，分页返回（每页 8 条）
      *
      * @param keyword 关键字，为空或空白时返回空列表

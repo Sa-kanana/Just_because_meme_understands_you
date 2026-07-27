@@ -1,0 +1,10 @@
+key=True enabled=True
+bilibili=https://space.bilibili.com/94510621
+baike=baike.baidu.com moegirl=zh.moegirl.org.cn
+extract=['电子榨菜', '绝绝子']
+topic_path n=1 used=['topic:电子榨菜']
+- 电子榨菜 | tags=['实时', '热搜', 'B站', '百度百科', 'baike', '电子榨菜'] | https://baike.baidu.com/item/%E7%94%B5%E5%AD%90%E6%A6%A8%E8%8F%9C/62063038
+  intro=【百度百科】电子榨菜，网络流行语，特指人们在吃饭时观看的视频、微短剧或收听的有声书等数字内容，因其像榨菜一样能“下饭”佐餐而得名。该现象伴随独居青年增多与快节奏生活而流行，成为 ...
+bilibili_path n=2 used=['scrape:https://space.bilibili.com/94510621']
+- 完颜慧德 | https://baike.baidu.com/item/%E5%AE%8C%E9%A2%9C%E6%85%A7%E5%BE%B7/63583795
+- 拱出去 | https://baike.baidu.com/item/%E6%8B%B1%E5%87%BA%E5%8E%BB

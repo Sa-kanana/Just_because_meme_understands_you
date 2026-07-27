@@ -7,22 +7,24 @@
     @click="handleClick"
   >
     <div class="meme-card__cover">
-      <ui-image
-        v-if="image && !imageError"
-        :src="image"
-        :alt="displayName"
-        fit="cover"
-        class="meme-card__img"
-        :lazy="lazy"
-        @error="imageError = true"
-      />
-      <MemeCoverPlaceholder
-        v-else
-        :name="displayName"
-        :seed="displayName"
-        abstract
-        class="meme-card__ph"
-      />
+      <div class="meme-card__media">
+        <ui-image
+          v-if="image && !imageError"
+          :src="image"
+          :alt="displayName"
+          fit="cover"
+          class="meme-card__img"
+          :lazy="lazy"
+          @error="imageError = true"
+        />
+        <MemeCoverPlaceholder
+          v-else
+          :name="displayName"
+          :seed="displayName"
+          abstract
+          class="meme-card__ph"
+        />
+      </div>
 
       <div v-if="showStats" class="meme-card__shade" aria-hidden="true" />
       <div v-if="showStats" class="meme-card__stats">
@@ -221,7 +223,6 @@ export default {
   width: 100%;
   aspect-ratio: 16 / 10;
   border-radius: 14px;
-  overflow: hidden;
   background: var(--meme-bg-cover);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
 }
@@ -231,21 +232,25 @@ export default {
   box-shadow: none;
 }
 
-.meme-card__ph {
+.meme-card__media {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.meme-card__ph {
+  width: 100%;
+  height: 100%;
 }
 
 .meme-card__img,
-.meme-card__img :deep(.ui-image),
-.meme-card__img :deep(.ui-image img) {
+.meme-card__media :deep(.ui-image),
+.meme-card__media :deep(.ui-image img) {
   width: 100%;
   height: 100%;
   display: block;
-}
-
-.meme-card__img {
-  height: 100%;
 }
 
 .meme-card__shade {
@@ -253,7 +258,9 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 1;
   height: 46%;
+  border-radius: 0 0 inherit inherit;
   background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.65) 100%);
   pointer-events: none;
 }
@@ -266,6 +273,7 @@ export default {
   z-index: 2;
   padding: 0 8px 6px;
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 .meme-card__stats :deep(.meme-card-stats) {

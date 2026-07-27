@@ -2,8 +2,11 @@ package com.sakana.just_because_meme_understands_you.common.support;
 
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.util.StringUtils;
+
+import java.util.Collection;
 
 /**
  * Web 层认证上下文工具，统一从请求属性中解析当前用户 id，
@@ -43,6 +46,29 @@ public final class AuthContext {
             throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
         }
         return userId;
+    }
+
+    /**
+     * 当前 JWT 角色（可能为 null）。
+     */
+    public static String currentRole(HttpServletRequest request) {
+        Object role = request.getAttribute(AuthConstants.CLAIM_ROLE);
+        return role == null ? null : String.valueOf(role);
+    }
+
+    /**
+     * 要求管理员：ROLE_ADMIN，或命中运维白名单 userId。
+     */
+    public static Long requireAdmin(HttpServletRequest request, Collection<Long> allowUserIds) {
+        Long userId = requireCurrentUserId(request);
+        String role = currentRole(request);
+        if (AuthConstants.ROLE_ADMIN.equals(role)) {
+            return userId;
+        }
+        if (allowUserIds != null && allowUserIds.contains(userId)) {
+            return userId;
+        }
+        throw new BizException(Result.CODE_FORBIDDEN, "需要管理员权限");
     }
 
     /**

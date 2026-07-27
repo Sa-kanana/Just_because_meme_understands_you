@@ -29,4 +29,16 @@ public class LoginRequestDTO {
      */
     @NotBlank(message = "登录方式不能为空")
     private String loginType;
+
+    /**
+     * 图形验证码会话 id（GET /captcha）
+     */
+    @NotBlank(message = "请完成人机验证")
+    private String captchaId;
+
+    /**
+     * 用户输入的图形验证码
+     */
+    @NotBlank(message = "请完成人机验证")
+    private String captchaCode;
 }

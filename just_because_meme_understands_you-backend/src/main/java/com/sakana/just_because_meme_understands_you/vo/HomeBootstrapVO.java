@@ -13,5 +13,8 @@ public class HomeBootstrapVO {
 
     private List<MemeListItemVO> hotMemes;
 
+    /** Firecrawl 采集的实时新梗 */
+    private List<MemeListItemVO> liveMemes;
+
     private HomeFeedVO feed;
 }

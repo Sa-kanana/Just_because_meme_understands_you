@@ -1,9 +1,9 @@
 <template>
-  <section class="home-hot-rail" aria-label="今日热梗">
+  <section class="home-hot-rail" :aria-label="title">
     <div class="meme-section-head">
       <div>
-        <p class="meme-section-kicker">HOT TODAY</p>
-        <h2 class="meme-section-title">今日热梗</h2>
+        <p class="meme-section-kicker">{{ kicker }}</p>
+        <h2 class="meme-section-title">{{ title }}</h2>
       </div>
     </div>
 
@@ -17,25 +17,27 @@
       >
         <div class="home-hot-rail__cover">
           <span class="home-hot-rail__rank" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</span>
-          <ui-image
-            v-if="coverOf(item) && !coverErrors[item.id]"
-            :src="coverOf(item)"
-            :alt="item.name"
-            fit="cover"
-            class="home-hot-rail__img"
-            lazy
-            @error="onCoverError(item.id)"
-          />
-          <MemeCoverPlaceholder
-            v-else
-            :name="item.name"
-            :seed="item.id"
-            abstract
-          />
+          <div class="home-hot-rail__media">
+            <ui-image
+              v-if="coverOf(item) && !coverErrors[item.id]"
+              :src="coverOf(item)"
+              :alt="item.name"
+              fit="cover"
+              class="home-hot-rail__img"
+              lazy
+              @error="onCoverError(item.id)"
+            />
+            <MemeCoverPlaceholder
+              v-else
+              :name="item.name"
+              :seed="item.id"
+              abstract
+            />
+          </div>
           <div class="home-hot-rail__shade" aria-hidden="true" />
           <MemeCardStats
             variant="overlay"
-            spread
+            :spread="false"
             :page-views="item.pageViews"
             :likes="item.likes"
             :comments="item.comments"
@@ -62,6 +64,14 @@ export default {
     memes: {
       type: Array,
       default: () => [],
+    },
+    kicker: {
+      type: String,
+      default: 'HOT TODAY',
+    },
+    title: {
+      type: String,
+      default: '今日热梗',
     },
   },
   data() {
@@ -117,7 +127,6 @@ export default {
   position: relative;
   aspect-ratio: 2 / 1;
   border-radius: 10px;
-  overflow: hidden;
   background: var(--meme-bg-cover);
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.07);
   transition: box-shadow 0.2s ease;
@@ -127,11 +136,20 @@ export default {
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
 }
 
+/* 圆角裁切只作用在图片层，避免右侧点赞图标被 overflow 吃掉 */
+.home-hot-rail__media {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 0;
+}
+
 .home-hot-rail__rank {
   position: absolute;
   top: 8px;
   left: 8px;
-  z-index: 2;
+  z-index: 3;
   min-width: 24px;
   height: 24px;
   padding: 0 7px;
@@ -152,7 +170,8 @@ export default {
 }
 
 .home-hot-rail__img,
-.home-hot-rail__cover :deep(.ui-image) {
+.home-hot-rail__media :deep(.ui-image),
+.home-hot-rail__media :deep(.meme-cover-ph) {
   width: 100%;
   height: 100%;
   display: block;
@@ -161,7 +180,9 @@ export default {
 .home-hot-rail__shade {
   position: absolute;
   inset: auto 0 0 0;
+  z-index: 1;
   height: 48%;
+  border-radius: 0 0 10px 10px;
   background: linear-gradient(to top, rgba(15, 23, 42, 0.72), transparent);
   pointer-events: none;
 }
@@ -171,7 +192,9 @@ export default {
   left: 8px;
   right: 8px;
   bottom: 8px;
-  z-index: 1;
+  z-index: 2;
+  width: auto;
+  box-sizing: border-box;
 }
 
 .home-hot-rail__name {

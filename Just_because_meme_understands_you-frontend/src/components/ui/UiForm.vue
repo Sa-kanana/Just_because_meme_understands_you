@@ -32,6 +32,14 @@ export default {
               break
             }
           }
+          if (rule.pattern && value != null && String(value) !== '') {
+            const pattern =
+              rule.pattern instanceof RegExp ? rule.pattern : new RegExp(rule.pattern)
+            if (!pattern.test(String(value))) {
+              errors.push(rule.message || `${prop} 格式不正确`)
+              break
+            }
+          }
           if (typeof rule.validator === 'function') {
             let failed = false
             rule.validator(rule, value, (err) => {
@@ -44,6 +52,10 @@ export default {
           }
           if (rule.min != null && String(value || '').length < rule.min) {
             errors.push(rule.message || `至少 ${rule.min} 个字符`)
+            break
+          }
+          if (rule.max != null && String(value || '').length > rule.max) {
+            errors.push(rule.message || `最多 ${rule.max} 个字符`)
             break
           }
         }

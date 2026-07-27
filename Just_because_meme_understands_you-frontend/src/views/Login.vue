@@ -44,6 +44,14 @@
         </vs-input>
       </ui-form-item>
 
+      <ui-form-item label="人机验证" prop="captchaCode">
+        <CaptchaField
+          ref="captchaRef"
+          v-model:captcha-id="form.captchaId"
+          v-model:captcha-code="form.captchaCode"
+        />
+      </ui-form-item>
+
       <div class="auth-form__row">
         <router-link to="/forgot-password" class="auth-form__link">忘记密码？</router-link>
       </div>
@@ -61,6 +69,21 @@
         />
         {{ submitting ? '登录中...' : '登录' }}
       </button>
+
+      <div class="auth-oauth">
+        <div class="auth-oauth__divider" role="separator">
+          <span>或</span>
+        </div>
+        <button
+          type="button"
+          class="auth-oauth__github"
+          :disabled="submitting || githubRedirecting"
+          @click="loginWithGithub"
+        >
+          <i class="ri-github-fill" aria-hidden="true" />
+          {{ githubRedirecting ? '正在跳转 GitHub…' : '使用 GitHub 登录' }}
+        </button>
+      </div>
     </ui-form>
 
     <template #footer>
@@ -72,22 +95,26 @@
 
 <script>
 import { toast } from '@/utils/uiFeedback'
-import { login } from '@/api/auth'
+import { login, buildGithubAuthorizeUrl } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { POST_LOGIN_REDIRECT_KEY, resolveSafeRedirectPath } from '@/utils/authSession'
 import AuthPageLayout from '@/components/auth/AuthPageLayout.vue'
+import CaptchaField from '@/components/auth/CaptchaField.vue'
 
 export default {
   name: 'LoginPage',
-  components: { AuthPageLayout },
+  components: { AuthPageLayout, CaptchaField },
   data() {
     return {
       form: {
         email: '',
         password: '',
         loginType: 'email',
+        captchaId: '',
+        captchaCode: '',
       },
       submitting: false,
+      githubRedirecting: false,
       rules: {
         email: [
           { required: true, message: '请输入邮箱', trigger: 'blur' },
@@ -101,6 +128,9 @@ export default {
           { required: true, message: '请输入密码', trigger: 'blur' },
           { min: 6, message: '密码长度不少于 6 位', trigger: 'blur' },
         ],
+        captchaCode: [
+          { required: true, message: '请输入验证码', trigger: 'blur' },
+        ],
       },
     }
   },
@@ -111,17 +141,54 @@ export default {
     }
   },
   methods: {
+    resolvePostLoginRedirect() {
+      const redirectFromQuery = this.$route.query.redirect
+      let redirectFromStorage = ''
+      try {
+        redirectFromStorage = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY) || ''
+      } catch (_) {
+        // ignore
+      }
+      return resolveSafeRedirectPath(redirectFromQuery || redirectFromStorage)
+    },
+    refreshCaptcha() {
+      const ref = this.$refs.captchaRef
+      if (ref && typeof ref.refresh === 'function') {
+        ref.refresh()
+      }
+    },
+    loginWithGithub() {
+      if (this.submitting || this.githubRedirecting) return
+      this.githubRedirecting = true
+      const redirect = this.resolvePostLoginRedirect()
+      try {
+        sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, redirect)
+      } catch (_) {
+        // ignore
+      }
+      window.location.href = buildGithubAuthorizeUrl(redirect)
+    },
     handleSubmit() {
       if (this.submitting) return
 
       this.$refs.loginFormRef.validate((valid) => {
         if (!valid) return
+        const captchaMsg =
+          this.$refs.captchaRef && this.$refs.captchaRef.validateLocal
+            ? this.$refs.captchaRef.validateLocal()
+            : ''
+        if (captchaMsg) {
+          toast.warning(captchaMsg)
+          return
+        }
         this.submitting = true
 
         const payload = {
           email: this.form.email,
           password: this.form.password,
           loginType: this.form.loginType,
+          captchaId: this.form.captchaId,
+          captchaCode: this.form.captchaCode,
         }
 
         login(payload)
@@ -131,21 +198,18 @@ export default {
               user,
             })
             toast.success('登录成功')
-            const redirectFromQuery = this.$route.query.redirect
-            let redirectFromStorage = ''
             try {
-              redirectFromStorage = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY) || ''
               sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY)
             } catch (_) {
               // ignore
             }
-            const redirect = resolveSafeRedirectPath(redirectFromQuery || redirectFromStorage)
-            this.$router.replace(redirect)
+            this.$router.replace(this.resolvePostLoginRedirect())
           })
           .catch((err) => {
             const msg =
               (err && (err.message || err.msg)) || '登录失败，请稍后重试'
             toast.error(msg)
+            this.refreshCaptcha()
           })
           .finally(() => {
             this.submitting = false
@@ -276,6 +340,58 @@ a.auth-form__link--strong,
 .auth-form__spin {
   display: inline-block;
   animation: auth-spin 0.8s linear infinite;
+}
+
+.auth-oauth {
+  margin-top: 18px;
+}
+
+.auth-oauth__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+}
+
+.auth-oauth__divider::before,
+.auth-oauth__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--meme-border);
+}
+
+.auth-oauth__github {
+  width: 100%;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-elevated);
+  color: var(--meme-text);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.auth-oauth__github i {
+  font-size: 18px;
+}
+
+.auth-oauth__github:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--meme-primary) 35%, var(--meme-border));
+  background: color-mix(in srgb, var(--meme-bg-muted) 55%, var(--meme-bg-elevated));
+}
+
+.auth-oauth__github:disabled {
+  opacity: 0.72;
+  cursor: wait;
 }
 
 @keyframes auth-spin {
