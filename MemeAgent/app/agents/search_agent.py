@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.meme_agent import build_meme_search_agent
 from app.agents.prompts import build_context_block
 from app.agents.tools import (
+    build_search_admin_knowledge_tool,
     build_search_live_web_tool,
     build_search_meme_tool,
     parse_tool_payload,
@@ -153,7 +154,10 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             default_top_k=settings.retrieval_top_k,
         )
         live_tool = build_search_live_web_tool()
-        executor = build_meme_search_agent(llm, [tool, live_tool], max_iterations=4)
+        knowledge_tool = build_search_admin_knowledge_tool(default_top_k=settings.retrieval_top_k)
+        executor = build_meme_search_agent(
+            llm, [tool, knowledge_tool, live_tool], max_iterations=4
+        )
 
         context_block = build_context_block(
             request.context.locale or "zh-CN",
@@ -163,9 +167,9 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
         agent_input = (
             f"{context_block}\n\n"
             f"{wrap_untrusted_user_payload(safe_query, flagged=injection_flag)}\n\n"
-            "请先调用 search_meme_knowledge；若结果不足或问题涉及最新热梗，"
-            "再调用 search_live_meme_web。基于工具结果用中文回答。"
-            "回答中不要出现 meme_id、score 等内部字段，只写用户可读内容。"
+            "请先调用 search_meme_knowledge；若涉及规则/FAQ/运营说明，可调用 search_admin_knowledge；"
+            "若结果不足或问题涉及最新热梗，再调用 search_live_meme_web。基于工具结果用中文回答。"
+            "回答中不要出现 meme_id、doc_id、score 等内部字段，只写用户可读内容。"
         )
 
         completion_chars = 0

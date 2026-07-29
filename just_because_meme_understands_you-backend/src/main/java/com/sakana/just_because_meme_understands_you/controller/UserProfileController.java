@@ -42,10 +42,11 @@ public class UserProfileController {
     public Result<UserMemePageVO> pageUserMemes(@PathVariable("userId") String userId,
                                                  HttpServletRequest request,
                                                  @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
-                                                 @RequestParam(value = "size", required = false, defaultValue = "10") Integer size) {
+                                                 @RequestParam(value = "size", required = false, defaultValue = "10") Integer size,
+                                                 @RequestParam(value = "status", required = false) Integer status) {
         Long targetUserId = AuthContext.parseUserId(userId);
         Long currentUserId = AuthContext.currentUserId(request);
-        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size));
+        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size, status));
     }
 
     @GetMapping("/{userId}/favorites")

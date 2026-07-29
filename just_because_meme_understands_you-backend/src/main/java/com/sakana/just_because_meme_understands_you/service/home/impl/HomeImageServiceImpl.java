@@ -73,6 +73,15 @@ public class HomeImageServiceImpl extends ServiceImpl<HomeImageMapper, HomeImage
         return voList;
     }
 
+    @Override
+    public void evictCarouselCache() {
+        try {
+            stringRedisTemplate.delete(CACHE_KEY);
+        } catch (Exception e) {
+            log.warn("删除轮播图缓存失败, key={}", CACHE_KEY, e);
+        }
+    }
+
     private HomeImageVO toVO(HomeImage e) {
         HomeImageVO vo = new HomeImageVO();
         vo.setTitle(e.getTitle());

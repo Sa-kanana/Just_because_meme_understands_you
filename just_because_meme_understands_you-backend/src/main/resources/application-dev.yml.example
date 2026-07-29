@@ -52,7 +52,9 @@ app:
       hsts-enabled: false
   cors:
     enabled: true
-    allowed-origins: http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:8080
+    allowed-origins: http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:8080,http://localhost:5174,http://127.0.0.1:5174
+    # 内网穿透（把完整公网 Origin 写进 allowed-origins，或用下方通配）
+    allowed-origin-patterns: https://*.cpolar.cn,https://*.cpolar.top,http://*.cpolar.cn,http://*.cpolar.top,https://*.ngrok-free.app,https://*.ngrok.io,https://*.trycloudflare.com,https://frp-bar.com:*,http://frp-bar.com:*
   feedback:
     to-email: 827278063@qq.com
     rate-limit-per-minute: 3

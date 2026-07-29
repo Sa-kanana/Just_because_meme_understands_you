@@ -27,6 +27,11 @@ spring:
     # 未显式指定 profile 时默认走开发配置；上线务必设 SPRING_PROFILES_ACTIVE=prod
     default: dev
 
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 16MB
+
   # ---------- 邮箱（验证码 / 找回密码）----------
   mail:
     host: ${MAIL_HOST:smtp.qq.com}
@@ -125,7 +130,9 @@ app:
   cors:
     enabled: ${CORS_ENABLED:true}
     # 允许的前端 Origin（逗号分隔）；生产必须改成正式域名
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://127.0.0.1}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:5174,http://127.0.0.1:5174}
+    # Origin 模式（支持 *）。内网穿透示例：https://*.cpolar.cn,https://*.cpolar.top,https://*.ngrok-free.app
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
   feedback:
     # 运营收件邮箱
     to-email: ${FEEDBACK_TO_EMAIL:827278063@qq.com}
@@ -160,10 +167,10 @@ meme-comment:
     queue-capacity: 500
 
 meme:
-  # 下架后可恢复天数
-  restore-days: 30
   # 彻底删除冷静期（天），0 表示不限制
   purge-cooldown-days: 0
+  # 风控申诉连续驳回次数上限，达上限永久封禁
+  appeal-reject-max: 3
   view:
     # 同一访客对同一梗浏览去重窗口（小时）
     dedup-hours: 24
@@ -180,6 +187,7 @@ meme:
     response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:600000}
     stream-path: /stream
     ingest-path: /ingest
+    knowledge-ingest-path: /ingest/knowledge
     # 逐条 enrichment 可能较慢，建议 >=600000
     crawl-path: /crawl/hot-memes
   ai:

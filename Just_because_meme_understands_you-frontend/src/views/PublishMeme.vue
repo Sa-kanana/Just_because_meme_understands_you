@@ -472,7 +472,18 @@ async function handleSubmit() {
       resourceUrls: form.resourceUrls,
     })
     toast.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
-    router.push('/')
+    const user = authStore.currentUser
+    const rawId = user?.id ?? user?.userId
+    const userId = rawId != null ? String(rawId).trim() : ''
+    if (userId && /^\d+$/.test(userId)) {
+      router.push({
+        name: 'userProfile',
+        params: { userId },
+        query: { tab: 'published' },
+      })
+    } else {
+      router.push('/')
+    }
   } catch (e) {
     if (isAuthErrorHandled(e)) return
     toast.error(e.message || '发布失败')

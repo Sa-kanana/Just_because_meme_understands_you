@@ -22,6 +22,7 @@ import com.sakana.just_because_meme_understands_you.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.mapper.UserStatsMapper;
 import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
+import com.sakana.just_because_meme_understands_you.service.meme.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.service.oss.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.service.oss.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.service.user.IUserFavoriteFolderService;
@@ -37,6 +38,7 @@ import com.sakana.just_because_meme_understands_you.vo.UploadAvatarVO;
 import com.sakana.just_because_meme_understands_you.vo.UserFavoriteItemVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemeItemVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemePageVO;
+import com.sakana.just_because_meme_understands_you.vo.UserMemeStatusCountsVO;
 import com.sakana.just_because_meme_understands_you.vo.UserMemeTagVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileStatsVO;
 import com.sakana.just_because_meme_understands_you.vo.UserProfileVO;
@@ -172,14 +174,14 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size) {
+    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size, Integer status) {
         if (targetUserId == null || targetUserId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
         }
         int pageNo = PageParamNormalizer.normalizePage(page);
         int pageSize = PageParamNormalizer.normalizeSize(size);
 
-        // 状态隔离：本人看所有状态，他人只看 status=1
+        // 状态隔离：本人看所有可见状态（可筛），他人只看 status=1
         boolean isOwner = currentUserId != null && currentUserId.equals(targetUserId);
 
         Page<Meme> mpPage = new Page<>(pageNo, pageSize);
@@ -188,9 +190,10 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 .orderByDesc(Meme::getReleaseTime)
                 .orderByDesc(Meme::getId);
         if (isOwner) {
-            wrapper.ne(Meme::getStatus, 4);
+            wrapper.ne(Meme::getStatus, MemeVisibilitySupport.STATUS_PURGED);
+            applyOwnerStatusFilter(wrapper, status);
         } else {
-            wrapper.eq(Meme::getStatus, 1);
+            wrapper.eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL);
         }
         IPage<Meme> result = memeService.page(mpPage, wrapper);
 
@@ -213,7 +216,54 @@ public class UserProfileServiceImpl implements IUserProfileService {
         pageVO.setTotal(result.getTotal());
         pageVO.setOwner(isOwner);
         pageVO.setHasMore((long) pageNo * pageSize < result.getTotal());
+        if (isOwner) {
+            pageVO.setStatusCounts(loadOwnerStatusCounts(targetUserId));
+        }
         return pageVO;
+    }
+
+    private void applyOwnerStatusFilter(LambdaQueryWrapper<Meme> wrapper, Integer status) {
+        if (status == null) {
+            return;
+        }
+        int value = status;
+        if (value == MemeVisibilitySupport.STATUS_REVIEWING) {
+            // 「审核中」筛选含首次审核与恢复审核
+            wrapper.in(Meme::getStatus,
+                    MemeVisibilitySupport.STATUS_REVIEWING,
+                    MemeVisibilitySupport.STATUS_RESTORE_REVIEWING);
+            return;
+        }
+        if (value == MemeVisibilitySupport.STATUS_NORMAL
+                || value == MemeVisibilitySupport.STATUS_OFFLINE
+                || value == MemeVisibilitySupport.STATUS_LOCKED
+                || value == MemeVisibilitySupport.STATUS_RESTORE_REVIEWING) {
+            wrapper.eq(Meme::getStatus, value);
+        }
+    }
+
+    private UserMemeStatusCountsVO loadOwnerStatusCounts(Long userId) {
+        long live = memeService.count(new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getUserId, userId)
+                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL));
+        long reviewing = memeService.count(new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getUserId, userId)
+                .in(Meme::getStatus,
+                        MemeVisibilitySupport.STATUS_REVIEWING,
+                        MemeVisibilitySupport.STATUS_RESTORE_REVIEWING));
+        long offline = memeService.count(new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getUserId, userId)
+                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_OFFLINE));
+        long locked = memeService.count(new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getUserId, userId)
+                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_LOCKED));
+        UserMemeStatusCountsVO counts = new UserMemeStatusCountsVO();
+        counts.setAll(live + reviewing + offline + locked);
+        counts.setLive(live);
+        counts.setReviewing(reviewing);
+        counts.setOffline(offline);
+        counts.setLocked(locked);
+        return counts;
     }
 
     /**
@@ -235,7 +285,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
             vo.setLikes(meme.getLikes());
             vo.setComments(meme.getComments());
             vo.setStatus(meme.getStatus());
-            vo.setStatusDesc(statusDesc(meme.getStatus()));
+            vo.setStatusDesc(MemeVisibilitySupport.statusDesc(meme.getStatus()));
+            vo.setOfflineReason(meme.getOfflineReason());
+            vo.setAppealRejectCount(meme.getAppealRejectCount());
             vo.setTags(toUserMemeTagVOList(tagMap.get(meme.getId())));
             vo.setCreateTime(meme.getReleaseTime());
             vo.setReleaseTime(meme.getReleaseTime());
@@ -272,19 +324,6 @@ public class UserProfileServiceImpl implements IUserProfileService {
             list.add(vo);
         }
         return list;
-    }
-
-    private String statusDesc(Integer status) {
-        if (status == null) {
-            return "未知";
-        }
-        return switch (status) {
-            case 1 -> "正常";
-            case 2 -> "审核中";
-            case 3 -> "已下架";
-            case 4 -> "已彻底删除";
-            default -> "未知";
-        };
     }
 
     @Override

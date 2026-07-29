@@ -69,7 +69,7 @@ public class Meme implements Serializable {
     private Integer comments;
 
     /**
-     * 状态（1.正常，2.审核中，3.下架）
+     * 状态：1正常 2审核中 3主动下架 4永久封禁 5风控锁定 6恢复审核中
      */
     @TableField("status")
     private Integer status;
@@ -92,4 +92,23 @@ public class Meme implements Serializable {
     @TableField("user_id")
     private Long userId;
 
+    /** 最近一次下架/锁定时间 */
+    @TableField("offline_at")
+    private LocalDateTime offlineAt;
+
+    /** 下架前状态 */
+    @TableField("offline_from_status")
+    private Integer offlineFromStatus;
+
+    /** 申诉驳回次数（达上限后永久封禁） */
+    @TableField("appeal_reject_count")
+    private Integer appealRejectCount;
+
+    /** 下架/锁定原因 */
+    @TableField("offline_reason")
+    private String offlineReason;
+
+    /** 永久封禁 / 彻底删除时间 */
+    @TableField("purged_at")
+    private LocalDateTime purgedAt;
 }

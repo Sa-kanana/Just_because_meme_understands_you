@@ -34,4 +34,9 @@ public class UserMemePageVO {
 
     /** 是否还有下一页 */
     private Boolean hasMore;
+
+    /**
+     * 本人视角下各状态数量；他人视角为 null
+     */
+    private UserMemeStatusCountsVO statusCounts;
 }

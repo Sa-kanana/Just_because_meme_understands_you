@@ -9,6 +9,7 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -26,12 +27,14 @@ public class AiCrawlController {
 
     /**
      * 手动触发一次 Firecrawl 热梗采集并入库。
-     * POST /ai/crawl/trigger
+     * POST /ai/crawl/trigger?limit=5
      */
     @PostMapping("/trigger")
-    public Result<MemeCrawlResultVO> trigger(HttpServletRequest request) {
+    public Result<MemeCrawlResultVO> trigger(
+            @RequestParam(value = "limit", required = false) Integer limit,
+            HttpServletRequest request) {
         requireOpsAdmin(request);
-        return Result.success(memeCrawlService.crawlAndPersist());
+        return Result.success(memeCrawlService.crawlAndPersist(limit));
     }
 
     private void requireOpsAdmin(HttpServletRequest request) {

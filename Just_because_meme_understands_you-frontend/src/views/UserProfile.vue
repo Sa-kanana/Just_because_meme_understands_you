@@ -110,29 +110,31 @@
                   </vs-button>
                 </div>
 
-                <div v-if="isOwnProfile && publishedList.length" class="published-filter-bar">
+                <div v-if="isOwnProfile" class="published-filter-bar">
                   <button
                     v-for="opt in publishedFilterOptions"
                     :key="`pub-filter-${opt.key}`"
                     type="button"
                     class="published-filter-chip"
-                    :class="{ 'is-active': publishedStatusFilter === opt.key }"
-                    @click="publishedStatusFilter = opt.key"
+                    :class="[
+                      `published-filter-chip--${opt.tone}`,
+                      { 'is-active': String(publishedStatusFilter) === String(opt.key) },
+                    ]"
+                    @click="setPublishedStatusFilter(opt.key)"
                   >
-                    {{ opt.label }}
-                    <span v-if="opt.count != null" class="published-filter-count">{{ opt.count }}</span>
+                    <span class="published-filter-label">{{ opt.label }}</span>
+                    <span class="published-filter-count">{{ opt.count }}</span>
                   </button>
                 </div>
 
                 <div v-if="publishedLoading && !publishedList.length" class="published-skeleton">
                   <ui-skeleton :rows="3" animated />
                 </div>
-                <div v-else-if="filteredPublishedList.length" class="meme-grid published-meme-grid">
+                <div v-else-if="publishedList.length" class="meme-grid published-meme-grid" :class="{ 'is-switching': publishedLoading }">
                   <div
-                    v-for="item in filteredPublishedList"
+                    v-for="item in publishedList"
                     :key="`published-${item.id}`"
                     class="meme-card-item meme-card-item--published"
-                    :class="{ 'meme-card-item--deleted': item.status === 3 }"
                     @click="handlePublishedCardClick(item)"
                   >
                     <MemeCard
@@ -143,25 +145,12 @@
                       :comments="item.comments"
                       :release-time="item.releaseTime || item.createTime"
                       :update-time="item.updateTime"
-                      :show-stats="item.status !== 3"
+                      :show-stats="true"
                       :show-author="false"
-                      :meta-text="item.status === 3 ? '已下架' : ''"
                     >
-                      <template #cover-extra>
-                        <span
-                          v-if="isOwnProfile && item.status != null && item.status !== 1"
-                          class="published-status-badge"
-                          :class="`published-status-badge--${item.status}`"
-                        >
-                          {{ item.statusDesc || statusText(item.status) }}
-                        </span>
-                        <div v-if="item.status === 3" class="published-deleted-overlay">
-                          <span class="published-deleted-label">已下架</span>
-                        </div>
-                      </template>
                       <template #title-extra>
                         <ui-dropdown
-                          v-if="isOwnProfile && item.status !== 3"
+                          v-if="isOwnProfile && canVoluntaryOffline(item)"
                           trigger="click"
                           class="meme-action-dropdown"
                           @click.stop
@@ -184,7 +173,7 @@
                           </template>
                         </ui-dropdown>
                         <ui-dropdown
-                          v-else-if="isOwnProfile && item.status === 3"
+                          v-else-if="isOwnProfile && Number(item.status) === 3"
                           trigger="click"
                           class="meme-action-dropdown"
                           @click.stop
@@ -201,10 +190,33 @@
                           <template #dropdown>
                             <ui-dropdown-menu>
                               <ui-dropdown-item command="restore">
-                                <span class="published-menu-item"><i class="ri-arrow-go-back-line" /> 恢复上架</span>
+                                <span class="published-menu-item"><i class="ri-arrow-go-back-line" /> 重新上架</span>
                               </ui-dropdown-item>
                               <ui-dropdown-item command="purge" divided>
                                 <span class="published-menu-item published-menu-item--danger"><i class="ri-delete-bin-6-line" /> 彻底删除</span>
+                              </ui-dropdown-item>
+                            </ui-dropdown-menu>
+                          </template>
+                        </ui-dropdown>
+                        <ui-dropdown
+                          v-else-if="isOwnProfile && Number(item.status) === 5"
+                          trigger="click"
+                          class="meme-action-dropdown"
+                          @click.stop
+                          @command="(cmd) => handlePublishedMemeCommand(cmd, item)"
+                        >
+                          <button
+                            type="button"
+                            class="meme-more-btn published-more-btn"
+                            aria-label="更多操作"
+                            @click.stop
+                          >
+                            ⋮
+                          </button>
+                          <template #dropdown>
+                            <ui-dropdown-menu>
+                              <ui-dropdown-item command="restore">
+                                <span class="published-menu-item"><i class="ri-file-edit-line" /> 提交整改申诉</span>
                               </ui-dropdown-item>
                             </ui-dropdown-menu>
                           </template>
@@ -214,17 +226,20 @@
                   </div>
                 </div>
                 <ui-empty
-                  v-else-if="publishedList.length && isOwnProfile"
+                  v-else-if="isOwnProfile && publishedStatusFilter !== 'all'"
                   :image-size="72"
                   description="当前筛选下没有梗图"
                   class="published-filter-empty"
                 />
                 <ui-empty v-else description="这个用户还没有发布梗图" />
-                <ListLoadFooter
-                  :has-more="publishedHasMore"
+                <ListPager
+                  :page="publishedPageNo"
+                  :page-size="publishedPageSize"
+                  :total="publishedPageTotal"
                   :loading="publishedLoading"
-                  :item-count="filteredPublishedList.length"
-                  @load-more="loadMorePublished"
+                  :show-when-single="true"
+                  aria-label="发布列表分页"
+                  @change="goPublishedPage"
                 />
               </div>
             </ui-tab-pane>
@@ -398,11 +413,13 @@
                         </div>
                       </div>
                       <ui-empty v-else description="这个收藏夹还没有梗图" />
-                      <ListLoadFooter
-                        :has-more="folderContentHasMore"
+                      <ListPager
+                        :page="folderContentPageNo"
+                        :page-size="folderContentPageSize"
+                        :total="folderContentTotal"
                         :loading="folderContentLoading"
-                        :item-count="folderContentList.length"
-                        @load-more="loadMoreFolderContent"
+                        aria-label="收藏列表分页"
+                        @change="goFolderContentPage"
                       />
                       <Transition name="folder-batch-dock">
                         <div
@@ -771,24 +788,17 @@
       width="440px"
       class="delete-published-dialog"
       prevent-close
-     
       @closed="resetDeletePublishedDialog"
     >
       <template #header>
         <div class="delete-published-dialog-head">
-          <span class="delete-published-dialog-icon" aria-hidden="true">⚠</span>
+          <span class="delete-published-dialog-icon" aria-hidden="true">
+            <i class="ri-inbox-unarchive-line" />
+          </span>
           <span>下架梗</span>
         </div>
       </template>
       <div v-if="deletePublishedTarget" class="delete-published-body">
-        <p class="delete-published-lead">
-          确定要把「<strong>{{ deletePublishedTarget.name || '未命名梗图' }}</strong>」下架吗？
-        </p>
-        <ul class="delete-published-notes">
-          <li>下架后，别人在首页、搜索里都刷不到这条梗了</li>
-          <li>收藏过它的梗友再点开，会看到「找不到这条梗」</li>
-          <li>30 天内可在「已下架」里恢复；也可以彻底删除</li>
-        </ul>
         <div class="delete-published-preview">
           <ui-image
             v-if="deletePublishedTarget.image"
@@ -796,24 +806,50 @@
             fit="cover"
             class="delete-published-preview-img"
           />
+          <div v-else class="delete-published-preview-empty" aria-hidden="true">
+            <i class="ri-image-line" />
+          </div>
           <div class="delete-published-preview-meta">
             <span v-if="deletePublishedTarget.status === 2" class="delete-published-preview-tag">审核中</span>
             <span v-else-if="deletePublishedTarget.status === 1" class="delete-published-preview-tag is-live">已发布</span>
           </div>
+          <p class="delete-published-preview-name" :title="deletePublishedTarget.name">
+            {{ deletePublishedTarget.name || '未命名梗图' }}
+          </p>
         </div>
+        <p class="delete-published-lead">
+          确定要把「<strong>{{ deletePublishedTarget.name || '未命名梗图' }}</strong>」下架吗？
+        </p>
+        <ul class="delete-published-notes">
+          <li>下架后，首页与搜索都刷不到这条梗</li>
+          <li>收藏过的用户再打开会看到「找不到这条梗」</li>
+          <li>下架后可随时在「已下架」重新上架，也可彻底删除</li>
+        </ul>
       </div>
       <template #footer>
-        <vs-button :disabled="deletePublishedSubmitting" @click="deletePublishedDialogVisible = false">
-          取消
-        </vs-button>
-        <vs-button
-          color="danger"
-         
-          :loading="deletePublishedSubmitting"
-          @click="confirmDeletePublished"
-        >
-          确认下架
-        </vs-button>
+        <div class="delete-published-dialog__actions">
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--ghost"
+            :disabled="deletePublishedSubmitting"
+            @click="deletePublishedDialogVisible = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--danger"
+            :disabled="deletePublishedSubmitting"
+            @click="confirmDeletePublished"
+          >
+            <i
+              v-if="deletePublishedSubmitting"
+              class="ri-loader-4-line profile-dlg-btn__spin"
+              aria-hidden="true"
+            />
+            {{ deletePublishedSubmitting ? '下架中…' : '确认下架' }}
+          </button>
+        </div>
       </template>
     </vs-dialog>
 
@@ -823,36 +859,67 @@
       width="440px"
       class="restore-published-dialog"
       prevent-close
-     
       @closed="resetRestorePublishedDialog"
     >
       <template #header>
         <div class="delete-published-dialog-head">
-          <span class="delete-published-dialog-icon restore-published-dialog-icon" aria-hidden="true"><i class="ri-arrow-go-back-line" /></span>
-          <span>恢复上架</span>
+          <span class="delete-published-dialog-icon restore-published-dialog-icon" aria-hidden="true">
+            <i :class="restoreDialogIsAppeal ? 'ri-file-edit-line' : 'ri-arrow-go-back-line'" />
+          </span>
+          <span>{{ restoreDialogIsAppeal ? '提交整改申诉' : '重新上架' }}</span>
         </div>
       </template>
       <div v-if="restorePublishedTarget" class="delete-published-body">
         <p class="delete-published-lead">
-          要把「<strong>{{ restorePublishedTarget.name || '未命名梗图' }}</strong>」重新上架吗？
+          <template v-if="restoreDialogIsAppeal">
+            要把「<strong>{{ restorePublishedTarget.name || '未命名梗图' }}</strong>」提交整改申诉吗？
+          </template>
+          <template v-else>
+            要把「<strong>{{ restorePublishedTarget.name || '未命名梗图' }}</strong>」重新上架吗？
+          </template>
         </p>
         <ul class="delete-published-notes">
-          <li>恢复后会重新进入审核，通过后才会出现在首页和搜索</li>
-          <li>请在下架后 30 天内操作</li>
+          <template v-if="restoreDialogIsAppeal">
+            <li>提交后进入「恢复审核中」，通过后才会重新出现在公域</li>
+            <li v-if="restorePublishedTarget.offlineReason">锁定原因：{{ restorePublishedTarget.offlineReason }}</li>
+            <li>多次驳回可能导致永久封禁</li>
+          </template>
+          <template v-else>
+            <li>主动下架可随时重新上架，无需再次审核</li>
+            <li>上架后会立即出现在首页与搜索</li>
+          </template>
         </ul>
       </div>
       <template #footer>
-        <vs-button :disabled="restorePublishedSubmitting" @click="restorePublishedDialogVisible = false">
-          取消
-        </vs-button>
-        <vs-button
-          color="primary"
-         
-          :loading="restorePublishedSubmitting"
-          @click="confirmRestorePublished"
-        >
-          确认恢复
-        </vs-button>
+        <div class="delete-published-dialog__actions">
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--ghost"
+            :disabled="restorePublishedSubmitting"
+            @click="restorePublishedDialogVisible = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--primary"
+            :disabled="restorePublishedSubmitting"
+            @click="confirmRestorePublished"
+          >
+            <i
+              v-if="restorePublishedSubmitting"
+              class="ri-loader-4-line profile-dlg-btn__spin"
+              aria-hidden="true"
+            />
+            {{
+              restorePublishedSubmitting
+                ? '处理中…'
+                : restoreDialogIsAppeal
+                  ? '确认提交申诉'
+                  : '确认重新上架'
+            }}
+          </button>
+        </div>
       </template>
     </vs-dialog>
 
@@ -862,12 +929,13 @@
       width="440px"
       class="purge-published-dialog"
       prevent-close
-     
       @closed="resetPurgePublishedDialog"
     >
       <template #header>
         <div class="delete-published-dialog-head">
-          <span class="delete-published-dialog-icon purge-published-dialog-icon" aria-hidden="true"><i class="ri-delete-bin-6-line" /></span>
+          <span class="delete-published-dialog-icon purge-published-dialog-icon" aria-hidden="true">
+            <i class="ri-delete-bin-6-line" />
+          </span>
           <span>彻底删除</span>
         </div>
       </template>
@@ -888,18 +956,29 @@
         />
       </div>
       <template #footer>
-        <vs-button :disabled="purgePublishedSubmitting" @click="purgePublishedDialogVisible = false">
-          取消
-        </vs-button>
-        <vs-button
-          color="danger"
-         
-          :loading="purgePublishedSubmitting"
-          :disabled="!purgeConfirmMatched"
-          @click="confirmPurgePublished"
-        >
-          确认彻底删除
-        </vs-button>
+        <div class="delete-published-dialog__actions">
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--ghost"
+            :disabled="purgePublishedSubmitting"
+            @click="purgePublishedDialogVisible = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="profile-dlg-btn profile-dlg-btn--danger"
+            :disabled="purgePublishedSubmitting || !purgeConfirmMatched"
+            @click="confirmPurgePublished"
+          >
+            <i
+              v-if="purgePublishedSubmitting"
+              class="ri-loader-4-line profile-dlg-btn__spin"
+              aria-hidden="true"
+            />
+            {{ purgePublishedSubmitting ? '删除中…' : '确认彻底删除' }}
+          </button>
+        </div>
       </template>
     </vs-dialog>
 
@@ -1070,7 +1149,7 @@ import {
 import { batchMoveFavorites, removeMemeFavorite, deletePublishedMeme, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { useAuthStore } from '@/stores/auth'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
-import ListLoadFooter from '@/components/layout/ListLoadFooter.vue'
+import ListPager from '@/components/layout/ListPager.vue'
 import MemeCard from '@/components/meme/MemeCard.vue'
 import { resolvePageHasMore } from '@/utils/pagination'
 import { buildMemeDetailLocation, buildToolPageLocation } from '@/utils/pageBreadcrumb'
@@ -1082,7 +1161,7 @@ export default {
   name: 'UserProfilePage',
   components: {
     Cropper,
-    ListLoadFooter,
+    ListPager,
     MemeCard,
     FollowButton,
     FollowRelationDrawer,
@@ -1147,8 +1226,9 @@ export default {
         hasMore: false,
         isOwner: false,
       },
+      publishedStatusCounts: { all: 0, live: 0, reviewing: 0, offline: 0, locked: 0 },
       publishedPageNo: 1,
-      publishedPageSize: 16,
+      publishedPageSize: 10,
       publishedLoading: false,
       publishedStatusFilter: 'all',
       deletePublishedDialogVisible: false,
@@ -1167,7 +1247,7 @@ export default {
       selectedFolderId: '0',
       folderContentPage: { list: [], total: 0, hasMore: false },
       folderContentPageNo: 1,
-      folderContentPageSize: 12,
+      folderContentPageSize: 15,
       folderContentLoading: false,
       folderSelectAll: false,
       selectedMemeIds: [],
@@ -1235,34 +1315,25 @@ export default {
     publishedList() {
       return Array.isArray(this.publishedPage.list) ? this.publishedPage.list : []
     },
-    publishedDisplayTotal() {
-      const apiTotal = Number(this.publishedPage.total) || 0
-      const listLen = this.publishedList.length
-      return Math.max(apiTotal, listLen)
+    publishedPageTotal() {
+      return Number(this.publishedPage.total) || 0
     },
-    filteredPublishedList() {
-      if (!this.isOwnProfile || this.publishedStatusFilter === 'all') {
-        return this.publishedList
-      }
-      const status = Number(this.publishedStatusFilter)
-      return this.publishedList.filter((item) => Number(item.status) === status)
+    publishedDisplayTotal() {
+      return Number(this.publishedStatusCounts.all) || this.publishedPageTotal
     },
     publishedFilterOptions() {
       if (!this.isOwnProfile) return []
-      const list = this.publishedList
-      const countBy = (status) => {
-        if (status === 'all') return list.length
-        return list.filter((item) => Number(item.status) === status).length
-      }
+      const c = this.publishedStatusCounts
       return [
-        { key: 'all', label: '全部', count: countBy('all') },
-        { key: 1, label: '已发布', count: countBy(1) },
-        { key: 2, label: '审核中', count: countBy(2) },
-        { key: 3, label: '已下架', count: countBy(3) },
+        { key: 'all', label: '全部', tone: 'all', count: Number(c.all) || 0 },
+        { key: '1', label: '已发布', tone: 'live', count: Number(c.live) || 0 },
+        { key: '2', label: '审核中', tone: 'reviewing', count: Number(c.reviewing) || 0 },
+        { key: '3', label: '已下架', tone: 'offline', count: Number(c.offline) || 0 },
+        { key: '5', label: '已锁定', tone: 'locked', count: Number(c.locked) || 0 },
       ]
     },
-    publishedHasMore() {
-      return !!this.publishedPage.hasMore
+    restoreDialogIsAppeal() {
+      return Number(this.restorePublishedTarget?.status) === 5
     },
     purgeConfirmMatched() {
       if (!this.purgePublishedTarget) return false
@@ -1278,8 +1349,8 @@ export default {
     folderContentList() {
       return Array.isArray(this.folderContentPage.list) ? this.folderContentPage.list : []
     },
-    folderContentHasMore() {
-      return !!this.folderContentPage.hasMore
+    folderContentTotal() {
+      return Number(this.folderContentPage.total) || 0
     },
     selectedFolderName() {
       const folder = this.folderList.find((f) => sameFolderId(f.id, this.selectedFolderId))
@@ -1392,6 +1463,8 @@ export default {
         }
         this.followMutual = false
         this.publishedPageNo = 1
+        this.publishedStatusFilter = 'all'
+        this.publishedStatusCounts = { all: 0, live: 0, reviewing: 0, offline: 0, locked: 0 }
         this.loadPublishedMemes()
         this.applyRouteTab()
         this.refreshFollowMutual()
@@ -1456,7 +1529,7 @@ export default {
       }
     },
     openDeletePublishedDialog(item) {
-      if (!item || item.status === 3) return
+      if (!item || !this.canVoluntaryOffline(item)) return
       this.deletePublishedTarget = { ...item }
       this.deletePublishedDialogVisible = true
     },
@@ -1487,8 +1560,13 @@ export default {
         this.deletePublishedSubmitting = false
       }
     },
+    canVoluntaryOffline(item) {
+      const status = Number(item?.status)
+      return status === 1 || status === 2
+    },
     openRestorePublishedDialog(item) {
-      if (!item || item.status !== 3) return
+      const status = Number(item?.status)
+      if (!item || (status !== 3 && status !== 5)) return
       this.restorePublishedTarget = { ...item }
       this.restorePublishedDialogVisible = true
     },
@@ -1500,10 +1578,15 @@ export default {
       if (!this.restorePublishedTarget) return
       const id = this.normalizeMemeId(this.restorePublishedTarget.id)
       if (!id) return
+      const isAppeal = Number(this.restorePublishedTarget.status) === 5
       this.restorePublishedSubmitting = true
       try {
         const data = await restorePublishedMeme(id)
-        toast.success(`已恢复，当前状态：${data.statusDesc || '审核中'}`)
+        toast.success(
+          isAppeal
+            ? `已提交申诉，当前状态：${data.statusDesc || '恢复审核中'}`
+            : `已重新上架，当前状态：${data.statusDesc || '正常'}`
+        )
         this.restorePublishedDialogVisible = false
         this.publishedPageNo = 1
         await this.loadPublishedMemes()
@@ -1514,7 +1597,7 @@ export default {
       }
     },
     openPurgePublishedDialog(item) {
-      if (!item || item.status !== 3) return
+      if (!item || Number(item.status) !== 3) return
       this.purgePublishedTarget = { ...item }
       this.purgeConfirmName = ''
       this.purgePublishedDialogVisible = true
@@ -1545,50 +1628,84 @@ export default {
       if (!this.requestUserId || !/^\d+$/.test(this.requestUserId)) return
       this.publishedLoading = true
       try {
+        const statusParam =
+          this.isOwnProfile && this.publishedStatusFilter !== 'all'
+            ? Number(this.publishedStatusFilter)
+            : undefined
         const data = await pageUserMemes(this.requestUserId, {
           page: this.publishedPageNo,
           size: this.publishedPageSize,
+          status: statusParam,
         })
         const list = Array.isArray(data.list) ? data.list : []
-        // 新接口字段为 memeId / id，统一映射到组件内部用的 id
         const normalized = list.map((it) => ({
           ...it,
           id: it.id ?? it.memeId,
           author: it.author || data.author || null,
         }))
-        if (this.publishedPageNo === 1) {
-          this.publishedPage = {
-            list: normalized,
-            total: Number(data.total) || 0,
-            hasMore: resolvePageHasMore(data, normalized.length, this.publishedPageSize, normalized.length),
-            isOwner: !!(data.isOwner ?? data.owner ?? this.isOwnProfile),
-          }
-          this.publishedStatusFilter = 'all'
-        } else {
-          const merged = this.publishedPage.list.concat(normalized)
-          this.publishedPage = {
-            ...this.publishedPage,
-            list: merged,
-            total: Number(data.total) || this.publishedPage.total,
-            hasMore: resolvePageHasMore(data, normalized.length, this.publishedPageSize, merged.length),
-            isOwner: !!(data.isOwner ?? data.owner ?? this.publishedPage.isOwner),
+        const total = Number(data.total) || 0
+        const maxPage = Math.max(1, Math.ceil(total / Math.max(1, this.publishedPageSize)))
+        if (this.publishedPageNo > maxPage) {
+          this.publishedPageNo = maxPage
+          if (total > 0) {
+            await this.loadPublishedMemes()
+            return
           }
         }
+        this.publishedPage = {
+          list: normalized,
+          total,
+          hasMore: resolvePageHasMore(data, normalized.length, this.publishedPageSize, normalized.length),
+          isOwner: !!(data.isOwner ?? data.owner ?? this.isOwnProfile),
+        }
+        this.applyPublishedStatusCounts(data.statusCounts, total)
       } catch (e) {
         toast.error(e.message || '发布列表加载失败')
       } finally {
         this.publishedLoading = false
       }
     },
-    loadMorePublished() {
-      if (this.publishedLoading || !this.publishedHasMore) return
-      this.publishedPageNo += 1
+    applyPublishedStatusCounts(rawCounts, currentTotal) {
+      if (rawCounts && typeof rawCounts === 'object') {
+        const all = Number(rawCounts.all ?? rawCounts[0] ?? rawCounts['0'])
+        const live = Number(rawCounts.live ?? rawCounts[1] ?? rawCounts['1'])
+        const reviewing = Number(rawCounts.reviewing ?? rawCounts[2] ?? rawCounts['2'])
+        const offline = Number(rawCounts.offline ?? rawCounts[3] ?? rawCounts['3'])
+        const locked = Number(rawCounts.locked ?? rawCounts[5] ?? rawCounts['5'])
+        if ([all, live, reviewing, offline, locked].some((n) => Number.isFinite(n))) {
+          this.publishedStatusCounts = {
+            all: Number.isFinite(all) ? all : 0,
+            live: Number.isFinite(live) ? live : 0,
+            reviewing: Number.isFinite(reviewing) ? reviewing : 0,
+            offline: Number.isFinite(offline) ? offline : 0,
+            locked: Number.isFinite(locked) ? locked : 0,
+          }
+          return
+        }
+      }
+      // 后端未返回 statusCounts 时：至少用当前筛选 total 回填对应角标
+      const next = { ...this.publishedStatusCounts }
+      const filter = String(this.publishedStatusFilter)
+      const total = Number(currentTotal) || 0
+      if (filter === 'all') next.all = total
+      else if (filter === '1') next.live = total
+      else if (filter === '2') next.reviewing = total
+      else if (filter === '3') next.offline = total
+      else if (filter === '5') next.locked = total
+      this.publishedStatusCounts = next
+    },
+    setPublishedStatusFilter(key) {
+      const next = String(key)
+      if (String(this.publishedStatusFilter) === next) return
+      this.publishedStatusFilter = next
+      this.publishedPageNo = 1
       this.loadPublishedMemes()
     },
-    statusText(status) {
-      if (status === 2) return '审核中'
-      if (status === 3) return '已下架'
-      return ''
+    goPublishedPage(page) {
+      const next = Math.max(1, Number(page) || 1)
+      if (next === this.publishedPageNo) return
+      this.publishedPageNo = next
+      this.loadPublishedMemes()
     },
     async handleEditProfile() {
       this.editDialogVisible = true
@@ -1889,19 +2006,19 @@ export default {
           size: this.folderContentPageSize,
         })
         const list = Array.isArray(data.list) ? data.list : []
-        if (this.folderContentPageNo === 1) {
-          this.folderContentPage = {
-            list,
-            total: Number(data.total) || 0,
-            hasMore: resolvePageHasMore(data, list.length, this.folderContentPageSize, list.length),
+        const total = Number(data.total) || 0
+        const maxPage = Math.max(1, Math.ceil(total / Math.max(1, this.folderContentPageSize)))
+        if (this.folderContentPageNo > maxPage) {
+          this.folderContentPageNo = maxPage
+          if (total > 0) {
+            await this.loadFolderContent()
+            return
           }
-        } else {
-          const merged = this.folderContentPage.list.concat(list)
-          this.folderContentPage = {
-            list: merged,
-            total: Number(data.total) || this.folderContentPage.total,
-            hasMore: resolvePageHasMore(data, list.length, this.folderContentPageSize, merged.length),
-          }
+        }
+        this.folderContentPage = {
+          list,
+          total,
+          hasMore: resolvePageHasMore(data, list.length, this.folderContentPageSize, list.length),
         }
         this.refreshFolderSelectAll()
       } catch (e) {
@@ -1910,9 +2027,11 @@ export default {
         this.folderContentLoading = false
       }
     },
-    loadMoreFolderContent() {
-      if (this.folderContentLoading || !this.folderContentHasMore) return
-      this.folderContentPageNo += 1
+    goFolderContentPage(page) {
+      const next = Math.max(1, Number(page) || 1)
+      if (next === this.folderContentPageNo) return
+      this.folderContentPageNo = next
+      this.clearMemeSelection()
       this.loadFolderContent()
     },
     handleFolderCommand(cmd, folder) {
@@ -2473,16 +2592,6 @@ export default {
   font-size: 13px;
 }
 
-.meme-card-item--deleted {
-  opacity: 0.78;
-  cursor: default;
-}
-
-.meme-card-item--deleted:hover {
-  transform: none;
-  box-shadow: none;
-}
-
 /* 发布梗图面板 */
 .published-panel {
   display: flex;
@@ -2557,19 +2666,16 @@ export default {
   font-size: 13px;
   color: var(--meme-text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .published-filter-chip:hover {
-  border-color: var(--meme-border-accent);
-  color: var(--meme-primary);
+  border-color: var(--meme-border-strong);
+  color: var(--meme-text);
 }
 
-.published-filter-chip.is-active {
-  border-color: var(--meme-primary);
-  background: var(--meme-primary-soft);
-  color: var(--meme-primary);
-  font-weight: 600;
+.published-filter-label {
+  font-weight: 550;
 }
 
 .published-filter-count {
@@ -2578,13 +2684,121 @@ export default {
   padding: 0 5px;
   border-radius: 999px;
   background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
   font-size: 11px;
+  font-weight: 700;
   line-height: 18px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.published-filter-chip.is-active .published-filter-count {
+/* 各状态默认色：未选中也能一眼区分 */
+.published-filter-chip--live:not(.is-active) {
+  color: #059669;
+  border-color: color-mix(in srgb, #059669 28%, var(--meme-border));
+  background: color-mix(in srgb, #059669 8%, var(--meme-bg-card));
+}
+
+.published-filter-chip--live:not(.is-active) .published-filter-count {
+  color: #047857;
+  background: color-mix(in srgb, #059669 16%, transparent);
+}
+
+.published-filter-chip--reviewing:not(.is-active) {
+  color: #d97706;
+  border-color: color-mix(in srgb, #d97706 30%, var(--meme-border));
+  background: color-mix(in srgb, #d97706 8%, var(--meme-bg-card));
+}
+
+.published-filter-chip--reviewing:not(.is-active) .published-filter-count {
+  color: #b45309;
+  background: color-mix(in srgb, #d97706 16%, transparent);
+}
+
+.published-filter-chip--offline:not(.is-active) {
+  color: var(--meme-text-muted);
+  border-color: var(--meme-border);
+  background: var(--meme-bg-muted);
+}
+
+.published-filter-chip--offline:not(.is-active) .published-filter-count {
+  color: var(--meme-text-muted);
+  background: color-mix(in srgb, var(--meme-text-muted) 12%, transparent);
+}
+
+.published-filter-chip--locked:not(.is-active) {
+  color: #b91c1c;
+  border-color: color-mix(in srgb, #ef4444 35%, var(--meme-border));
+  background: color-mix(in srgb, #ef4444 8%, var(--meme-bg-card));
+}
+
+.published-filter-chip--locked:not(.is-active) .published-filter-count {
+  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 14%, transparent);
+}
+
+.published-filter-chip.is-active {
+  font-weight: 700;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-primary) 35%, transparent);
+}
+
+.published-filter-chip--all.is-active {
+  border-color: var(--meme-primary);
   background: var(--meme-primary-soft);
+  color: var(--meme-primary);
+}
+
+.published-filter-chip--all.is-active .published-filter-count {
+  color: var(--meme-primary);
+  background: color-mix(in srgb, var(--meme-primary) 18%, transparent);
+}
+
+.published-filter-chip--live.is-active {
+  border-color: #059669;
+  background: color-mix(in srgb, #059669 14%, var(--meme-bg-card));
+  color: #047857;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #059669 35%, transparent);
+}
+
+.published-filter-chip--live.is-active .published-filter-count {
+  color: #fff;
+  background: #059669;
+}
+
+.published-filter-chip--reviewing.is-active {
+  border-color: #d97706;
+  background: color-mix(in srgb, #d97706 14%, var(--meme-bg-card));
+  color: #b45309;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #d97706 35%, transparent);
+}
+
+.published-filter-chip--reviewing.is-active .published-filter-count {
+  color: #fff;
+  background: #d97706;
+}
+
+.published-filter-chip--offline.is-active {
+  border-color: var(--meme-text-secondary);
+  background: color-mix(in srgb, var(--meme-text-secondary) 12%, var(--meme-bg-card));
+  color: var(--meme-text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--meme-text-secondary) 28%, transparent);
+}
+
+.published-filter-chip--offline.is-active .published-filter-count {
+  color: #fff;
+  background: var(--meme-text-secondary);
+}
+
+.published-filter-chip--locked.is-active {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #ef4444 14%, var(--meme-bg-card));
+  color: #b91c1c;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #ef4444 35%, transparent);
+}
+
+.published-filter-chip--locked.is-active .published-filter-count {
+  color: #fff;
+  background: #dc2626;
 }
 
 .published-meme-grid .meme-card-item--published {
@@ -2599,7 +2813,7 @@ export default {
   box-shadow: none;
 }
 
-.published-meme-grid .meme-card-item--published:not(.meme-card-item--deleted):hover :deep(.meme-card__cover) {
+.published-meme-grid .meme-card-item--published:hover :deep(.meme-card__cover) {
   transform: scale(1.02);
 }
 
@@ -2607,46 +2821,10 @@ export default {
   transition: transform 0.25s ease;
 }
 
-.published-status-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 2;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--meme-text-inverse);
-  backdrop-filter: blur(4px);
-}
-
-.published-status-badge--2 {
-  background: rgba(245, 158, 11, 0.92);
-}
-
-.published-status-badge--3 {
-  background: rgba(107, 114, 128, 0.92);
-}
-
-.published-deleted-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--meme-overlay);
+.published-meme-grid.is-switching {
+  opacity: 0.55;
   pointer-events: none;
-}
-
-.published-deleted-label {
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--meme-text-inverse);
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  transition: opacity 0.15s ease;
 }
 
 .published-cover-actions {
@@ -2742,39 +2920,50 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding-right: 28px;
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   color: var(--meme-text);
 }
 
 .delete-published-dialog-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  display: flex;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   background: var(--meme-warning-soft);
   color: var(--meme-warning);
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .delete-published-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .delete-published-lead {
   margin: 0;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--meme-text-secondary);
+}
+
+.delete-published-lead strong {
+  color: var(--meme-text);
+  font-weight: 700;
 }
 
 .delete-published-notes {
   margin: 0;
-  padding-left: 18px;
+  padding: 12px 14px 12px 30px;
+  border-radius: 12px;
+  border: 1px solid var(--meme-border);
+  background: color-mix(in srgb, var(--meme-bg-muted) 70%, transparent);
   font-size: 13px;
   line-height: 1.7;
   color: var(--meme-text-secondary);
@@ -2782,7 +2971,7 @@ export default {
 
 .delete-published-preview {
   position: relative;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--meme-border);
   background: var(--meme-bg);
@@ -2790,27 +2979,57 @@ export default {
 
 .delete-published-preview-img {
   width: 100%;
-  height: 120px;
+  height: 132px;
   display: block;
+}
+
+.delete-published-preview-empty {
+  height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--meme-text-muted);
+  font-size: 28px;
+  background: linear-gradient(145deg, var(--meme-bg-muted), var(--meme-bg));
 }
 
 .delete-published-preview-meta {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
 }
 
 .delete-published-preview-tag {
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--meme-text-inverse);
-  background: rgba(245, 158, 11, 0.9);
+  font-weight: 700;
+  color: #fff;
+  background: rgba(245, 158, 11, 0.92);
+  backdrop-filter: blur(6px);
 }
 
 .delete-published-preview-tag.is-live {
-  background: rgba(34, 197, 94, 0.9);
+  background: rgba(34, 197, 94, 0.92);
+}
+
+.delete-published-preview-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 28px 12px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.78), transparent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .restore-published-dialog-icon {
@@ -2825,10 +3044,12 @@ export default {
 
 .purge-published-notes {
   color: var(--meme-warning);
+  border-color: color-mix(in srgb, var(--meme-warning) 28%, var(--meme-border));
+  background: color-mix(in srgb, var(--meme-warning-soft) 55%, transparent);
 }
 
 .purge-confirm-input {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .meme-status-tag {
@@ -4283,6 +4504,20 @@ html.dark .folder-card-loading {
   filter: brightness(1.04);
 }
 
+.profile-dlg-btn--danger {
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--meme-danger),
+    color-mix(in srgb, var(--meme-danger) 72%, #7f1d1d)
+  );
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--meme-danger) 32%, transparent);
+}
+
+.profile-dlg-btn--danger:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
 .profile-dlg-btn__spin {
   display: inline-block;
   animation: profile-dlg-spin 0.8s linear infinite;
@@ -4387,6 +4622,71 @@ html.dark .folder-card-loading {
 .profile-folder-dialog .vs-dialog-close {
   top: 12px !important;
   right: 12px !important;
+  color: var(--meme-text-muted) !important;
+}
+
+/* 下架 / 恢复 / 彻底删除弹窗（teleport 到 body） */
+.delete-published-dialog.vs-dialog-content,
+.vs-dialog-content.delete-published-dialog,
+.restore-published-dialog.vs-dialog-content,
+.vs-dialog-content.restore-published-dialog,
+.purge-published-dialog.vs-dialog-content,
+.vs-dialog-content.purge-published-dialog {
+  border-radius: 18px !important;
+  border: 1px solid var(--meme-border) !important;
+  background: var(--meme-bg-elevated) !important;
+  box-shadow: var(--meme-shadow-dialog) !important;
+  overflow: hidden;
+}
+
+.delete-published-dialog .vs-dialog__header,
+.delete-published-dialog .vs-dialog-header,
+.restore-published-dialog .vs-dialog__header,
+.restore-published-dialog .vs-dialog-header,
+.purge-published-dialog .vs-dialog__header,
+.purge-published-dialog .vs-dialog-header {
+  padding: 18px 20px 8px !important;
+  border-bottom: none !important;
+}
+
+.delete-published-dialog .vs-dialog__content,
+.delete-published-dialog .vs-dialog-content,
+.restore-published-dialog .vs-dialog__content,
+.restore-published-dialog .vs-dialog-content,
+.purge-published-dialog .vs-dialog__content,
+.purge-published-dialog .vs-dialog-content {
+  padding: 4px 20px 8px !important;
+}
+
+.delete-published-dialog .vs-dialog__footer,
+.delete-published-dialog .vs-dialog-footer,
+.restore-published-dialog .vs-dialog__footer,
+.restore-published-dialog .vs-dialog-footer,
+.purge-published-dialog .vs-dialog__footer,
+.purge-published-dialog .vs-dialog-footer {
+  padding: 12px 20px 18px !important;
+  border-top: 1px solid color-mix(in srgb, var(--meme-border) 80%, transparent) !important;
+  background: color-mix(in srgb, var(--meme-bg-muted) 55%, var(--meme-bg-elevated)) !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.delete-published-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.delete-published-dialog .vs-dialog__close,
+.delete-published-dialog .vs-dialog-close,
+.restore-published-dialog .vs-dialog__close,
+.restore-published-dialog .vs-dialog-close,
+.purge-published-dialog .vs-dialog__close,
+.purge-published-dialog .vs-dialog-close {
+  top: 14px !important;
+  right: 14px !important;
   color: var(--meme-text-muted) !important;
 }
 </style>

@@ -66,9 +66,6 @@ public class MemePublishService {
     private MemeBloomFilterService memeBloomFilterService;
 
     @Resource
-    private MemePublishAsyncHandler memePublishAsyncHandler;
-
-    @Resource
     private IUserProfileService userProfileService;
 
     @Resource
@@ -307,12 +304,7 @@ public class MemePublishService {
         } catch (Exception e) {
             log.warn("布隆过滤器追加失败, memeId={}", memeId, e);
         }
-        // 标签计数异步累加
-        try {
-            memePublishAsyncHandler.incrementTagRelatedQuantity(tagIds);
-        } catch (Exception e) {
-            log.warn("标签计数异步任务派发失败, memeId={}", memeId, e);
-        }
+        // 标签 related_quantity 仅在审核通过（2→1）时累加，发布进审不加
         // 清理该用户发布列表缓存，保证前端刷新看到最新数据
         try {
             userProfileService.evictUserMemesCache(userId);

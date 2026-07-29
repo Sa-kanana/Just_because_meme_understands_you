@@ -664,8 +664,8 @@ export function deletePublishedMeme(memeId) {
 }
 
 /**
- * 恢复已下架的梗
- * GET /memes/{memeId}/restore
+ * 恢复已下架的梗（重新进入审核）
+ * POST /memes/{memeId}/restore
  * @param {number|string} memeId
  * @returns {Promise<{ memeId:number, status:number, statusDesc:string, restoredAt:string }>}
  */
@@ -674,7 +674,7 @@ export function restorePublishedMeme(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/memes/${encodeURIComponent(id)}/restore`, { method: 'GET' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}/restore`, { method: 'POST' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '恢复失败')
   })

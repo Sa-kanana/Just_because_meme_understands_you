@@ -36,6 +36,26 @@ public final class AiContentHashSupport {
         return sha256Hex(raw.toString());
     }
 
+    /** 管理员知识库幂等哈希：title + category + content + tags。 */
+    public static String knowledgeHash(String title, String category, String content, List<String> tags) {
+        StringBuilder raw = new StringBuilder();
+        raw.append(normalize(title)).append('\n');
+        raw.append(normalize(category)).append('\n');
+        raw.append(normalize(content)).append('\n');
+        List<String> normalizedTags = new ArrayList<>();
+        if (tags != null) {
+            for (String tag : tags) {
+                String t = normalize(tag);
+                if (!t.isEmpty()) {
+                    normalizedTags.add(t);
+                }
+            }
+        }
+        normalizedTags.sort(Comparator.naturalOrder());
+        raw.append(String.join(",", normalizedTags));
+        return sha256Hex(raw.toString());
+    }
+
     private static String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }

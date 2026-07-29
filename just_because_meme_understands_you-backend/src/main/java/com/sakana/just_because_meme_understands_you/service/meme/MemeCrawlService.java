@@ -56,9 +56,18 @@ public class MemeCrawlService {
     private TransactionTemplate transactionTemplate;
 
     /**
-     * 拉取一次热梗并写入业务库。
+     * 拉取一次热梗并写入业务库（使用配置默认 limit）。
      */
     public MemeCrawlResultVO crawlAndPersist() {
+        return crawlAndPersist(null);
+    }
+
+    /**
+     * 拉取一次热梗并写入业务库。
+     *
+     * @param limitOverride 可选；为空则用 {@code meme.crawl.limit}，上限 20
+     */
+    public MemeCrawlResultVO crawlAndPersist(Integer limitOverride) {
         MemeAgentProperties.Crawl crawl = memeAgentProperties.getCrawl();
         if (crawl == null || !crawl.isEnabled()) {
             throw new BizException(Result.CODE_ERROR, "热梗采集未启用（meme.crawl.enabled=false）");
@@ -71,8 +80,13 @@ public class MemeCrawlService {
             throw new BizException(Result.CODE_ERROR, "请配置 meme.crawl.publisher-user-id（系统发布者）");
         }
 
+        int configured = Math.max(1, crawl.getLimit());
+        int limit = limitOverride == null || limitOverride <= 0
+                ? configured
+                : Math.max(1, Math.min(limitOverride, 20));
+
         MemeAgentCrawlRequestDTO request = MemeAgentCrawlRequestDTO.builder()
-                .limit(Math.max(1, Math.min(crawl.getLimit(), 20)))
+                .limit(limit)
                 .includeMarkdown(true)
                 .build();
 

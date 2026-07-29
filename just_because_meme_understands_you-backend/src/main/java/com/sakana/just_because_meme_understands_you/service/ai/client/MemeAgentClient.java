@@ -5,6 +5,7 @@ import com.sakana.just_because_meme_understands_you.config.MemeAgentWebClientCon
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentCrawlRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentCrawlResponseDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentIngestRequestDTO;
+import com.sakana.just_because_meme_understands_you.dto.MemeAgentKnowledgeIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.dto.MemeAgentStreamRequestDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -85,6 +86,19 @@ public class MemeAgentClient {
                 .doOnError(e -> log.error("MemeAgent ingest failed", e));
     }
 
+    public Mono<Void> ingestKnowledgeAsync(MemeAgentKnowledgeIngestRequestDTO request) {
+        String path = properties.getAgent().getKnowledgeIngestPath();
+        return memeAgentWebClient.post()
+                .uri(path)
+                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .toBodilessEntity()
+                .then()
+                .doOnError(e -> log.error("MemeAgent knowledge ingest failed", e));
+    }
+
     /**
      * 触发 Firecrawl 热梗采集，返回结构化候选。
      */
@@ -103,6 +117,26 @@ public class MemeAgentClient {
     public boolean isConfigured() {
         return StringUtils.hasText(properties.getAgent().getApiKey())
                 && StringUtils.hasText(properties.getAgent().getBaseUrl());
+    }
+
+    /**
+     * 探测 Agent {@code GET /health}；未配置或失败时返回空 Map（不抛业务异常）。
+     */
+    public Mono<java.util.Map<String, Object>> probeHealth() {
+        if (!isConfigured()) {
+            return Mono.just(java.util.Map.of());
+        }
+        return memeAgentWebClient.get()
+                .uri("/health")
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<java.util.Map<String, Object>>() {
+                })
+                .timeout(java.time.Duration.ofMillis(
+                        Math.max(500L, properties.getAgent().getConnectTimeoutMs())))
+                .onErrorResume(e -> {
+                    log.warn("MemeAgent /health 探测失败: {}", e.toString());
+                    return Mono.just(java.util.Map.of());
+                });
     }
 
     private ServerSentEvent<String> normalizeSse(ServerSentEvent<String> sse) {

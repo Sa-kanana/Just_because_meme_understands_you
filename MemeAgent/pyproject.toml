@@ -12,11 +12,14 @@ dependencies = [
   "httpx>=0.28,<0.29",
   "asyncpg>=0.30,<0.31",
   "pgvector>=0.3,<0.4",
-  "langchain>=1.0,<2",
-  "langchain-core>=1.0,<2",
-  "langchain-openai>=0.3,<1",
+  # 与本地 conda memeagent 对齐：AgentExecutor 仍在 langchain.agents（1.x 已迁走）
+  "langchain>=0.3.25,<0.4",
+  "langchain-core>=0.3.63,<0.4",
+  "langchain-openai>=0.2.14,<0.3",
+  "langchain-text-splitters>=0.3.8,<0.4",
   "langsmith>=0.2,<0.4",
   "numpy>=2.0,<3",
+  "firecrawl-py>=1.0,<3",
 ]
 
 [project.optional-dependencies]

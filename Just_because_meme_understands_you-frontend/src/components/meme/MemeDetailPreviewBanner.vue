@@ -46,8 +46,35 @@
 
       <div class="preview-banner-actions">
         <vs-button @click="$emit('back-published')">回到我的发布</vs-button>
+        <template v-if="variant === 'offline'">
+          <vs-button
+            color="primary"
+            :loading="restoring"
+            :disabled="purging"
+            @click="$emit('restore')"
+          >
+            重新上架
+          </vs-button>
+          <vs-button
+            color="danger"
+            :loading="purging"
+            :disabled="restoring"
+            @click="$emit('purge')"
+          >
+            彻底删除
+          </vs-button>
+        </template>
+        <template v-else-if="variant === 'locked'">
+          <vs-button
+            color="primary"
+            :loading="restoring"
+            @click="$emit('restore')"
+          >
+            提交整改申诉
+          </vs-button>
+        </template>
         <vs-button
-          v-if="variant === 'reviewing'"
+          v-if="variant === 'reviewing' || variant === 'restore_reviewing'"
           color="primary"
           :loading="refreshing"
           @click="$emit('refresh')"
@@ -77,25 +104,52 @@ export default {
       type: Boolean,
       default: false,
     },
+    restoring: {
+      type: Boolean,
+      default: false,
+    },
+    purging: {
+      type: Boolean,
+      default: false,
+    },
   },
-  emits: ['back-published', 'refresh'],
+  emits: ['back-published', 'refresh', 'restore', 'purge'],
   setup(props) {
     const collapsed = ref(false)
 
-    const variant = computed(() => (Number(props.status) === 3 ? 'offline' : 'reviewing'))
+    const variant = computed(() => {
+      const status = Number(props.status)
+      if (status === 3) return 'offline'
+      if (status === 5) return 'locked'
+      if (status === 6) return 'restore_reviewing'
+      return 'reviewing'
+    })
 
     const statusLabel = computed(() => {
       if (props.statusDesc) return props.statusDesc
-      return variant.value === 'offline' ? '已下架' : '审核中'
+      if (variant.value === 'offline') return '已下架'
+      if (variant.value === 'locked') return '下架锁定'
+      if (variant.value === 'restore_reviewing') return '恢复审核中'
+      return '审核中'
     })
 
-    const variantIcon = computed(() => (variant.value === 'offline' ? '📦' : '⏳'))
+    const variantIcon = computed(() => {
+      if (variant.value === 'offline') return '📦'
+      if (variant.value === 'locked') return '🔒'
+      return '⏳'
+    })
 
     const title = computed(() => '发布者专属预览')
 
     const description = computed(() => {
       if (variant.value === 'offline') {
-        return '这条梗已退出公域，仅你可见。可在「我的发布」里恢复上架或彻底删除。'
+        return '这条梗已主动下架，仅你可见。可随时重新上架，或彻底删除。'
+      }
+      if (variant.value === 'locked') {
+        return '这条梗因风控被锁定。请提交整改申诉，通过后才会恢复公域展示。'
+      }
+      if (variant.value === 'restore_reviewing') {
+        return '整改申诉已提交，正在等待审核结果；通过后才会重新上线。'
       }
       return '内容正在排队审核，你可以先核对展示效果；通过后才会出现在首页与搜索。'
     })
@@ -106,14 +160,22 @@ export default {
           { key: 'view', enabled: true, text: '可预览完整内容' },
           { key: 'public', enabled: false, text: '公域不可见' },
           { key: 'interact', enabled: false, text: '评论收藏未开放' },
-          { key: 'restore', enabled: true, text: '支持恢复或彻底删除' },
+          { key: 'restore', enabled: true, text: '可随时重新上架' },
+        ]
+      }
+      if (variant.value === 'locked') {
+        return [
+          { key: 'view', enabled: true, text: '可预览完整内容' },
+          { key: 'public', enabled: false, text: '公域不可见' },
+          { key: 'interact', enabled: false, text: '评论收藏未开放' },
+          { key: 'appeal', enabled: true, text: '需提交整改申诉' },
         ]
       }
       return [
         { key: 'view', enabled: true, text: '可预览标题 / 封面 / 标签 / 链接' },
         { key: 'public', enabled: false, text: '公域用户暂不可见' },
         { key: 'interact', enabled: false, text: '评论与收藏未开放' },
-        { key: 'pass', enabled: true, text: '审核通过后自动上线' },
+        { key: 'pass', enabled: true, text: '审核通过后才会上线' },
       ]
     })
 
@@ -147,6 +209,12 @@ export default {
   box-shadow: var(--meme-shadow-soft);
 }
 
+.preview-banner--locked {
+  border-color: color-mix(in srgb, #ef4444 35%, var(--meme-border));
+  background: color-mix(in srgb, #ef4444 6%, var(--meme-gradient-card));
+  box-shadow: var(--meme-shadow-soft);
+}
+
 .preview-banner-accent {
   position: absolute;
   left: 0;
@@ -158,6 +226,10 @@ export default {
 
 .preview-banner--offline .preview-banner-accent {
   background: linear-gradient(180deg, var(--meme-text-secondary), var(--meme-text-muted));
+}
+
+.preview-banner--locked .preview-banner-accent {
+  background: linear-gradient(180deg, #ef4444, #b91c1c);
 }
 
 .preview-banner-top {

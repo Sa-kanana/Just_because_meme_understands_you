@@ -29,6 +29,7 @@ public class OssObjectPromoteService {
     public static final String TMP_AVATAR = "tmp/avatar/";
     public static final String TMP_MEMES = "tmp/memes/";
     public static final String TMP_COMMENTS = "tmp/comments/";
+    public static final String TMP_HOME = "tmp/home/";
 
     private static final DateTimeFormatter DATE_DIR = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -89,6 +90,21 @@ public class OssObjectPromoteService {
         assertTmpOwnedByUser(key, TMP_COMMENTS, userId);
         String dest = "comments/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
         return copyAndScheduleDeleteTmp(key, dest, "comments/");
+    }
+
+    /**
+     * 首页轮播：tmp/home/{userId}/… → home/{yyyyMMdd}/…；已在 home/ 的原样返回。
+     */
+    public String promoteHomeImage(String keyOrUrl, Long userId) {
+        requireUserId(userId);
+        String key = requireOwnedKey(keyOrUrl);
+        if (key.startsWith("home/")) {
+            ossUrlHelper.assertOwnedImageKey(key, "home/");
+            return key;
+        }
+        assertTmpOwnedByUser(key, TMP_HOME, userId);
+        String dest = "home/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
+        return copyAndScheduleDeleteTmp(key, dest, "home/");
     }
 
     /**

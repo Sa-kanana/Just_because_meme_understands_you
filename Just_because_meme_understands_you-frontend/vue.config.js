@@ -20,6 +20,12 @@ module.exports = defineConfig({
   },
   devServer: {
     port: 80,
+    // 内网穿透（cpolar/frp/ngrok）时 Host 为公网域名，需放行，否则报 Invalid Host header
+    allowedHosts: 'all',
+    client: {
+      // 经 HTTPS 隧道时让 HMR WebSocket 跟当前页面同源
+      webSocketURL: 'auto://0.0.0.0:0/ws',
+    },
     setupMiddlewares(middlewares, devServer) {
       const iconPath = path.resolve(__dirname, 'public/icon.svg')
       devServer.app.get('/favicon.ico', (_req, res) => {

@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.service.oss;
 
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.constant.AuthConstants;
 import com.sakana.just_because_meme_understands_you.vo.OssUploadPolicyVO;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -90,7 +91,14 @@ public class OssUploadPolicyService {
         }
         String normalized = StringUtils.hasText(fileType) ? fileType.trim().toLowerCase() : DEFAULT_DIR;
         if ("home".equals(normalized)) {
-            throw new BizException(Result.CODE_FORBIDDEN, "无权上传该类型文件");
+            Long userId = parseCurrentUserId();
+            if (userId == null) {
+                throw new BizException(Result.CODE_UNAUTHORIZED, "请先登录后再上传");
+            }
+            Object role = httpServletRequest.getAttribute(AuthConstants.CLAIM_ROLE);
+            if (!AuthConstants.ROLE_ADMIN.equals(role == null ? null : String.valueOf(role))) {
+                throw new BizException(Result.CODE_FORBIDDEN, "无权上传该类型文件");
+            }
         }
         if ("avatar".equals(normalized) || "meme".equals(normalized) || "comment".equals(normalized)) {
             Long userId = parseCurrentUserId();

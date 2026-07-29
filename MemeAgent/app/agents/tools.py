@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.settings import get_settings
 from app.crawl.service import crawl_hot_memes
+from app.retrieval.knowledge_repository import similarity_search_knowledge
 from app.retrieval.repository import (
     RetrievedChunk,
     fetch_chunks_by_meme_ids,
@@ -55,6 +56,11 @@ class SearchMemeInput(BaseModel):
 class SearchLiveWebInput(BaseModel):
     query: str = Field(description="需要联网补充的热梗 / 流行语关键词")
     limit: int = Field(default=5, ge=1, le=10, description="返回条数")
+
+
+class SearchAdminKnowledgeInput(BaseModel):
+    query: str = Field(description="需要从运营知识库检索的问句或关键词")
+    top_k: int = Field(default=5, ge=1, le=20, description="返回条数上限")
 
 
 async def retrieve_meme_chunks(
@@ -198,4 +204,34 @@ def build_search_live_web_tool() -> StructuredTool:
             "返回仅供参考的网页摘要，无站内 meme_id。"
         ),
         args_schema=SearchLiveWebInput,
+    )
+
+
+def build_search_admin_knowledge_tool(*, default_top_k: int = 5) -> StructuredTool:
+    """运营知识库检索（管理员灌入的文档向量）。"""
+
+    async def _run(query: str, top_k: int = 5) -> str:
+        k = top_k or default_top_k
+        chunks = await similarity_search_knowledge(query, k)
+        payload = [
+            {
+                "doc_id": c.doc_id,
+                "score": round(c.score, 4),
+                "title": c.title,
+                "content": c.content,
+            }
+            for c in chunks
+        ]
+        logger.info("search_admin_knowledge hits=%s query=%s", len(payload), query[:80])
+        return json.dumps(payload, ensure_ascii=False)
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name="search_admin_knowledge",
+        description=(
+            "检索运营管理员灌入的知识库（规则、玩法说明、FAQ 等）。"
+            "当用户问题涉及站内规则、运营说明、背景知识，或梗库检索不足时可调用。"
+            "返回片段无 meme_id，不要把它当成梗条目 ID。"
+        ),
+        args_schema=SearchAdminKnowledgeInput,
     )

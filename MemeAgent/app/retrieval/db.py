@@ -65,6 +65,30 @@ async def ensure_schema(settings: Settings) -> None:
             "CREATE INDEX IF NOT EXISTS idx_meme_vector_chunk_hash "
             "ON meme_vector_chunk (meme_id, content_hash)"
         )
+        await conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS knowledge_vector_chunk (
+                id              BIGSERIAL PRIMARY KEY,
+                doc_id          VARCHAR(64) NOT NULL,
+                chunk_index     INT NOT NULL DEFAULT 0,
+                content         TEXT NOT NULL,
+                content_hash    VARCHAR(64) NOT NULL,
+                title           VARCHAR(200),
+                category        VARCHAR(64),
+                embedding       vector({dim}),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_knowledge_vector_chunk UNIQUE (doc_id, chunk_index)
+            )
+            """
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_vector_chunk_doc_id "
+            "ON knowledge_vector_chunk (doc_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_vector_chunk_hash "
+            "ON knowledge_vector_chunk (doc_id, content_hash)"
+        )
 
 
 async def ping_db() -> bool:

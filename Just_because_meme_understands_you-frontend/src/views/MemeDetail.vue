@@ -29,8 +29,12 @@
         :status="meme.status"
         :status-desc="meme.statusDesc || meme.status_desc"
         :refreshing="previewRefreshing"
+        :restoring="restoreSubmitting"
+        :purging="purgeSubmitting"
         @back-published="goMyPublished"
         @refresh="handlePreviewRefresh"
+        @restore="handleRestorePublished"
+        @purge="openPurgeDialog"
       />
 
       <!-- 顶部信息条：封面缩略图 + 信息流 -->
@@ -567,6 +571,65 @@
       </div>
     </div>
 
+    <!-- 彻底删除确认弹窗（已下架预览） -->
+    <vs-dialog
+      v-model="purgeDialogVisible"
+      width="440px"
+      class="detail-purge-dialog"
+      prevent-close
+      @closed="resetPurgeDialog"
+    >
+      <template #header>
+        <div class="detail-purge-dialog__head">
+          <span class="detail-purge-dialog__icon" aria-hidden="true">
+            <i class="ri-delete-bin-6-line" />
+          </span>
+          <span>彻底删除</span>
+        </div>
+      </template>
+      <div class="detail-purge-dialog__body">
+        <p class="detail-purge-dialog__lead">
+          确定要彻底删除「<strong>{{ purgeMemeName }}</strong>」吗？
+        </p>
+        <ul class="detail-purge-dialog__notes">
+          <li>删除后无法恢复，发布列表里也不会再出现</li>
+          <li>封面和相关图片会一并清理</li>
+          <li>别人的评论、收藏记录仍会保留</li>
+        </ul>
+        <vs-input
+          v-model="purgeConfirmName"
+          maxlength="50"
+          placeholder="输入梗名称以确认"
+          class="detail-purge-dialog__input"
+        />
+      </div>
+      <template #footer>
+        <div class="detail-purge-dialog__actions">
+          <button
+            type="button"
+            class="detail-purge-btn detail-purge-btn--ghost"
+            :disabled="purgeSubmitting"
+            @click="purgeDialogVisible = false"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="detail-purge-btn detail-purge-btn--danger"
+            :disabled="purgeSubmitting || !purgeConfirmMatched"
+            @click="confirmPurgePublished"
+          >
+            <i
+              v-if="purgeSubmitting"
+              class="ri-loader-4-line detail-purge-btn__spin"
+              aria-hidden="true"
+            />
+            {{ purgeSubmitting ? '删除中…' : '确认彻底删除' }}
+          </button>
+        </div>
+      </template>
+    </vs-dialog>
+
     <!-- 收藏夹选择弹窗 -->
     <vs-dialog
       v-model="favoriteDialogVisible"
@@ -740,7 +803,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
-import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment, getMemeCommentAnchor } from '@/api/meme'
+import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment, getMemeCommentAnchor, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
 import { isAuthErrorHandled } from '@/utils/authSession'
@@ -786,6 +849,8 @@ const memeStatusLabel = computed(() => {
   const status = Number(meme.value?.status)
   if (status === 2) return '审核中'
   if (status === 3) return '已下架'
+  if (status === 5) return '下架锁定'
+  if (status === 6) return '恢复审核中'
   return ''
 })
 const authorInfo = computed(() => {
@@ -1311,6 +1376,80 @@ function goMyPublished() {
       tab: 'published',
     })
   )
+}
+
+const restoreSubmitting = ref(false)
+const purgeDialogVisible = ref(false)
+const purgeSubmitting = ref(false)
+const purgeConfirmName = ref('')
+
+const purgeMemeName = computed(() => {
+  const name = meme.value?.name
+  const text = name != null ? String(name).trim() : ''
+  return text || '未命名梗图'
+})
+
+const purgeConfirmMatched = computed(() => {
+  return String(purgeConfirmName.value || '').trim() === purgeMemeName.value
+})
+
+function openPurgeDialog() {
+  if (!meme.value || Number(meme.value.status) !== 3) return
+  purgeConfirmName.value = ''
+  purgeDialogVisible.value = true
+}
+
+function resetPurgeDialog() {
+  purgeConfirmName.value = ''
+  purgeSubmitting.value = false
+}
+
+async function handleRestorePublished() {
+  const id = meme.value?.id != null ? String(meme.value.id).trim() : ''
+  const status = Number(meme.value?.status)
+  if (!id || (status !== 3 && status !== 5) || restoreSubmitting.value || purgeSubmitting.value) {
+    return
+  }
+  const isAppeal = status === 5
+  try {
+    await confirmBox(
+      isAppeal
+        ? `要把「${purgeMemeName.value}」提交整改申诉吗？\n提交后进入「恢复审核中」，通过后才会重新上线。`
+        : `要把「${purgeMemeName.value}」重新上架吗？\n主动下架可随时恢复，无需再次审核。`,
+      isAppeal ? '提交整改申诉' : '重新上架',
+      { confirmButtonText: isAppeal ? '确认提交申诉' : '确认重新上架', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  restoreSubmitting.value = true
+  try {
+    await restorePublishedMeme(id)
+    toast.success(isAppeal ? '已提交整改申诉' : '已重新上架')
+    await memeDetailStore.fetchDetail(id)
+  } catch (e) {
+    if (isAuthErrorHandled(e)) return
+    toast.error((e && e.message) || '恢复失败')
+  } finally {
+    restoreSubmitting.value = false
+  }
+}
+
+async function confirmPurgePublished() {
+  const id = meme.value?.id != null ? String(meme.value.id).trim() : ''
+  if (!id || !purgeConfirmMatched.value || purgeSubmitting.value) return
+  purgeSubmitting.value = true
+  try {
+    await purgePublishedMeme(id)
+    toast.success('已彻底删除')
+    purgeDialogVisible.value = false
+    goMyPublished()
+  } catch (e) {
+    if (isAuthErrorHandled(e)) return
+    toast.error((e && e.message) || '彻底删除失败')
+  } finally {
+    purgeSubmitting.value = false
+  }
 }
 
 function goUserProfile(rawId) {
@@ -3193,5 +3332,165 @@ function goSearchByTag(tag) {
   max-width: 100%;
   max-height: 80vh;
   cursor: zoom-out;
+}
+
+.detail-purge-dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 28px;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--meme-text);
+}
+
+.detail-purge-dialog__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--meme-danger-soft);
+  color: var(--meme-danger);
+  font-size: 18px;
+}
+
+.detail-purge-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-purge-dialog__lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--meme-text-secondary);
+}
+
+.detail-purge-dialog__lead strong {
+  color: var(--meme-text);
+  font-weight: 700;
+}
+
+.detail-purge-dialog__notes {
+  margin: 0;
+  padding: 12px 14px 12px 30px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--meme-warning) 28%, var(--meme-border));
+  background: color-mix(in srgb, var(--meme-warning-soft) 55%, transparent);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--meme-warning);
+}
+
+.detail-purge-dialog__input {
+  margin-top: 2px;
+}
+
+.detail-purge-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.detail-purge-btn {
+  height: 40px;
+  min-width: 88px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+}
+
+.detail-purge-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.detail-purge-btn--ghost {
+  color: var(--meme-text);
+  background: var(--meme-bg-muted);
+  border-color: var(--meme-border);
+}
+
+.detail-purge-btn--ghost:hover:not(:disabled) {
+  background: var(--meme-bg-elevated);
+  border-color: var(--meme-border-strong);
+}
+
+.detail-purge-btn--danger {
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--meme-danger),
+    color-mix(in srgb, var(--meme-danger) 72%, #7f1d1d)
+  );
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--meme-danger) 32%, transparent);
+}
+
+.detail-purge-btn--danger:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.detail-purge-btn__spin {
+  display: inline-block;
+  animation: detail-purge-spin 0.8s linear infinite;
+}
+
+@keyframes detail-purge-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>
+
+<style>
+.detail-purge-dialog.vs-dialog-content,
+.vs-dialog-content.detail-purge-dialog {
+  border-radius: 18px !important;
+  border: 1px solid var(--meme-border) !important;
+  background: var(--meme-bg-elevated) !important;
+  box-shadow: var(--meme-shadow-dialog) !important;
+  overflow: hidden;
+}
+
+.detail-purge-dialog .vs-dialog__header,
+.detail-purge-dialog .vs-dialog-header {
+  padding: 18px 20px 8px !important;
+  border-bottom: none !important;
+}
+
+.detail-purge-dialog .vs-dialog__content,
+.detail-purge-dialog .vs-dialog-content {
+  padding: 4px 20px 8px !important;
+}
+
+.detail-purge-dialog .vs-dialog__footer,
+.detail-purge-dialog .vs-dialog-footer {
+  padding: 12px 20px 18px !important;
+  border-top: 1px solid color-mix(in srgb, var(--meme-border) 80%, transparent) !important;
+  background: color-mix(in srgb, var(--meme-bg-muted) 55%, var(--meme-bg-elevated)) !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.detail-purge-dialog .vs-dialog__close,
+.detail-purge-dialog .vs-dialog-close {
+  top: 14px !important;
+  right: 14px !important;
+  color: var(--meme-text-muted) !important;
 }
 </style>

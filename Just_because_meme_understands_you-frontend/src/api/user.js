@@ -70,17 +70,24 @@ export function getUserProfile(userId, token) {
 
 /**
  * 分页获取用户发布的梗
- * GET /user/{userId}/memes?page=&size=
- * 返回 { author, list, page, size, total, isOwner, hasMore }
+ * GET /user/{userId}/memes?page=&size=&status=
+ * 返回 { author, list, page, size, total, isOwner, hasMore, statusCounts? }
  * list 项含 id/memeId、status、author、releaseTime 等
+ * status：本人可选 1/2/3；他人忽略
  */
 export function pageUserMemes(userId, params = {}) {
   const id = userId != null ? String(userId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少用户ID'))
   }
-  const { page = 1, size = 10 } = params
+  const { page = 1, size = 10, status } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
+  if (
+    status === 1 || status === 2 || status === 3 || status === 5 || status === 6
+    || status === '1' || status === '2' || status === '3' || status === '5' || status === '6'
+  ) {
+    query.set('status', String(status))
+  }
   return request(`/user/${encodeURIComponent(id)}/memes?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       const data = res.data

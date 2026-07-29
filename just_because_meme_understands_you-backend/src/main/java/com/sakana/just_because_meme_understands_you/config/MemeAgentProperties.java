@@ -28,6 +28,7 @@ public class MemeAgentProperties {
         private long responseTimeoutMs = 180000L;
         private String streamPath = "/stream";
         private String ingestPath = "/ingest";
+        private String knowledgeIngestPath = "/ingest/knowledge";
         private String crawlPath = "/crawl/hot-memes";
     }
 

@@ -80,10 +80,10 @@ public class MemeController {
     }
 
     /**
-     * 恢复已下架的梗（需登录）
-     * GET /memes/{memeId}/restore
+     * 恢复已下架的梗（需登录，重新进入审核）
+     * POST /memes/{memeId}/restore
      */
-    @GetMapping("/memes/{memeId}/restore")
+    @PostMapping("/memes/{memeId}/restore")
     public Result<MemeRestoreResponseVO> restoreOwnMeme(@PathVariable("memeId") String memeId,
                                                         HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);

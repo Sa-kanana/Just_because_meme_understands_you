@@ -37,11 +37,17 @@ public class UserPublishedMemeVO {
     /** 评论数 */
     private Integer comments;
 
-    /** 状态（1.正常，2.审核中，3.下架） */
+    /** 状态：1正常 2审核中 3主动下架 5锁定 6恢复审核中 */
     private Integer status;
 
     /** 状态描述 */
     private String statusDesc;
+
+    /** 下架/锁定原因 */
+    private String offlineReason;
+
+    /** 申诉驳回次数 */
+    private Integer appealRejectCount;
 
     /** 关联标签 */
     private List<UserMemeTagVO> tags;
