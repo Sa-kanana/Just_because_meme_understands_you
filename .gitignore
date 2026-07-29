@@ -10,6 +10,7 @@ dist/
 build/
 out/
 deploy/
+docs/
 
 # Log file
 *.log
