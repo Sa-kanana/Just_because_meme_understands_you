@@ -49,15 +49,20 @@ public class OssObjectPromoteService {
      * 头像：tmp/avatar/{userId}/… → avatar/{userId}/…
      */
     public String promoteAvatar(String keyOrUrl, Long userId) {
+        //校验userId不能为空
         requireUserId(userId);
+        //标准化objectkey
         String key = requireOwnedKey(keyOrUrl);
         String permanentPrefix = "avatar/" + userId + "/";
         if (key.startsWith(permanentPrefix)) {
+            //如果objectkey已存在正式前缀，直接返回
             ossUrlHelper.assertOwnedImageKey(key, permanentPrefix);
             return key;
         }
+        //校验objectkey是否属于tmp/avatar目录
         assertTmpOwnedByUser(key, TMP_AVATAR, userId);
         String dest = permanentPrefix + fileNameOf(key);
+        //复制objectkey到正式前缀目录
         return copyAndScheduleDeleteTmp(key, dest, permanentPrefix);
     }
 
@@ -138,9 +143,11 @@ public class OssObjectPromoteService {
             return destKey;
         }
         try {
+            // ① 校验 sourceKey 在 OSS 中存在
             if (!ossClient.doesObjectExist(bucketName, sourceKey)) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "临时图片不存在或已过期，请重新上传");
             }
+            // ② OSS 内部复制（同 Bucket，零流量）
             ossClient.copyObject(bucketName, sourceKey, bucketName, destKey);
         } catch (BizException e) {
             throw e;
@@ -148,7 +155,9 @@ public class OssObjectPromoteService {
             log.warn("OSS tmp promote 失败, source={}, dest={}", sourceKey, destKey, e);
             throw new BizException(Result.CODE_ERROR, "图片确认失败，请稍后重试");
         }
+        // ③ 校验目标文件合法
         ossUrlHelper.assertOwnedImageKey(destKey, assertPrefix);
+        // ④ 事务提交后异步删除临时文件
         afterCommitExecutor.execute(() -> deleteQuietly(sourceKey));
         return destKey;
     }

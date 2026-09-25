@@ -83,13 +83,15 @@ public class CaptchaServiceImpl implements ICaptchaService {
     }
 
     private static String renderBase64Png(String code) {
+        //创建画布
         BufferedImage image = new BufferedImage(IMAGE_WIDTH, IMAGE_HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
         try {
+            //填充背景 + 抗锯齿
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(new Color(245, 247, 250));
             g.fillRect(0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
-
+            //干扰线（防 OCR）
             for (int i = 0; i < 6; i++) {
                 g.setColor(randomNoiseColor(160, 210));
                 int x1 = RANDOM.nextInt(IMAGE_WIDTH);
@@ -98,21 +100,25 @@ public class CaptchaServiceImpl implements ICaptchaService {
                 int y2 = RANDOM.nextInt(IMAGE_HEIGHT);
                 g.drawLine(x1, y1, x2, y2);
             }
+            //干扰点（防 OCR）
             for (int i = 0; i < 28; i++) {
                 g.setColor(randomNoiseColor(140, 220));
                 g.fillOval(RANDOM.nextInt(IMAGE_WIDTH), RANDOM.nextInt(IMAGE_HEIGHT), 2, 2);
             }
-
+            //绘制验证码字符
             g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 26));
-            int charWidth = IMAGE_WIDTH / (CODE_LENGTH + 1);
+            int charWidth = IMAGE_WIDTH / (CODE_LENGTH + 1);// 每个字符的宽度区间
             for (int i = 0; i < code.length(); i++) {
+                // 随机颜色（深色，确保可读
                 g.setColor(new Color(40 + RANDOM.nextInt(60), 50 + RANDOM.nextInt(70), 90 + RANDOM.nextInt(80)));
+                // 随机旋转角度（-0.225 ~ +0.225 弧度）
                 double angle = (RANDOM.nextDouble() - 0.5) * 0.45;
+                // 计算位置：均匀分布 + 随机偏移
                 int x = charWidth * (i + 1) - 8;
                 int y = 30 + RANDOM.nextInt(6);
-                g.rotate(angle, x, y);
-                g.drawString(String.valueOf(code.charAt(i)), x, y);
-                g.rotate(-angle, x, y);
+                g.rotate(angle, x, y);// 旋转画布
+                g.drawString(String.valueOf(code.charAt(i)), x, y);// 绘制字符
+                g.rotate(-angle, x, y);// 旋转画布，恢复原始角度
             }
         } finally {
             g.dispose();

@@ -19,7 +19,7 @@ spring:
   datasource:
     username: root
     password: # 请自行填写：数据库密码
-    url: jdbc:mysql://127.0.0.1:3306/MemeLIst?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    url: jdbc:mysql://127.0.0.1:3306/meme?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
 
   # ---------- Redis ----------
   data:

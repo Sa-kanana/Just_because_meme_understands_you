@@ -115,12 +115,15 @@ public class AuthServiceImpl implements IAuthService {
         if (user == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
+        // 确保为正常用户
         ensureUserActive(user);
 
         String userId = String.valueOf(user.getId());
+        // 生成访问令牌
         String accessToken = generateAccessToken(user, loginType);
         String refreshToken = generateRefreshToken(userId, loginType);
         storeRefreshToken(refreshToken, userId);
+        // 构建令牌包
         return buildTokenBundle(accessToken, refreshToken, user);
     }
 
@@ -151,7 +154,7 @@ public class AuthServiceImpl implements IAuthService {
         } catch (NumberFormatException ignored) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
         }
-
+        //如果token不属于正确版本，直接吊销token并退出登录
         if (!userSessionRevoker.isTokenVersionValid(userIdStr, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
             userSessionRevoker.revokeRefreshToken(refreshToken, userIdStr);
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "会话已失效，请重新登录");
@@ -169,16 +172,18 @@ public class AuthServiceImpl implements IAuthService {
         if (user == null) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "用户不存在或会话已失效，请重新登录");
         }
+        // 确保为正常用户
         ensureUserActive(user);
-
+        //如果claims中没有携带登录方式就将登录方式设为邮箱
         String loginType = String.valueOf(claims.get(AuthConstants.CLAIM_LOGIN_TYPE));
         if (!StringUtils.hasText(loginType) || "null".equals(loginType)) {
             loginType = AuthConstants.LOGIN_TYPE_EMAIL;
         }
-
+        // 生成新的访问令牌
         String newAccessToken = generateAccessToken(user, loginType);
         String newRefreshToken = generateRefreshToken(userIdStr, loginType);
         storeRefreshToken(newRefreshToken, userIdStr);
+        // 构建令牌包
         return buildTokenBundle(newAccessToken, newRefreshToken, user);
     }
 
@@ -209,6 +214,7 @@ public class AuthServiceImpl implements IAuthService {
                 userService.updateById(user);
             }
         } else {
+            //新建一个用户，将github上的用户信息复制到该用户上
             user = new User();
             user.setNickname(resolveUniqueNickname(loginName, displayName, githubId));
             if (StringUtils.hasText(avatarUrl)) {
@@ -248,8 +254,10 @@ public class AuthServiceImpl implements IAuthService {
     }
 
     private String resolveUniqueNickname(String loginName, String displayName, String githubId) {
+        // ① 确定基础昵称：优先 displayName → loginName → "gh_" + githubId
         String base = StringUtils.hasText(displayName) ? displayName.trim()
                 : (StringUtils.hasText(loginName) ? loginName.trim() : ("gh_" + githubId));
+        // ② 清洗：合并多余空白 → 截断 40 字 → 兜底
         base = base.replaceAll("\\s+", " ").trim();
         if (base.length() > 40) {
             base = base.substring(0, 40);
@@ -257,9 +265,11 @@ public class AuthServiceImpl implements IAuthService {
         if (!StringUtils.hasText(base)) {
             base = "gh_" + githubId;
         }
+        // ③ 第一级：直接使用 base，检查是否冲突
         if (userService.lambdaQuery().eq(User::getNickname, base).count() == 0) {
             return base;
         }
+        // ④ 第二级：base + "_" + githubId 后 6 位
         String suffix = githubId.length() > 6 ? githubId.substring(githubId.length() - 6) : githubId;
         String candidate = base + "_" + suffix;
         if (candidate.length() > 50) {
@@ -373,22 +383,23 @@ public class AuthServiceImpl implements IAuthService {
 
     @Override
     public VerifyCodeResponseVO verifyForgotPasswordCode(String email, String code) {
+        //参数校验
         if (!StringUtils.hasText(email) || !StringUtils.hasText(code)) {
             throw new BizException(Result.CODE_ERROR, "邮箱和验证码不能为空");
         }
-
+        //重Redis获取验证码
         String codeKey = AuthConstants.FORGOT_PASSWORD_CODE_PREFIX + email;
         String cachedCode = stringRedisTemplate.opsForValue().get(codeKey);
         if (!StringUtils.hasText(cachedCode) || !code.trim().equals(cachedCode)) {
             throw new BizException(Result.CODE_ERROR, "验证码错误或已过期");
         }
-
+        //校验用户是否存在
         UserAuth userAuth = userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email);
         if (userAuth == null) {
             stringRedisTemplate.delete(codeKey);
             throw new BizException(Result.CODE_ERROR, "用户不存在");
         }
-
+        //签发一次性重置令牌
         String resetToken = UUID.randomUUID().toString();
         String resetKey = AuthConstants.RESET_TOKEN_PREFIX + resetToken;
         stringRedisTemplate.opsForValue().set(
@@ -397,8 +408,10 @@ public class AuthServiceImpl implements IAuthService {
                 AuthConstants.RESET_TOKEN_TTL_MINUTES,
                 TimeUnit.MINUTES
         );
+        //删除验证码
         stringRedisTemplate.delete(codeKey);
 
+        //返回resetToken
         VerifyCodeResponseVO vo = new VerifyCodeResponseVO();
         vo.setToken(resetToken);
         return vo;
@@ -450,9 +463,11 @@ public class AuthServiceImpl implements IAuthService {
         if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "无效的访问令牌");
         }
-
+        //将访问令牌添加到黑名单
         String blacklistKey = AuthConstants.ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(accessToken);
+        //获取访问令牌过期时间
         long ttlMillis = claims.getExpiration().getTime() - System.currentTimeMillis();
+        //设置黑名单过期时间为访问令牌过期时间
         if (ttlMillis < AuthConstants.BLACKLIST_MIN_TTL_MILLIS) {
             ttlMillis = AuthConstants.BLACKLIST_MIN_TTL_MILLIS;
         }
@@ -462,7 +477,7 @@ public class AuthServiceImpl implements IAuthService {
                 ttlMillis,
                 TimeUnit.MILLISECONDS
         );
-
+        //在redis中注销刷新令牌
         if (StringUtils.hasText(refreshToken)) {
             userSessionRevoker.revokeRefreshToken(refreshToken, String.valueOf(claims.getSubject()));
         }
@@ -505,16 +520,20 @@ public class AuthServiceImpl implements IAuthService {
     private SendCodeResponseVO sendVerificationCode(String email, String codePrefix, String ratePrefix,
                                                     long ttlMinutes, String mailSubject) {
         String rateKey = ratePrefix + email;
+        //获取频率限制过期时间
         Long expireSeconds = stringRedisTemplate.getExpire(rateKey, TimeUnit.SECONDS);
+        //返回频率限制倒计时
         if (expireSeconds != null && expireSeconds > 0) {
             SendCodeResponseVO rateLimitVO = new SendCodeResponseVO();
             rateLimitVO.setRetryAfter(expireSeconds);
             return rateLimitVO;
         }
-
+        //生成验证码
         String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
+        //将验证码写入 Redis
         String codeKey = codePrefix + email;
         stringRedisTemplate.opsForValue().set(codeKey, code, ttlMinutes, TimeUnit.MINUTES);
+        //将频率限制写入 Redis
         stringRedisTemplate.opsForValue().set(rateKey, "1", AuthConstants.CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
 
         SimpleMailMessage message = new SimpleMailMessage();

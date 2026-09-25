@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -51,9 +52,18 @@ public class AiAnswerCache {
         redisTemplate.delete(buildKey(userId, query));
     }
 
+    /**
+     * 生成缓存 Key  固定长度 MD5（userid+query）
+     * @param userId
+     * @param query
+     * @return
+     */
     private String buildKey(Long userId, String query) {
-        String normalized = query == null ? "" : query.trim().toLowerCase();
+        //归一化：去空格 + 转小写
+        String normalized = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        //拼接用户 ID + 归一化后的查询字符串
         String raw = userId + "|" + normalized;
+        // MD5 摘要（固定长度，避免 Key 过长）
         String digest = DigestUtils.md5DigestAsHex(raw.getBytes(StandardCharsets.UTF_8));
         return KEY_PREFIX + digest;
     }

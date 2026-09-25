@@ -34,9 +34,9 @@ public class MemeAgentProperties {
 
     @Data
     public static class Ai {
-        private int maxHistoryTokens = 3000;
+        private int maxHistoryTokens = 10000;
         private int maxOutputTokens = 512;
-        private long cacheTtlSeconds = 120L;
+        private long cacheTtlSeconds = 24 * 60 * 60L;
         private int rateLimitPerMinute = 20;
         /** 保守估算：每 token 约等于多少字符（中文场景） */
         private int charsPerTokenEstimate = 3;

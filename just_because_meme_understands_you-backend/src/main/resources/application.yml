@@ -18,7 +18,7 @@
 server:
   # HTTP 端口，可用 SERVER_PORT 覆盖
   port: ${SERVER_PORT:8080}
-
+  forward-headers-strategy: framework
 spring:
   application:
     name: just_because_meme_understands_you
@@ -72,14 +72,29 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
-      # 无密码可留空；有密码设 REDIS_PASSWORD 或在 dev 文件中填写
-      password: ${REDIS_PASSWORD:}
       timeout: 5000ms
       lettuce:
         pool:
           max-active: 20
           max-wait: -1ms
           max-idle: 10
+# ---------- Redisson（分布式锁 / 限流 / Pub-Sub）----------
+redisson:
+  singleServerConfig:
+    address: redis://${REDIS_HOST}:${REDIS_PORT}
+    connect-timeout: 10000
+    timeout: 3000
+    retry-attempts: 3
+    retry-interval: 1500
+    connection-pool-size: 32
+    connection-minimum-idle-size: 8
+    subscription-connection-pool-size: 16
+    subscription-connection-minimum-idle-size: 4
+    idle-connection-timeout: 10000
+    keep-alive: true
+    tcp-no-delay: true
+  threads: 16
+  netty-threads: 32
 
 # ---------- 阿里云 OSS（上传 / 读图）----------
 oss:
@@ -93,7 +108,7 @@ oss:
   # 对外读图域名；生产建议填 CDN
   publicBaseUrl: ${OSS_PUBLIC_BASE_URL:}
   # 申请上传凭证限流：每用户每 IP 每分钟次数
-  policy-rate-limit-per-minute: 10
+  policy-rate-limit-per-minute: ${OSS_POLICY_RATE_LIMIT_PER_MINUTE:10}
 
 # ---------- JWT ----------
 jwt:
@@ -120,8 +135,6 @@ auth:
 # ---------- 安全头 / CORS / 反代 / 反馈 ----------
 app:
   security:
-    # 可信反向代理 IP（逗号分隔）；仅来自这些 IP 时才信任 X-Forwarded-For
-    trusted-proxies: ${TRUSTED_PROXIES:}
     headers:
       # 是否附加安全响应头
       enabled: ${SECURITY_HEADERS_ENABLED:true}
@@ -210,4 +223,3 @@ meme:
     publisher-user-id: ${MEME_CRAWL_PUBLISHER_USER_ID:0}
     live-limit: ${MEME_CRAWL_LIVE_LIMIT:8}
     live-hours: ${MEME_CRAWL_LIVE_HOURS:48}
-

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * AI 业务上下文组装器。
  * 从业务 MySQL 组装 Agent 业务上下文（禁止 Python 直连 MySQL）。
  */
 @Component
@@ -36,7 +37,7 @@ public class AiBusinessContextAssembler {
     public AssembledContext assemble(String query) {
         String keyword = query != null ? query.trim() : "";
         if (!StringUtils.hasText(keyword)) {
-            return AssembledContext.empty();
+            return AssembledContext.empty();// 空查询直接返回空上下文
         }
         // 过长问句截断后再做 LIKE，避免无效匹配
         String searchKey = keyword.length() > 64 ? keyword.substring(0, 64) : keyword;
@@ -58,6 +59,7 @@ public class AiBusinessContextAssembler {
                 memeIds.add(meme.getId());
             }
         }
+        // 一次查询所有梗图的标签
         Map<Integer, List<String>> tagMap = loadTagNames(memeIds);
 
         List<String> hintIds = new ArrayList<>();
@@ -86,7 +88,9 @@ public class AiBusinessContextAssembler {
         if (memeIds.isEmpty()) {
             return Map.of();
         }
+        // 一次查询所有梗图的标签
         List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
+        // 按 memeId 分组
         Map<Integer, List<String>> map = new HashMap<>();
         if (rows == null) {
             return map;

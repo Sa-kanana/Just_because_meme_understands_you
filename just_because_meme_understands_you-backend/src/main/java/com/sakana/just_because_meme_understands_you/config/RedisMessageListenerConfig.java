@@ -14,8 +14,11 @@ public class RedisMessageListenerConfig {
     public RedisMessageListenerContainer redisMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             SensitiveWordReloadListener sensitiveWordReloadListener) {
+        // ① 创建消息监听容器
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        // ② 设置 Redis 连接
         container.setConnectionFactory(connectionFactory);
+        // ③ 注册监听器到指定频道
         container.addMessageListener(
                 sensitiveWordReloadListener,
                 new ChannelTopic(SensitiveWordFilterService.RELOAD_CHANNEL)

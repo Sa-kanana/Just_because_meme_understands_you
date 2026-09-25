@@ -33,6 +33,13 @@ public class AiChatSessionServiceImpl implements IAiChatSessionService {
     @Resource
     private AiChatMessageMapper messageMapper;
 
+    /**
+     * 懒加载用户会话
+     * @param userId
+     * @param page
+     * @param size
+     * @return
+     */
     @Override
     public AiChatSessionPageVO pageSessions(Long userId, Integer page, Integer size) {
         requireUserId(userId);
@@ -61,6 +68,14 @@ public class AiChatSessionServiceImpl implements IAiChatSessionService {
         return vo;
     }
 
+    /**
+     * 懒加载会话消息
+     * @param userId
+     * @param sessionId
+     * @param page
+     * @param size
+     * @return
+     */
     @Override
     public AiChatMessagePageVO pageMessages(Long userId, Long sessionId, Integer page, Integer size) {
         requireUserId(userId);
@@ -90,16 +105,25 @@ public class AiChatSessionServiceImpl implements IAiChatSessionService {
         return vo;
     }
 
+    /**
+     * 软删除会话
+     * @param userId
+     * @param sessionId
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void softDeleteSession(Long userId, Long sessionId) {
+        // ① 基础权限校验：确保 userId 有效
         requireUserId(userId);
+        // ② 归属权校验：确保该会话确实属于当前用户
         requireOwnedSession(userId, sessionId);
 
         int updated = sessionMapper.update(null, new LambdaUpdateWrapper<AiChatSession>()
+                // 条件：ID 匹配 + 用户 ID 匹配 + 当前状态为未删除
                 .eq(AiChatSession::getId, sessionId)
                 .eq(AiChatSession::getUserId, userId)
                 .eq(AiChatSession::getIsDeleted, DataStatusConstants.NOT_DELETED)
+                // 设置：标记为已删除 + 更新修改时间
                 .set(AiChatSession::getIsDeleted, DataStatusConstants.DELETED)
                 .set(AiChatSession::getUpdateTime, LocalDateTime.now()));
         if (updated <= 0) {
@@ -107,6 +131,12 @@ public class AiChatSessionServiceImpl implements IAiChatSessionService {
         }
     }
 
+    /**
+     * 获取自己的会话
+     * @param userId
+     * @param sessionId
+     * @return
+     */
     private AiChatSession requireOwnedSession(Long userId, Long sessionId) {
         if (sessionId == null || sessionId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "sessionId 不合法");
@@ -122,6 +152,10 @@ public class AiChatSessionServiceImpl implements IAiChatSessionService {
         return session;
     }
 
+    /**
+     * 校验用户 ID 是否有效
+     * @param userId
+     */
     private void requireUserId(Long userId) {
         if (userId == null || userId <= 0) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");

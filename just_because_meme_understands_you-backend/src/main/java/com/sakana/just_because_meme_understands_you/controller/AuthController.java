@@ -24,8 +24,11 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.redisson.api.RRateLimiter;
+import org.redisson.api.RateIntervalUnit;
+import org.redisson.api.RateType;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseCookie;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -58,7 +61,9 @@ public class AuthController {
     private ClientIpResolver clientIpResolver;
 
     @Resource
-    private StringRedisTemplate stringRedisTemplate;
+    private RedissonClient redissonClient;
+
+
 
     @Value("${jwt.refresh-expiration}")
     private long refreshExpirationMillis;
@@ -245,16 +250,20 @@ public class AuthController {
     }
 
     private void checkRefreshQpsLimit(HttpServletRequest request, String refreshToken) {
-        String clientIp = clientIpResolver.resolve(request);
-        String tokenFingerprint = StringUtils.hasText(refreshToken)
-                ? DigestUtil.md5Hex(refreshToken)
-                : "no-token";
-        String rateKey = REFRESH_QPS_KEY_PREFIX + clientIp + ":" + tokenFingerprint;
-        Long count = stringRedisTemplate.opsForValue().increment(rateKey);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(rateKey, REFRESH_QPS_WINDOW_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        // 无 token 直接拒绝，不参与限流
+        if (!StringUtils.hasText(refreshToken)) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
         }
-        if (count != null && count > refreshQpsLimit) {
+
+        String clientIp = clientIpResolver.resolve(request);
+        String rateKey = REFRESH_QPS_KEY_PREFIX + clientIp + ":" + DigestUtil.md5Hex(refreshToken);
+
+        // 使用 Redisson 令牌桶替代 INCR + EXPIRE
+        RRateLimiter rateLimiter = redissonClient.getRateLimiter(rateKey);
+        rateLimiter.trySetRate(RateType.OVERALL, refreshQpsLimit,
+                REFRESH_QPS_WINDOW_SECONDS, RateIntervalUnit.SECONDS);
+
+        if (!rateLimiter.tryAcquire(1)) {
             throw new BizException(Result.CODE_TOO_MANY_REQUESTS, "刷新请求过于频繁，请稍后重试");
         }
     }

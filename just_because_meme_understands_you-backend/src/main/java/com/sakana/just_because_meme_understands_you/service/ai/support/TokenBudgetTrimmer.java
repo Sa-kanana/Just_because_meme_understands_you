@@ -22,23 +22,27 @@ public class TokenBudgetTrimmer {
     }
 
     public List<AiChatMessage> trim(List<AiChatMessage> messages, int maxTokens) {
+        //空列表直接返回
         if (messages == null || messages.isEmpty()) {
             return List.of();
         }
+        //确定 Token 预算（默认 3000）
         int budget = maxTokens > 0 ? maxTokens : properties.getAi().getMaxHistoryTokens();
+        //按创建时间升序排序
         List<AiChatMessage> sorted = messages.stream()
                 .sorted(Comparator.comparing(AiChatMessage::getCreateTime))
                 .toList();
 
+        //从最新消息开始倒序遍历，保留最近的对话
         List<AiChatMessage> kept = new ArrayList<>();
         int used = 0;
         for (int i = sorted.size() - 1; i >= 0; i--) {
             AiChatMessage msg = sorted.get(i);
-            int estimate = estimateTokens(msg.getContent());
+            int estimate = estimateTokens(msg.getContent());//估算 Token 数
             if (used + estimate > budget && !kept.isEmpty()) {
-                break;
+                break;// 超出预算且已保留至少一条消息，停止
             }
-            kept.add(0, msg);
+            kept.add(0, msg);// 插入到列表头部，保持时间顺序
             used += estimate;
         }
         return kept;
@@ -48,6 +52,7 @@ public class TokenBudgetTrimmer {
         if (!StringUtils.hasText(text)) {
             return 0;
         }
+        //每 3 个字符约等于 1 个 Token
         int charsPerToken = Math.max(1, properties.getAi().getCharsPerTokenEstimate());
         return Math.max(1, (text.length() + charsPerToken - 1) / charsPerToken);
     }

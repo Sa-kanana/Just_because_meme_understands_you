@@ -50,16 +50,20 @@ public class OssUrlHelper {
 
     @PostConstruct
     void init() {
+        //构建默认域名：https://{bucket}.{endpoint}
         String defaultHost = buildDefaultHost();
         if (!StringUtils.hasText(uploadHost)) {
             uploadHost = defaultHost;
         }
+        //未配置上传域名 → 使用默认域名
         if (!StringUtils.hasText(publicBaseUrl)) {
             publicBaseUrl = defaultHost;
         }
+        //去除末尾斜杠（统一格式）
         uploadHost = stripTrailingSlash(uploadHost.trim());
         publicBaseUrl = stripTrailingSlash(publicBaseUrl.trim());
 
+        //收集所有已知域名，用于后续判断 URL 归属
         Set<String> hosts = new HashSet<>();
         collectHost(uploadHost, hosts);
         collectHost(publicBaseUrl, hosts);
@@ -80,13 +84,16 @@ public class OssUrlHelper {
      * 外部链接（非本 Bucket/CDN）原样返回。
      */
     public String toPublicUrl(String stored) {
+        //空值原样返回
         if (!StringUtils.hasText(stored)) {
             return stored;
         }
+        //外部链接（非本 Bucket/CDN）原样返回
         String trimmed = stored.trim();
         if (isExternalUrl(trimmed) && !isOwnedObjectUrl(trimmed)) {
             return trimmed;
         }
+        //本系统资源，拼接 publicBaseUrl
         String key = extractObjectKey(trimmed);
         if (!StringUtils.hasText(key)) {
             return trimmed;
@@ -115,7 +122,7 @@ public class OssUrlHelper {
         String trimmed = input.trim();
         if (isExternalUrl(trimmed)) {
             if (isOwnedObjectUrl(trimmed)) {
-                return extractObjectKey(trimmed);
+                return extractObjectKey(trimmed); //本系统资源，提取 objectKey 存储到 DB
             }
             return trimmed;
         }
@@ -126,6 +133,10 @@ public class OssUrlHelper {
      * 校验上传后的图片 key 属于本 Bucket 且前缀合法。
      */
     public void assertOwnedImageKey(String keyOrUrl, String... allowedPrefixes) {
+        // 不能为空
+        // 不能是外部链接（必须先上传到 OSS）
+        // 前缀必须在白名单内
+        // 扩展名必须是 .jpg/.png/.webp/.gif
         String key = normalizeForStorage(keyOrUrl);
         if (!StringUtils.hasText(key)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "图片地址不能为空");
@@ -244,13 +255,19 @@ public class OssUrlHelper {
     }
 
     private boolean isOwnedObjectUrl(String url) {
+        // 1. 如果不是外部 URL（比如是相对路径 "/static/images/a.png"）
+        //    那它肯定属于自家资源，直接返回 true
         if (!isExternalUrl(url)) {
             return true;
         }
+        // 2. 将字符串解析为 URI 对象，提取它的域名（Host）
         try {
-            URI uri = URI.create(url);
+            // 3. 提取域名并转为小写（如 "oss.mycompany.com"）
+            //    检查这个域名是否存在于事先准备好的已知域名白名单 (knownHosts) 中
+            URI uri = new URI(url);
             return uri.getHost() != null && knownHosts.contains(uri.getHost().toLowerCase(Locale.ROOT));
         } catch (Exception ignored) {
+            // 4. 如果 URL 格式非法（比如传了个乱码或非标准字符串），解析抛异常，直接视作“非自家资源”
             return false;
         }
     }
@@ -260,11 +277,13 @@ public class OssUrlHelper {
             return urlOrKey;
         }
         String trimmed = urlOrKey.trim();
+        //非外部链接，直接返回
         if (!isExternalUrl(trimmed)) {
             return trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
         }
         try {
-            URI uri = URI.create(trimmed);
+            //解析为 URI 对象，提取它的路径（Path）
+            URI uri = new URI(trimmed);
             String path = uri.getPath();
             if (!StringUtils.hasText(path) || "/".equals(path)) {
                 return "";

@@ -2,11 +2,15 @@ package com.sakana.just_because_meme_understands_you.service.auth;
 
 import com.sakana.just_because_meme_understands_you.common.BizException;
 import com.sakana.just_because_meme_understands_you.common.Result;
+import com.sakana.just_because_meme_understands_you.common.support.RateLimitHelper;
 import com.sakana.just_because_meme_understands_you.util.ClientIpResolver;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import org.redisson.api.RAtomicLong;
+import org.redisson.api.RBucket;
+import org.redisson.api.RateIntervalUnit;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -34,10 +38,13 @@ public class LoginRateLimiter {
     private long lockoutMinutes;
 
     @Resource
-    private StringRedisTemplate stringRedisTemplate;
+    private RedissonClient redissonClient;
 
     @Resource
     private ClientIpResolver clientIpResolver;
+
+    @Resource
+    private RateLimitHelper rateLimitHelper;
 
     public void checkAllowed(HttpServletRequest request, String email) {
         checkIpAllowed(request);
@@ -50,14 +57,16 @@ public class LoginRateLimiter {
             return;
         }
         String failKey = FAIL_COUNT_PREFIX + normalizedEmail;
-        Long count = stringRedisTemplate.opsForValue().increment(failKey);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(failKey, lockoutMinutes, TimeUnit.MINUTES);
+        RAtomicLong failCounter = redissonClient.getAtomicLong(failKey);
+        long count = failCounter.incrementAndGet();
+        if (count == 1L) {
+            failCounter.expire(lockoutMinutes, TimeUnit.MINUTES);
         }
-        if (count != null && count >= lockoutAfterFailures) {
+        if (count >= lockoutAfterFailures) {
             String lockKey = LOCK_PREFIX + normalizedEmail;
-            stringRedisTemplate.opsForValue().set(lockKey, "1", lockoutMinutes, TimeUnit.MINUTES);
-            stringRedisTemplate.delete(failKey);
+            RBucket<String> lockBucket = redissonClient.getBucket(lockKey);
+            lockBucket.set("1", lockoutMinutes, TimeUnit.MINUTES);
+            failCounter.delete();
         }
     }
 
@@ -66,20 +75,16 @@ public class LoginRateLimiter {
         if (!StringUtils.hasText(normalizedEmail)) {
             return;
         }
-        stringRedisTemplate.delete(FAIL_COUNT_PREFIX + normalizedEmail);
-        stringRedisTemplate.delete(LOCK_PREFIX + normalizedEmail);
+        redissonClient.getAtomicLong(FAIL_COUNT_PREFIX + normalizedEmail).delete();
+        redissonClient.getBucket(LOCK_PREFIX + normalizedEmail).delete();
     }
 
     private void checkIpAllowed(HttpServletRequest request) {
         String clientIp = clientIpResolver.resolve(request);
         String rateKey = IP_RATE_PREFIX + clientIp;
-        Long count = stringRedisTemplate.opsForValue().increment(rateKey);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(rateKey, IP_RATE_WINDOW_SECONDS, TimeUnit.SECONDS);
-        }
-        if (count != null && count > loginRateLimitPerMinute) {
-            throw new BizException(Result.CODE_TOO_MANY_REQUESTS, "登录请求过于频繁，请稍后重试");
-        }
+        rateLimitHelper.acquire(rateKey, loginRateLimitPerMinute,
+                (int) IP_RATE_WINDOW_SECONDS, RateIntervalUnit.SECONDS,
+                "登录请求过于频繁，请稍后重试");
     }
 
     private void checkAccountLock(String email) {
@@ -88,8 +93,10 @@ public class LoginRateLimiter {
             return;
         }
         String lockKey = LOCK_PREFIX + normalizedEmail;
-        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(lockKey))) {
-            throw new BizException(Result.CODE_TOO_MANY_REQUESTS, "登录失败次数过多，请 " + lockoutMinutes + " 分钟后再试");
+        RBucket<String> lockBucket = redissonClient.getBucket(lockKey);
+        if (lockBucket.isExists()) {
+            throw new BizException(Result.CODE_TOO_MANY_REQUESTS,
+                    "登录失败次数过多，请 " + lockoutMinutes + " 分钟后再试");
         }
     }
 

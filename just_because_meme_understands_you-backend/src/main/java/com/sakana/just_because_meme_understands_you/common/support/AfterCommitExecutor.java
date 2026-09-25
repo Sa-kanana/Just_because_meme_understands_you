@@ -19,15 +19,20 @@ public class AfterCommitExecutor {
         if (task == null) {
             return;
         }
-        // No sync, or already past commit (nested call from afterCommit): run now.
+        // 判断 1：如果没有激活同步器，或者当前没有处于实际的数据库事务中
+        // （例如当前方法没有加 @Transactional，或者已经处于 afterCommit 回调内部）
         if (!TransactionSynchronizationManager.isSynchronizationActive()
                 || !TransactionSynchronizationManager.isActualTransactionActive()) {
+            // 条件满足：说明不需要/无法等待事务提交，直接同步运行任务！
             task.run();
             return;
         }
+        // 判断 2：当前正处于一个有效的数据库事务中
+        // 注册一个事务同步回调监听器
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                // 只有当事务真正成功 Commit 后，Spring 会自动回调这里，执行我们的任务
                 task.run();
             }
         });

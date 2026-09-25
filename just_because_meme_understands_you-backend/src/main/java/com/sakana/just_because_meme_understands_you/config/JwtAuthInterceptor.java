@@ -9,6 +9,7 @@ import com.sakana.just_because_meme_understands_you.util.DigestUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
@@ -19,6 +20,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 @Component
+@Slf4j
 public class JwtAuthInterceptor implements HandlerInterceptor {
 
     private final JwtUtil jwtUtil;
@@ -64,6 +66,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             request.setAttribute(AuthConstants.CLAIM_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
             return true;
         } catch (Exception ignored) {
+            log.warn("JWT 校验失败，IP:{}，URI:{}", request.getRemoteAddr(), request.getRequestURI());
             writeUnauthorized(response, "无效的令牌，请重新登录");
             return false;
         }

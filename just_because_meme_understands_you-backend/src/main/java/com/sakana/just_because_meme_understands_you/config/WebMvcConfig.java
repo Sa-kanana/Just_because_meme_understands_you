@@ -34,7 +34,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/detail/comments/*/anchor",
                         "/detail/comments/*/likes/status",
                         "/list"
-                );
+                ).order(1);
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns(
@@ -66,12 +66,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/",
                         "/image",
                         "/error"
-                );
+                ).order(2);
         // /user/*/profile 已对外放行用于他人主页查询，这里单独拦截 /user/me/* 需登录的操作
         registry.addInterceptor(jwtAuthInterceptor)
                 .addPathPatterns(
                         "/user/me/**"
-                );
+                ).order(3);
     }
 
 }

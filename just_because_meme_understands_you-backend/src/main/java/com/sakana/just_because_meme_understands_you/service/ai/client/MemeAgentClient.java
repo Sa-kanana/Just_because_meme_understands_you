@@ -52,14 +52,16 @@ public class MemeAgentClient {
      * 以 ServerSentEvent 解码上游 SSE，保留 event 名（token/meta/cite/done/error）。
      */
     public Flux<ServerSentEvent<String>> stream(MemeAgentStreamRequestDTO request) {
-        String path = properties.getAgent().getStreamPath();
+        String path = properties.getAgent().getStreamPath();// ① 获取路径（默认 /stream）
         return memeAgentWebClient.post()
                 .uri(path)
-                .header(INTERNAL_API_KEY_HEADER, properties.getAgent().getApiKey())
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue(request)
-                .retrieve()
+                // ② 设置请求头
+                .header(INTERNAL_API_KEY_HEADER, properties.getAgent().getApiKey())// 鉴权
+                .contentType(MediaType.APPLICATION_JSON)// 请求体格式
+                .accept(MediaType.TEXT_EVENT_STREAM)// 声明接收 SSE 格式
+                .bodyValue(request)// 发送请求体
+                .retrieve()// ③ 发起请求
+                // ④ 特殊处理 422 错误（参数校验失败）
                 .onStatus(status -> status.value() == 422, response ->
                         response.bodyToMono(String.class)
                                 .defaultIfEmpty("")
@@ -68,22 +70,25 @@ public class MemeAgentClient {
                                             request.getRequestId(), body);
                                     return response.createException();
                                 }))
+                // ⑤ 将响应体解析为 SSE 事件流
                 .bodyToFlux(SSE_TYPE)
                 .map(this::normalizeSse)
+                // ⑦ 错误日志记录
                 .doOnError(e -> log.error("MemeAgent stream failed requestId={}", request.getRequestId(), e));
     }
 
     public Mono<Void> ingestAsync(MemeAgentIngestRequestDTO request) {
-        String path = properties.getAgent().getIngestPath();
+        String path = properties.getAgent().getIngestPath();// ① 获取路径（默认 /ingest）
         return memeAgentWebClient.post()
                 .uri(path)
-                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())
+                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())// 使用写密钥（权限更高）
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
+                .bodyValue(request)// 发送灌库数据
+                .retrieve()// ③ 发起请求
                 .toBodilessEntity()
-                .then()
-                .doOnError(e -> log.error("MemeAgent ingest failed", e));
+                .then()// ⑤ 转换为 Mono<Void>
+
+                .doOnError(e -> log.error("MemeAgent ingest failed", e));// ⑥ 错误日志
     }
 
     public Mono<Void> ingestKnowledgeAsync(MemeAgentKnowledgeIngestRequestDTO request) {
@@ -124,11 +129,12 @@ public class MemeAgentClient {
      */
     public Mono<java.util.Map<String, Object>> probeHealth() {
         if (!isConfigured()) {
-            return Mono.just(java.util.Map.of());
+            return Mono.just(java.util.Map.of());// 未配置 → 直接返回空，不发起请求
         }
         return memeAgentWebClient.get()
                 .uri("/health")
                 .retrieve()
+                // 解析响应体为 Map
                 .bodyToMono(new ParameterizedTypeReference<java.util.Map<String, Object>>() {
                 })
                 .timeout(java.time.Duration.ofMillis(

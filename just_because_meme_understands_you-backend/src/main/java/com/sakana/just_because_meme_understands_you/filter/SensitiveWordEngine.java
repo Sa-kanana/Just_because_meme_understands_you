@@ -163,24 +163,26 @@ public class SensitiveWordEngine {
         boolean needAudit = false;
         boolean rejected = false;
 
+        //将文本中的所有敏感词替换为
         for (int i = 0; i < builder.length(); ) {
             SensitiveWordDfa.MatchResult match = dfa.match(builder.toString(), i);
             if (match == null) {
-                i++;
+                i++;// 未匹配到，移动指针
                 continue;
             }
             if (match.actionType == ACTION_REJECT) {
                 rejected = true;
-                break;
+                break;// 拒绝类敏感词，立即中断
             }
             if (match.actionType == ACTION_AUDIT) {
-                needAudit = true;
+                needAudit = true;// 标记需要人工审核
             }
+            // 替换敏感词为 ***
             int start = i;
             int end = match.endIndex;
             builder.replace(start, end + 1, "*".repeat(end - start + 1));
             replaced = true;
-            i = start + (end - start + 1);
+            i = start + (end - start + 1);// 跳过已替换部分
         }
 
         if (rejected) {
