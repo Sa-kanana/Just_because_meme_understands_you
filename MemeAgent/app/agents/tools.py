@@ -22,6 +22,18 @@ from app.schemas.crawl import CrawlHotMemesRequest
 
 logger = logging.getLogger(__name__)
 
+RetrievalCacheKey = tuple[str, tuple[str, ...], int]
+RetrievalCache = dict[RetrievalCacheKey, list[RetrievedChunk]]
+
+
+def retrieval_cache_key(
+    query: str,
+    hint_meme_ids: list[str],
+    top_k: int,
+) -> RetrievalCacheKey:
+    """Build the exact request-local key for one meme retrieval."""
+    return query, tuple(hint_meme_ids), top_k
+
 
 class SearchMemeInput(BaseModel):
     query: str = Field(description="用户搜梗问句或改写后的检索关键词")
@@ -143,6 +155,7 @@ def build_search_meme_tool(
     default_hint_ids: list[str] | None = None,
     default_snippets: list[dict[str, Any]] | None = None,
     default_top_k: int = 5,
+    retrieval_cache: RetrievalCache | None = None,
 ) -> StructuredTool:
     """构建带闭包上下文的检索 Tool（每次请求一份）。"""
 
@@ -152,12 +165,20 @@ def build_search_meme_tool(
     async def _run(query: str, hint_meme_ids: list[str] | None = None, top_k: int = 5) -> str:
         merged_hints = list(hint_meme_ids or []) or hints
         k = top_k or default_top_k
-        chunks = await retrieve_meme_chunks(
-            query=query,
-            hint_meme_ids=merged_hints,
-            mysql_snippets=snippets,
-            top_k=k,
+        cached_chunks = (
+            retrieval_cache.get(retrieval_cache_key(query, merged_hints, k))
+            if retrieval_cache is not None
+            else None
         )
+        if cached_chunks is None:
+            chunks = await retrieve_meme_chunks(
+                query=query,
+                hint_meme_ids=merged_hints,
+                mysql_snippets=snippets,
+                top_k=k,
+            )
+        else:
+            chunks = cached_chunks
         logger.info("search_meme_knowledge hits=%s query=%s", len(chunks), query[:80])
         return chunks_to_tool_payload(chunks)
 
