@@ -13,11 +13,13 @@ from langchain_openai import ChatOpenAI
 from app.agents.meme_agent import build_meme_search_agent
 from app.agents.prompts import build_context_block
 from app.agents.tools import (
+    RetrievalCache,
     build_search_admin_knowledge_tool,
     build_search_live_web_tool,
     build_search_meme_tool,
     parse_tool_payload,
     retrieve_meme_chunks,
+    retrieval_cache_key,
 )
 from app.core.settings import Settings, apply_langsmith_env, get_settings
 from app.retrieval.repository import RetrievedChunk
@@ -115,6 +117,9 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             mysql_snippets=snippets,
             top_k=settings.retrieval_top_k,
         )
+        retrieval_cache: RetrievalCache = {
+            retrieval_cache_key(safe_query, hint_ids, settings.retrieval_top_k): retrieved
+        }
         meme_ids = list(dict.fromkeys(chunk.meme_id for chunk in retrieved))
         yield _format_sse(
             "meta",
@@ -152,6 +157,7 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             default_hint_ids=hint_ids,
             default_snippets=snippets,
             default_top_k=settings.retrieval_top_k,
+            retrieval_cache=retrieval_cache,
         )
         live_tool = build_search_live_web_tool()
         knowledge_tool = build_search_admin_knowledge_tool(default_top_k=settings.retrieval_top_k)
