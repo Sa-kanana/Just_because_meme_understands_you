@@ -1,15 +1,15 @@
-package com.sakana.just_because_meme_understands_you.controller;
+package com.sakana.just_because_meme_understands_you.api.user.controller;
 
-import com.sakana.just_because_meme_understands_you.common.Result;
-import com.sakana.just_because_meme_understands_you.common.BizException;
-import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
-import com.sakana.just_because_meme_understands_you.service.home.IHomeImageService;
-import com.sakana.just_because_meme_understands_you.service.meme.IMemeService;
-import com.sakana.just_because_meme_understands_you.vo.HomeImageVO;
-import com.sakana.just_because_meme_understands_you.vo.MemeDetailVO;
-import com.sakana.just_because_meme_understands_you.vo.MemeListItemVO;
-import com.sakana.just_because_meme_understands_you.vo.PageVO;
-import com.sakana.just_because_meme_understands_you.vo.SimpleMemeVO;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.common.exception.BizException;
+import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
+import com.sakana.just_because_meme_understands_you.modules.home.application.IHomeImageService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
+import com.sakana.just_because_meme_understands_you.api.user.vo.HomeImageVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDetailVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.SimpleMemeVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

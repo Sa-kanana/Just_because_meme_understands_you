@@ -1,17 +1,16 @@
-package com.sakana.just_because_meme_understands_you.controller;
+package com.sakana.just_because_meme_understands_you.api.user.controller;
 
-import com.sakana.just_because_meme_understands_you.common.Result;
-import com.sakana.just_because_meme_understands_you.common.support.AuthContext;
-import com.sakana.just_because_meme_understands_you.dto.MemeCreateRequestDTO;
-import com.sakana.just_because_meme_understands_you.entity.MemeTag;
-import com.sakana.just_because_meme_understands_you.mapper.MemeTagMapper;
-import com.sakana.just_because_meme_understands_you.service.meme.MemeDeleteService;
-import com.sakana.just_because_meme_understands_you.service.meme.MemePublishService;
-import com.sakana.just_because_meme_understands_you.vo.MemeCreateResponseVO;
-import com.sakana.just_because_meme_understands_you.vo.MemeDeleteResponseVO;
-import com.sakana.just_because_meme_understands_you.vo.MemePurgeResponseVO;
-import com.sakana.just_because_meme_understands_you.vo.MemeRestoreResponseVO;
-import com.sakana.just_because_meme_understands_you.vo.MemeTagVO;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
+import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeTagService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeDeleteService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.MemePublishService;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCreateResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDeleteResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemePurgeResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeRestoreResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTagVO;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
 /**
  * 梗发布接口
@@ -38,7 +38,7 @@ public class MemeController {
     private MemeDeleteService memeDeleteService;
 
     @Resource
-    private MemeTagMapper memeTagMapper;
+    private IMemeTagService memeTagService;
 
     /**
      * 获取所有可用标签，供发布梗时选择
@@ -46,14 +46,7 @@ public class MemeController {
      */
     @GetMapping("/memes/tags")
     public Result<List<MemeTagVO>> listTags() {
-        List<MemeTag> tags = memeTagMapper.selectList(null);
-        List<MemeTagVO> voList = tags == null ? List.of() : tags.stream().map(t -> {
-            MemeTagVO vo = new MemeTagVO();
-            vo.setId(t.getId());
-            vo.setName(t.getName());
-            return vo;
-        }).toList();
-        return Result.success(voList);
+        return Result.success(memeTagService.listTagOptions());
     }
 
     /**
@@ -76,7 +69,7 @@ public class MemeController {
     public Result<MemeDeleteResponseVO> deleteOwnMeme(@PathVariable("memeId") String memeId,
                                                        HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
-        return Result.success(memeDeleteService.deleteOwnMeme(userId, AuthContext.parseLongId(memeId, "memeId")));
+        return Result.success(memeDeleteService.deleteOwnMeme(userId, RequestIdParser.parseLongId(memeId, "memeId")));
     }
 
     /**
@@ -87,7 +80,7 @@ public class MemeController {
     public Result<MemeRestoreResponseVO> restoreOwnMeme(@PathVariable("memeId") String memeId,
                                                         HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
-        return Result.success(memeDeleteService.restoreOwnMeme(userId, AuthContext.parseLongId(memeId, "memeId")));
+        return Result.success(memeDeleteService.restoreOwnMeme(userId, RequestIdParser.parseLongId(memeId, "memeId")));
     }
 
     /**
@@ -98,6 +91,6 @@ public class MemeController {
     public Result<MemePurgeResponseVO> purgeOwnMeme(@PathVariable("memeId") String memeId,
                                                       HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
-        return Result.success(memeDeleteService.purgeOwnMeme(userId, AuthContext.parseLongId(memeId, "memeId")));
+        return Result.success(memeDeleteService.purgeOwnMeme(userId, RequestIdParser.parseLongId(memeId, "memeId")));
     }
 }
