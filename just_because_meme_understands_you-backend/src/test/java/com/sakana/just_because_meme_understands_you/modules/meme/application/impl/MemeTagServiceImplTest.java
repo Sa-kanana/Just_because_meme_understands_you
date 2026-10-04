@@ -6,6 +6,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.M
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -29,7 +30,7 @@ class MemeTagServiceImplTest {
 
     @Test
     void listTagOptionsReturnsEmptyWhenMapperReturnsNull() {
-        when(memeTagMapper.selectList(org.mockito.ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(null);
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(null);
 
         assertEquals(List.of(), service.listTagOptions());
 
@@ -38,7 +39,7 @@ class MemeTagServiceImplTest {
 
     @Test
     void listTagOptionsReturnsEmptyWhenMapperReturnsEmpty() {
-        when(memeTagMapper.selectList(org.mockito.ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(List.of());
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(List.of());
 
         assertEquals(List.of(), service.listTagOptions());
 
@@ -51,7 +52,7 @@ class MemeTagServiceImplTest {
         MemeTag nullableFields = tag(null, null);
         MemeTag middle = tag(4, "alpha");
         MemeTag repeated = tag(11, "zeta");
-        when(memeTagMapper.selectList(org.mockito.ArgumentMatchers.<Wrapper<MemeTag>>isNull()))
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull()))
                 .thenReturn(List.of(first, nullableFields, middle, repeated));
 
         List<MemeTagVO> result = service.listTagOptions();
