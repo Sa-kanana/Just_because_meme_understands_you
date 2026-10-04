@@ -16,9 +16,9 @@ class ApiControllerDependencyTests {
 
     private static final Pattern FORBIDDEN_IMPORT = Pattern.compile(
             "(?m)^\\s*import\\s+(?:static\\s+)?"
-                    + "com\\.sakana\\.just_because_meme_understands_you\\.modules\\.[\\w.]+"
+                    + "com\\.sakana\\.just_because_meme_understands_you\\.modules(?:\\.[\\w$]+)+"
                     + "\\.(?:domain\\.entity|infrastructure\\.persistence\\.mapper)"
-                    + "(?:\\.[\\w]+)?\\s*;");
+                    + "(?:\\.[\\w$]+)*(?:\\.\\*)?\\s*;");
 
     @Test
     void apiControllersMustNotImportDomainEntitiesOrPersistenceMappers() throws Exception {
@@ -45,5 +45,30 @@ class ApiControllerDependencyTests {
 
         assertFalse(controllerCount == 0, "未找到待检查的 API Controller 源码");
         assertTrue(violations.isEmpty(), () -> "API Controller 存在越层依赖: " + violations);
+    }
+
+    @Test
+    void forbiddenImportPatternCatchesWildcardAndStaticImports() {
+        List<String> forbiddenImports = List.of(
+                "import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag;",
+                "import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.*;",
+                "import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;",
+                "import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.*;",
+                "import static com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag.FIELD;",
+                "import static com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag.*;",
+                "import static com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper.FIELD;"
+        );
+
+        for (String importLine : forbiddenImports) {
+            assertTrue(FORBIDDEN_IMPORT.matcher(importLine).find(), importLine);
+        }
+
+        List<String> allowedImports = List.of(
+                "import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;",
+                "import com.sakana.just_because_meme_understands_you.modules.meme.domain.entityhelper.Meme;"
+        );
+        for (String importLine : allowedImports) {
+            assertFalse(FORBIDDEN_IMPORT.matcher(importLine).find(), importLine);
+        }
     }
 }
