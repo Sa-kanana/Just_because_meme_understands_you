@@ -1,5 +1,7 @@
 package com.sakana.just_because_meme_understands_you.api.user.controller;
 
+import org.springframework.web.bind.annotation.RequestMapping;
+
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCreateRequestDTO;
@@ -29,6 +31,7 @@ import com.sakana.just_because_meme_understands_you.common.validation.RequestIdP
  * @author sakana
  */
 @RestController
+@RequestMapping("/v1")
 public class MemeController {
 
     @Resource
@@ -42,17 +45,17 @@ public class MemeController {
 
     /**
      * 获取所有可用标签，供发布梗时选择
-     * GET /memes/tags
+     * GET /v1/tags
      */
-    @GetMapping("/memes/tags")
+    @GetMapping("/tags")
     public Result<List<MemeTagVO>> listTags() {
         return Result.success(memeTagService.listTagOptions());
     }
 
     /**
      * 发布梗（需登录）
-     * POST /memes
-     * 图片资源采用两阶段法：前端先调 /oss/policy 直传 OSS 拿到 URL，再随表单提交。
+     * POST /v1/memes
+     * 图片资源采用两阶段法：前端先调 /v1/uploads/policies 直传 OSS 拿到 URL，再随表单提交。
      */
     @PostMapping("/memes")
     public Result<MemeCreateResponseVO> publish(@RequestBody MemeCreateRequestDTO request,
@@ -63,7 +66,7 @@ public class MemeController {
 
     /**
      * 删除自己发布的梗（需登录，软删除）
-     * DELETE /memes/{memeId}
+     * DELETE /v1/memes/{memeId}
      */
     @DeleteMapping("/memes/{memeId}")
     public Result<MemeDeleteResponseVO> deleteOwnMeme(@PathVariable("memeId") String memeId,
@@ -74,9 +77,9 @@ public class MemeController {
 
     /**
      * 恢复已下架的梗（需登录，重新进入审核）
-     * POST /memes/{memeId}/restore
+     * POST /v1/memes/{memeId}/restorations
      */
-    @PostMapping("/memes/{memeId}/restore")
+    @PostMapping("/memes/{memeId}/restorations")
     public Result<MemeRestoreResponseVO> restoreOwnMeme(@PathVariable("memeId") String memeId,
                                                         HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
@@ -85,9 +88,9 @@ public class MemeController {
 
     /**
      * 彻底删除已下架的梗（需登录）
-     * DELETE /memes/{memeId}/purge
+     * DELETE /v1/memes/{memeId}?permanent=true
      */
-    @DeleteMapping("/memes/{memeId}/purge")
+    @DeleteMapping(value = "/memes/{memeId}", params = "permanent=true")
     public Result<MemePurgeResponseVO> purgeOwnMeme(@PathVariable("memeId") String memeId,
                                                       HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);

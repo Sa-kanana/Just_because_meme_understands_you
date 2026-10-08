@@ -101,23 +101,23 @@ export function getNotifications(params = {}) {
 
 /**
  * 未读数（顶栏）
- * GET /notifications/unread-count
+ * GET /notifications/counts
  */
 export function getNotificationUnreadCount() {
-  return request('/notifications/unread-count', { method: 'GET' }).then((res) =>
+  return request('/notifications/counts', { method: 'GET' }).then((res) =>
     normalizeUnreadCount(unwrap(res, '获取未读数失败'))
   )
 }
 
 /**
  * 单条已读
- * POST /notifications/{id}/read
+ * PATCH /notifications/{id}
  */
 export function markNotificationRead(notificationId) {
   const id = notificationId != null ? String(notificationId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少消息 id'))
-  return request(`/notifications/${encodeURIComponent(id)}/read`, {
-    method: 'POST',
+  return request(`/notifications/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
     body: JSON.stringify({}),
   }).then((res) => {
     const data = unwrap(res, '标记已读失败')
@@ -131,14 +131,14 @@ export function markNotificationRead(notificationId) {
 
 /**
  * 全部已读
- * POST /notifications/read-all?tab=all|interact|system
+ * PATCH /notifications?tab=all|interact|system
  */
 export function markAllNotificationsRead(params = {}) {
   const tabRaw = params.tab != null ? String(params.tab).trim().toLowerCase() : 'all'
   const tab = ['all', 'interact', 'system'].includes(tabRaw) ? tabRaw : 'all'
   const query = new URLSearchParams({ tab })
-  return request(`/notifications/read-all?${query}`, {
-    method: 'POST',
+  return request(`/notifications?${query}`, {
+    method: 'PATCH',
     body: JSON.stringify({}),
   }).then((res) => {
     const data = unwrap(res, '全部已读失败') || {}

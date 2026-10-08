@@ -54,7 +54,7 @@ export function deleteAdminHomeImage(id) {
 export function updateAdminHomeImageStatus(id, status) {
   const imageId = id != null ? String(id).trim() : ''
   if (!imageId) return Promise.reject(new Error('缺少 id'))
-  return request(`/admin/home-images/${encodeURIComponent(imageId)}/status`, {
+  return request(`/admin/home-images/${encodeURIComponent(imageId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   }).then((res) => assertData(res, '更新轮播状态失败'))

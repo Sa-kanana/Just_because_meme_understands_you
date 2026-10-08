@@ -43,7 +43,7 @@ MemeAgent ── PostgreSQL + pgvector
 
 两个前端都是 Vue CLI 单页应用。页面在 `src/views`，可复用组件在 `src/components`，路由在 `src/router`，Pinia 状态在 `src/stores`，后端请求集中在 `src/api`。
 
-用户端开发服务器默认监听 80 端口，管理端监听 5174 端口。两个 `vue.config.js` 都把 `/api` 代理到 `http://localhost:8080`，并移除 `/api` 前缀，所以浏览器访问 `/api/list` 时，Java 实际收到的是 `/list`。请求代码读取 `VUE_APP_API_BASE_URL`，未设置时使用 `/api`。
+用户端开发服务器默认监听 80 端口，管理端监听 5174 端口。两个 `vue.config.js` 都把 `/api` 代理到 `http://localhost:8080`，并移除 `/api` 前缀；例如浏览器请求 `/api/v1/memes`，Java 实际收到的是 `/v1/memes`。请求代码读取 `VUE_APP_API_BASE_URL`，未设置时使用 `/api`，并自动补上 `/v1`。
 
 用户端和管理端都使用 `VUE_APP_API_TIMEOUT` 设置 Axios 超时，默认值为 15000 毫秒。管理端仓库已经提供 `.env.development`，内容为 `/api` 和 15000 毫秒；用户端没有同名开发环境文件，直接使用代码默认值即可。生产构建使用 `.env.production.local`，变量名仍然是 `VUE_APP_API_BASE_URL`，不是 `VUE_APP_API_BASE`。
 
@@ -77,14 +77,14 @@ MemeAgent 的 `.env` 位于 `MemeAgent/.env`，不会读取根目录 `.env`。Ja
 
 | 调用方 | 路径 | 用途 |
 | --- | --- | --- |
-| 用户端 | `GET /list`、`GET /search`、`GET /detail` | 首页列表、关键词搜索、梗详情 |
-| 用户端 | `/login`、`/register`、`/user/**` | 登录注册、个人资料、关注和收藏 |
-| 用户端 | `/ai/**` | AI 搜索、会话和流式回答 |
-| 管理端 | `/admin/users`、`/admin/memes`、`/admin/knowledge` | 管理用户、梗和知识库 |
-| 管理端 | `/ai/ops`、`/ai/ingest`、`/ai/crawl` | AI 状态、向量回填和热梗采集 |
+| 用户端 | `GET /v1/home`、`GET /v1/memes`、`GET /v1/meme-searches`、`GET /v1/memes/{memeId}` | 首页、梗列表、关键词搜索和梗详情 |
+| 用户端 | `POST /v1/auth/sessions`、`POST /v1/users`、`/v1/users/**` | 登录注册、个人资料、关注和收藏 |
+| 用户端 | `/v1/ai/**` | AI 搜索、会话和流式回答 |
+| 管理端 | `/v1/admin/users`、`/v1/admin/memes`、`/v1/admin/knowledge-documents` | 管理用户、梗和知识库 |
+| 管理端 | `/v1/admin/ai/operations`、`/v1/admin/ai/ingestion-jobs`、`/v1/admin/ai/crawl-jobs` | AI 状态、向量回填和热梗采集 |
 | Java → Agent | `/health`、`/stream`、`/ingest`、`/ingest/knowledge` | 探活、生成、灌库和知识入库 |
 
-Java API 没有统一的 `/api` 前缀；`/api` 只是两个前端开发服务器的代理路径。生产反向代理也要把外部 `/api/...` 转发到 Java 的 `/...`。
+Java 业务 API 统一使用 `/v1` 前缀。两个前端默认请求 `/api/v1/...`，开发代理和生产反向代理应移除 `/api` 后转发到 Java，例如将 `/api/v1/memes` 转发为 `/v1/memes`。完整路由以仓库根目录的 `RESTFUL_API.md` 为准。
 
 ## 仓库结构
 
@@ -168,6 +168,20 @@ SOURCE just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql
 USE meme;
 SHOW TABLES;
 ```
+
+增量结构变更由 Flyway 在 Java 后端启动时自动执行，迁移文件位于 `just_because_meme_understands_you-backend/src/main/resources/db/migration/`，版本记录在 `flyway_schema_history`。
+
+- **全新数据库：** 先创建 `meme` 数据库并执行上面的 `mysql.sql` 初始化基础 schema，再启动 Java 后端。Flyway 会记录 `20261003` 基线并按版本执行后续迁移。
+- **已有数据库：** 先备份数据库，确认后端连接的是 `meme` 库且账号有建表/改表权限，再启动 Java 后端。首次接入时 Flyway 会记录当前 schema 基线并补齐尚未应用的增量迁移；旧功能迁移即使曾手动执行也可安全重试。
+- 迁移成功后可检查记录：
+
+```sql
+SELECT installed_rank, version, description, success
+FROM flyway_schema_history
+ORDER BY installed_rank;
+```
+
+已执行的版本文件不要再修改；新增数据库变更时创建更大的 `V版本号__描述.sql` 文件。每个 DDL 列都要有中文 `COMMENT`，数据复制语句要逐字段注明来源和目标。
 
 至少应能看到 `user`、`user_auth`、`meme`、`meme_comment`、`meme_resource`、`meme_tag`、`user_favorite`、`user_notification`、`admin_knowledge`、`ai_chat_session` 和 `ai_chat_message`。
 
@@ -394,7 +408,7 @@ npm run serve
 npm run serve -- --port 8081
 ```
 
-此时访问 http://localhost:8081，并在后端 CORS 白名单加入该 Origin。若启用 GitHub OAuth，也需把前端回调地址改为 `http://localhost:8081/login/oauth/callback`。
+此时访问 http://localhost:8081，并在后端 CORS 白名单加入该 Origin。若启用 GitHub OAuth，将 `frontend-callback-url` 改为 `http://localhost:8081/login/oauth/callback`；GitHub OAuth App 中的后端回调地址仍保持为 `http://localhost:8080/v1/auth/oauth/github/callbacks`。
 
 ## 6. 启动管理后台
 
@@ -414,12 +428,12 @@ npm run serve
 
 ### GitHub 登录
 
-在 GitHub OAuth App 中配置后端回调地址 `http://localhost:8080/login/oauth/github/callback`，在 Java 的 `app.oauth.github` 下填写：
+在 GitHub OAuth App 中配置后端回调地址 `http://localhost:8080/v1/auth/oauth/github/callbacks`，并在 Java 的 `app.oauth.github` 下填写：
 
 ```yaml
 client-id: "CHANGE_ME_GITHUB_CLIENT_ID"
 client-secret: "CHANGE_ME_GITHUB_CLIENT_SECRET"
-redirect-uri: http://localhost:8080/login/oauth/github/callback
+redirect-uri: http://localhost:8080/v1/auth/oauth/github/callbacks
 frontend-callback-url: http://localhost/login/oauth/callback
 ```
 
@@ -433,10 +447,16 @@ frontend-callback-url: http://localhost/login/oauth/callback
 ## 启动后检查
 
 1. 打开用户首页，确认列表请求成功；初始化数据库无内容时，空列表属于正常情况。
-2. 访问 `http://localhost:8080/list?page=1&size=1`，检查业务响应和后端日志，确认 MySQL / Redis 正常。
+2. 访问 `http://localhost:8080/v1/memes?page=1&size=1`，检查业务响应和后端日志，确认 MySQL / Redis 正常。
 3. 完成注册或登录；注册验证码发送失败时检查 SMTP 配置。
 4. 使用管理员账号登录管理后台，确认权限与数据加载正常。
 5. 使用 AI 功能时检查 Agent 探活、内容入库和一次实际 AI 搜梗。
+
+## 自动化检查
+
+`.github/workflows/ci.yml` 在推送、Pull Request 和手动触发时运行四组检查：Java 后端测试及 Flyway 重复迁移测试、用户端和管理端 Node 测试与生产构建、MemeAgent pytest。后端任务使用临时 MySQL 8.4 与 Redis 服务，并从 `mysql.sql` 初始化基础 schema；CI 不连接开发机服务，也不需要模型、Firecrawl 或云存储密钥。
+
+MemeAgent 的固定检索问题集位于 `MemeAgent/app/eval/golden_queries.json`。离线自动化会检查评分逻辑和标签结构；连接本地 PostgreSQL/pgvector 后，可在 `MemeAgent` 目录运行 `python -m app.eval.retrieval_eval` 对真实检索排序、延迟做回归。需要额外评估完整回答时再使用 `--include-answers`；token usage 与价格统计按 [评估说明](MemeAgent/app/eval/README.md) 显式配置，不在 CI 中调用付费模型。
 
 ## 构建与部署
 

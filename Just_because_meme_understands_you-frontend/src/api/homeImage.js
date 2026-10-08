@@ -1,6 +1,6 @@
 /**
  * 首页轮播图接口
- * 接口定义：GET /image，按 sort_order、create_time 排序，仅展示 status=1 的项
+ * 接口定义：GET /home/images，按 sort_order、create_time 排序，仅展示 status=1 的项
  * @see https://api.apifox.com/temp-links/api/423242827
  */
 import { request } from './request'
@@ -51,7 +51,7 @@ function getListFromResponse(res) {
  * @returns {Promise<HomeImage[]>}
  */
 export function getHomeImages() {
-  return request('/image', { method: 'GET' }).then((res) => {
+  return request('/home/images', { method: 'GET' }).then((res) => {
     const list = getListFromResponse(res)
     return list.map(normalizeItem).filter(Boolean)
   })

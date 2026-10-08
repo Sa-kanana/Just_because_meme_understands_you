@@ -11,7 +11,7 @@
       <span class="meme-cover-ph__mark">{{ mark }}</span>
       <span v-if="caption" class="meme-cover-ph__caption">{{ caption }}</span>
     </template>
-    <i v-else class="ri-image-2-line meme-cover-ph__icon" />
+    <span v-else class="meme-cover-ph__abstract-mark">{{ mark }}</span>
   </div>
 </template>
 
@@ -131,12 +131,14 @@ export default {
   overflow: hidden;
 }
 
-.meme-cover-ph__icon {
+.meme-cover-ph__abstract-mark {
   position: relative;
   z-index: 1;
-  font-size: 28px;
-  opacity: 0.88;
-  filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.2));
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  opacity: 0.72;
+  text-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
 }
 
 .meme-cover-ph.is-abstract .meme-cover-ph__ring {

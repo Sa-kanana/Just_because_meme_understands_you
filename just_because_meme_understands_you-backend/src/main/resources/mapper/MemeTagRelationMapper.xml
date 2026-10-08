@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.sakana.just_because_meme_understands_you.mapper.MemeTagRelationMapper">
+<mapper namespace="com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper">
 
     <!-- 一次 JOIN 批量取回多个梗的标签，替代 Service 层两次查询 -->
-    <select id="selectTagsByMemeIds" resultType="com.sakana.just_because_meme_understands_you.dto.MemeTagBindDTO">
+    <select id="selectTagsByMemeIds" resultType="com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.projection.MemeTagBindDTO">
         SELECT r.meme_id AS memeId,
                t.id      AS id,
                t.name    AS name,

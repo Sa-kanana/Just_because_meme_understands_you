@@ -56,7 +56,7 @@ export function deleteAdminSensitiveWord(id) {
 export function updateAdminSensitiveWordStatus(id, status) {
   const wordId = id != null ? String(id).trim() : ''
   if (!wordId) return Promise.reject(new Error('缺少 id'))
-  return request(`/admin/sensitive-words/${encodeURIComponent(wordId)}/status`, {
+  return request(`/admin/sensitive-words/${encodeURIComponent(wordId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   }).then((res) => assertData(res, '更新敏感词状态失败'))

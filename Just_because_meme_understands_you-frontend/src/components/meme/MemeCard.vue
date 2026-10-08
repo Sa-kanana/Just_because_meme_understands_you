@@ -1,5 +1,6 @@
 <template>
   <component
+    v-if="!authorSuppressed"
     :is="rootTag"
     class="meme-card"
     :class="{ 'meme-card--link': isLink }"
@@ -65,6 +66,7 @@ import MemeCardStats from '@/components/meme/MemeCardStats.vue'
 import MemeCoverPlaceholder from '@/components/meme/MemeCoverPlaceholder.vue'
 import { formatDateShort } from '@/utils/formatDate'
 import { buildUserProfileLocation } from '@/utils/pageBreadcrumb'
+import { useUserSafetyStore } from '@/stores/userSafety'
 
 export default {
   name: 'MemeCard',
@@ -135,6 +137,10 @@ export default {
     }
   },
   computed: {
+    authorSuppressed() {
+      const userId = this.author && this.author.userId
+      return !!userId && useUserSafetyStore().isHidden(userId)
+    },
     isLink() {
       return this.to != null && this.to !== ''
     },
@@ -197,9 +203,11 @@ export default {
   width: 100%;
   text-decoration: none;
   color: inherit;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
+  border-radius: 16px;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
+  box-shadow: 0 4px 18px rgba(27, 69, 125, 0.04);
+  overflow: hidden;
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
@@ -208,10 +216,10 @@ export default {
 }
 
 .meme-card--link:hover {
-  transform: translateY(-3px);
-  border-color: var(--meme-border);
+  transform: translateY(-4px);
+  border-color: var(--meme-border-accent);
   background: var(--meme-bg-elevated);
-  box-shadow: var(--meme-shadow-soft);
+  box-shadow: var(--meme-shadow-card);
 }
 
 .meme-card--link:hover .meme-card__title {
@@ -222,13 +230,13 @@ export default {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
-  border-radius: 14px;
+  border-radius: 15px 15px 0 0;
   background: var(--meme-bg-cover);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
 }
 
 .meme-card--link:hover .meme-card__cover {
-  border-radius: 14px 14px 0 0;
+  border-radius: 15px 15px 0 0;
   box-shadow: none;
 }
 
@@ -251,6 +259,14 @@ export default {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.meme-card__media :deep(.ui-image img) {
+  transition: transform 0.28s ease;
+}
+
+.meme-card--link:hover .meme-card__media :deep(.ui-image img) {
+  transform: scale(1.035);
 }
 
 .meme-card__shade {
@@ -281,7 +297,7 @@ export default {
 }
 
 .meme-card__body {
-  padding: 10px 10px 12px;
+  padding: 13px 14px 15px;
   min-width: 0;
 }
 
@@ -296,8 +312,8 @@ export default {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.45;
   color: var(--meme-text);
   display: -webkit-box;
@@ -320,7 +336,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 10px;
   max-width: 100%;
   min-width: 0;
   cursor: pointer;

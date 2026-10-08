@@ -132,8 +132,12 @@ async def summarize_from_bilibili(
         draft = await _ainvoke_text(llm, _DRAFT_SYSTEM, user_payload)
         if len(draft) >= 12:
             return draft
-    except Exception:
-        logger.exception("Bilibili draft summarize failed topic=%s", topic)
+    except Exception as error:
+        logger.error(
+            "Bilibili draft summarize failed topic_chars=%s error_type=%s",
+            len(topic),
+            type(error).__name__,
+        )
     return fallback_intro(topic)
 
 
@@ -173,8 +177,12 @@ async def finalize_meme_intro(
         final = await _ainvoke_text(llm, _FINAL_SYSTEM, user_payload)
         if len(final) >= 12:
             return final
-    except Exception:
-        logger.exception("Finalize meme intro failed topic=%s", topic)
+    except Exception as error:
+        logger.error(
+            "Finalize meme intro failed topic_chars=%s error_type=%s",
+            len(topic),
+            type(error).__name__,
+        )
     return draft or fallback_intro(topic)
 
 

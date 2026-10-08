@@ -3,7 +3,7 @@ import { request } from './request'
 
 /**
  * 获取 OSS 前端直传凭证
- * GET /oss/policy?fileType=avatar|meme|comment|home
+ * GET /uploads/policies?fileType=avatar|meme|comment|home
  * 直传目录为 tmp/{type}/{userId}/…，业务提交时由后端 promote 到正式前缀
  * @param {string} fileType 文件类型，决定 OSS 临时目录
  * @returns {Promise<{accessKeyId, policy, signature, dir, host, publicBaseUrl, expire}>}
@@ -12,7 +12,7 @@ export function getOssPolicy(fileType = '') {
   const query = new URLSearchParams()
   if (fileType) query.set('fileType', String(fileType))
   const qs = query.toString()
-  const url = `/oss/policy${qs ? `?${qs}` : ''}`
+  const url = `/uploads/policies${qs ? `?${qs}` : ''}`
   return request(url, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       return res.data

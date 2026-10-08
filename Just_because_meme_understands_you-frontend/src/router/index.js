@@ -18,6 +18,11 @@ const routes = [
     component: () => import('@/views/Search.vue'),
   },
   {
+    path: '/trends',
+    name: 'trends',
+    component: () => import('@/views/TrendPage.vue'),
+  },
+  {
     path: '/detail/:id',
     name: 'memeDetail',
     component: () => import('@/views/MemeDetail.vue'),
@@ -57,6 +62,12 @@ const routes = [
     name: 'accountSettings',
     component: () => import('@/views/AccountSettings.vue'),
     meta: { requiresAuth: true, breadcrumbLabel: '账号设置' },
+  },
+  {
+    path: '/settings/community-safety',
+    name: 'userSafetySettings',
+    component: () => import('@/views/UserSafetySettings.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: '社区安全' },
   },
   {
     path: '/login',

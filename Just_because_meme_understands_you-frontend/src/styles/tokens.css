@@ -11,28 +11,28 @@
   color-scheme: light;
 
   /* Vuesax 要求 RGB 三元组，供 rgba(var(--vs-*), a) 使用 */
-  --vs-primary: 49, 138, 239;
+  --vs-primary: 37, 105, 232;
   --vs-success: 5, 150, 105;
   --vs-danger: 225, 29, 72;
   --vs-warn: 217, 119, 6;
 
-  --meme-primary: #318aef;
-  --meme-primary-dark: #2872d4;
-  --meme-primary-soft: rgba(49, 138, 239, 0.12);
-  --meme-accent-text: #1d4ed8;
+  --meme-primary: #2569e8;
+  --meme-primary-dark: #1e55c9;
+  --meme-primary-soft: rgba(37, 105, 232, 0.1);
+  --meme-accent-text: #1e55c9;
 
-  --meme-bg: #f4f7fb;
+  --meme-bg: #f7f9fc;
   --meme-bg-card: #ffffff;
-  --meme-bg-muted: #eef2f7;
+  --meme-bg-muted: #eef3fa;
   --meme-bg-elevated: #ffffff;
-  --meme-bg-cover: #eef2f7;
-  --meme-border: #e5e7eb;
-  --meme-border-strong: #d1d5db;
-  --meme-border-accent: rgba(49, 138, 239, 0.14);
+  --meme-bg-cover: #edf3f9;
+  --meme-border: #e2eaf4;
+  --meme-border-strong: #c9d7e9;
+  --meme-border-accent: rgba(37, 105, 232, 0.25);
 
-  --meme-text: #111827;
-  --meme-text-secondary: #64748b;
-  --meme-text-muted: #94a3b8;
+  --meme-text: #15213b;
+  --meme-text-secondary: #61718c;
+  --meme-text-muted: #8796ad;
   --meme-text-inverse: #ffffff;
 
   --meme-danger: #e11d48;
@@ -42,23 +42,22 @@
   --meme-success: #059669;
   --meme-success-soft: #d1fae5;
   --meme-overlay: rgba(15, 23, 42, 0.42);
-  --meme-focus-ring: rgba(49, 138, 239, 0.28);
+  --meme-focus-ring: rgba(37, 105, 232, 0.24);
 
-  --meme-radius-sm: 6px;
-  --meme-radius-md: 12px;
-  --meme-radius-lg: 16px;
+  --meme-radius-sm: 9px;
+  --meme-radius-md: 14px;
+  --meme-radius-lg: 18px;
   --meme-radius-xl: 24px;
-  --meme-shadow-card: 0 4px 12px rgba(49, 138, 239, 0.08);
+  --meme-shadow-card: 0 12px 32px rgba(27, 69, 125, 0.08);
   --meme-shadow-dialog: 0 24px 48px rgba(15, 23, 42, 0.18);
-  --meme-shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --meme-shadow-soft: 0 10px 28px rgba(27, 69, 125, 0.065);
 
-  --meme-gradient-page: radial-gradient(ellipse at 12% -10%, rgba(49, 138, 239, 0.14) 0%, transparent 42%),
-    radial-gradient(circle at top left, #e8f2fd 0%, #f4f7fb 48%, #ffffff 100%);
+  --meme-gradient-page: radial-gradient(ellipse at 9% -8%, rgba(37, 105, 232, 0.07) 0%, transparent 42%),
+    linear-gradient(180deg, #fafcff 0%, #f7f9fc 52%, #f9fbfe 100%);
   --meme-gradient-dialog: radial-gradient(120% 80% at 50% -10%, rgba(49, 138, 239, 0.14), transparent 55%);
-  --meme-gradient-hero: radial-gradient(circle at 92% 8%, rgba(49, 138, 239, 0.12), transparent 44%),
-    radial-gradient(circle at 6% 92%, rgba(82, 199, 184, 0.1), transparent 40%),
-    linear-gradient(155deg, #f8fbff 0%, #ffffff 52%, #f3f8ff 100%);
-  --meme-gradient-card: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  --meme-gradient-hero: radial-gradient(circle at 6% 88%, rgba(37, 105, 232, 0.08), transparent 52%),
+    linear-gradient(120deg, #ffffff 0%, #f5f9ff 100%);
+  --meme-gradient-card: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   --meme-hero-fade: linear-gradient(90deg, transparent 82%, rgba(255, 255, 255, 0.65) 100%);
   --meme-surface-ghost: rgba(255, 255, 255, 0.85);
 }

@@ -5,7 +5,11 @@ import {
   isAuthErrorHandled,
 } from '@/utils/authSession'
 
-const BASE_URL = process.env.VUE_APP_API_BASE_URL || '/api'
+const configuredBaseUrl = process.env.VUE_APP_API_BASE_URL || '/api'
+const normalizedBaseUrl = configuredBaseUrl.replace(/\/+$/, '')
+const BASE_URL = normalizedBaseUrl.endsWith('/v1')
+  ? normalizedBaseUrl
+  : `${normalizedBaseUrl}/v1`
 const DEFAULT_TIMEOUT = Number(process.env.VUE_APP_API_TIMEOUT || 15000)
 
 const http = axios.create({

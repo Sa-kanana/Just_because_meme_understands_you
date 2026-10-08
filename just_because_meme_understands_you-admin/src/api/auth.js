@@ -14,7 +14,7 @@ function assertSuccess(res, fallbackMessage) {
 }
 
 export function fetchCaptcha() {
-  return request('/captcha', {
+  return request('/captchas', {
     method: 'GET',
     skipAuthRefresh: true,
     skipAuthHeader: true,
@@ -44,7 +44,7 @@ export function login(payload = {}) {
   if (!captchaId || !captchaCode) {
     return Promise.reject(new Error('请完成人机验证'))
   }
-  return request('/login', {
+  return request('/auth/sessions', {
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -73,8 +73,8 @@ export function login(payload = {}) {
 }
 
 export function renewLogin() {
-  return request('/login/refresh', {
-    method: 'POST',
+  return request('/auth/sessions/current', {
+    method: 'PUT',
     body: JSON.stringify({}),
     withCredentials: true,
   }).then((res) => {
@@ -95,5 +95,5 @@ export function renewLogin() {
 }
 
 export function logout() {
-  return request('/logout', { method: 'POST', body: JSON.stringify({}) }).catch(() => null)
+  return request('/auth/sessions/current', { method: 'DELETE' }).catch(() => null)
 }

@@ -5,7 +5,8 @@
       :src="src"
       :alt="alt"
       :style="imgStyle"
-      loading="lazy"
+      :loading="imageLoadingMode"
+      decoding="async"
       @error="onError"
     />
     <div v-else class="ui-image__placeholder">
@@ -15,16 +16,21 @@
 </template>
 
 <script>
+import { resolveImageLoadingMode } from '@/utils/imageLoading.mjs'
+
 export default {
   name: 'UiImage',
   props: {
     src: { type: String, default: '' },
     alt: { type: String, default: '' },
     fit: { type: String, default: 'cover' },
-    lazy: { type: Boolean, default: false },
+    lazy: { type: Boolean, default: true },
   },
   emits: ['click', 'error'],
   computed: {
+    imageLoadingMode() {
+      return resolveImageLoadingMode(this.lazy)
+    },
     wrapStyle() {
       return { overflow: 'hidden' }
     },

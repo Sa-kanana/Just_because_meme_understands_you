@@ -2,7 +2,6 @@
   <section class="home-hero" aria-label="首页推荐">
     <div class="home-hero__shell">
       <div class="home-hero__copy">
-        <span class="home-hero__eyebrow">互联网梗文化社区</span>
         <h1 class="home-hero__title">
           只因<span class="home-hero__title-accent">“梗”</span>懂你
         </h1>
@@ -11,12 +10,14 @@
           欢迎来到你的互联网冲浪避风港。实时热门梗图与为你定制的幽默内容，发现今日快乐，探寻梗文化源头。
         </p>
         <div class="home-hero__actions">
-          <button type="button" class="home-hero__cta home-hero__cta--primary" @click="$emit('publish')">
+          <vs-button color="primary" class="home-hero__cta home-hero__cta--primary" @click="$emit('publish')">
+            <i class="ri-add-line" aria-hidden="true" />
             发布梗图
-          </button>
-          <button type="button" class="home-hero__cta home-hero__cta--ghost" @click="$emit('explore')">
+          </vs-button>
+          <vs-button type="border" color="primary" class="home-hero__cta home-hero__cta--ghost" @click="$emit('explore')">
+            <i class="ri-compass-3-line" aria-hidden="true" />
             探索热梗
-          </button>
+          </vs-button>
         </div>
       </div>
 
@@ -25,8 +26,26 @@
           <span class="home-hero__spinner" aria-hidden="true"></span>
           <span>推荐加载中...</span>
         </div>
-        <div v-else-if="error" class="home-hero__state home-hero__state--error">
-          <span>{{ error }}</span>
+        <div v-else-if="error" class="home-hero__state home-hero__state--error" role="status">
+          <div class="home-hero__offline-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M2.5 8.8a15 15 0 0 1 15.9-3.4M5.8 12a9.8 9.8 0 0 1 7.4-2.1M9.2 15.3a4.7 4.7 0 0 1 2.4-.6M3 3l18 18" />
+            </svg>
+          </div>
+          <div class="home-hero__offline-copy">
+            <span class="home-hero__offline-label">首页推荐</span>
+            <strong>热门推荐暂时离线</strong>
+            <span class="home-hero__offline-hint">启动后端服务后，可以重新加载推荐内容。</span>
+            <vs-button
+              type="border"
+              color="primary"
+              class="home-hero__offline-retry"
+              :disabled="loading"
+              @click="loadSlides"
+            >
+              重试推荐
+            </vs-button>
+          </div>
         </div>
         <div v-else-if="!slides.length" class="home-hero__state">
           <span>暂无推荐内容</span>
@@ -201,20 +220,19 @@ export default {
 
 <style scoped>
 .home-hero {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   overflow: hidden;
 }
 
 .home-hero__shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
   gap: 0;
-  min-height: 200px;
-  max-height: 210px;
-  border-radius: 16px;
+  min-height: 226px;
+  border-radius: 20px;
   border: 1px solid var(--meme-border);
   background: var(--meme-bg-card);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--meme-shadow-soft);
   overflow: hidden;
 }
 
@@ -223,7 +241,7 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 14px 20px;
+  padding: 26px clamp(28px, 3.8vw, 54px);
   background: var(--meme-gradient-hero);
   overflow: hidden;
 }
@@ -236,27 +254,11 @@ export default {
   pointer-events: none;
 }
 
-.home-hero__eyebrow {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: fit-content;
-  margin-bottom: 6px;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--meme-text-muted);
-  background: transparent;
-}
-
 .home-hero__title {
   position: relative;
   z-index: 1;
-  margin: 0 0 6px;
-  font-size: 24px;
+  margin: 0 0 10px;
+  font-size: clamp(34px, 3.3vw, 46px);
   font-weight: 800;
   line-height: 1.12;
   letter-spacing: -0.03em;
@@ -273,11 +275,11 @@ export default {
 .home-hero__tagline {
   position: relative;
   z-index: 1;
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--meme-primary);
+  margin: 0 0 18px;
+  font-size: clamp(16px, 1.4vw, 18px);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--meme-text-secondary);
 }
 
 .home-hero__lead {
@@ -289,46 +291,43 @@ export default {
   z-index: 1;
   display: flex;
   flex-wrap: wrap;
+  gap: 12px;
+}
+
+.home-hero__cta.vs-button {
+  min-width: 142px;
+  height: 42px !important;
+  margin: 0;
+  padding: 0 18px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  border-radius: 12px !important;
+}
+
+.home-hero__cta :deep(.vs-button__content) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
 }
 
-.home-hero__cta {
-  min-width: 104px;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.15s ease, border-color 0.15s ease;
+.home-hero__cta i {
+  font-size: 17px;
+  line-height: 1;
 }
 
-.home-hero__cta:active {
-  transform: scale(0.98);
+.home-hero__cta--primary.vs-button {
+  box-shadow: 0 8px 18px var(--meme-focus-ring) !important;
 }
 
-.home-hero__cta--primary {
-  border: none;
-  color: #fff;
-  background: linear-gradient(135deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%);
-  box-shadow: 0 4px 12px var(--meme-focus-ring);
+.home-hero__cta--ghost.vs-button {
+  border: 1px solid var(--meme-border-accent) !important;
+  color: var(--meme-primary) !important;
+  background: var(--meme-bg-card) !important;
 }
 
-.home-hero__cta--primary:hover {
-  box-shadow: 0 6px 16px var(--meme-focus-ring);
-  filter: brightness(1.04);
-}
-
-.home-hero__cta--ghost {
-  border: 1px solid var(--meme-border-strong);
-  color: var(--meme-text);
-  background: var(--meme-bg-card);
-}
-
-.home-hero__cta--ghost:hover {
-  border-color: var(--meme-primary);
-  color: var(--meme-primary);
-  background: var(--meme-primary-soft);
+.home-hero__cta--ghost.vs-button:hover {
+  background: var(--meme-primary-soft) !important;
 }
 
 .home-hero__media {
@@ -390,7 +389,7 @@ export default {
   padding: 48px 20px 18px;
   font-size: 15px;
   font-weight: 600;
-  color: var(--meme-text-inverse);
+  color: #fff;
   background: linear-gradient(to top, rgba(15, 23, 42, 0.72) 0%, transparent 100%);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   overflow: hidden;
@@ -426,7 +425,7 @@ export default {
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
   background: var(--meme-overlay);
-  color: var(--meme-text-inverse);
+  color: #fff;
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -474,7 +473,7 @@ export default {
 
 .home-hero__dot.is-active {
   width: 22px;
-  background: var(--meme-text-inverse);
+  background: #fff;
 }
 
 .home-hero__state {
@@ -484,14 +483,101 @@ export default {
   gap: 10px;
   width: 100%;
   height: 100%;
-  min-height: 200px;
+  min-height: 226px;
   color: var(--meme-text-muted);
   font-size: 14px;
   background: var(--meme-bg-cover);
 }
 
 .home-hero__state--error {
-  color: var(--meme-danger);
+  gap: clamp(16px, 3vw, 28px);
+  padding: 24px;
+  background:
+    radial-gradient(circle at 86% 16%, var(--meme-primary-soft), transparent 34%),
+    linear-gradient(135deg, var(--meme-bg-muted), var(--meme-bg-card));
+}
+
+.home-hero__offline-mark {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 78px;
+  height: 78px;
+  place-items: center;
+  border: 1px solid var(--meme-border-accent);
+  border-radius: 25px;
+  background: linear-gradient(145deg, var(--meme-bg-card), var(--meme-primary-soft));
+  color: var(--meme-primary);
+  box-shadow: var(--meme-shadow-soft);
+}
+
+.home-hero__offline-mark::before,
+.home-hero__offline-mark::after {
+  position: absolute;
+  border: 1px solid var(--meme-border-accent);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+}
+
+.home-hero__offline-mark::before {
+  inset: -9px;
+  opacity: 0.55;
+}
+
+.home-hero__offline-mark::after {
+  top: 3px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border: 0;
+  background: var(--meme-warning);
+  box-shadow: 0 0 0 4px var(--meme-warning-soft);
+}
+
+.home-hero__offline-mark svg {
+  width: 31px;
+  height: 31px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home-hero__offline-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 340px;
+}
+
+.home-hero__offline-label {
+  color: var(--meme-primary);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.home-hero__offline-copy strong {
+  color: var(--meme-text);
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.home-hero__offline-hint {
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.home-hero__offline-retry.vs-button {
+  min-height: 34px;
+  margin-top: 3px;
+  padding: 0 13px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
 }
 
 .home-hero__spinner {
@@ -517,7 +603,7 @@ export default {
   }
 
   .home-hero__copy {
-    padding: 16px 18px 14px;
+    padding: 30px;
   }
 
   .home-hero__copy::after {
@@ -525,43 +611,59 @@ export default {
   }
 
   .home-hero__title {
-    font-size: 22px;
+    font-size: 34px;
   }
 
   .home-hero__tagline {
-    font-size: 13px;
-    margin-bottom: 10px;
+    font-size: 16px;
+    margin-bottom: 20px;
   }
 
   .home-hero__media,
   .home-hero__state {
-    min-height: 160px;
-    max-height: 180px;
+    min-height: 210px;
+    max-height: 240px;
   }
 }
 
 @media (max-width: 768px) {
   .home-hero__copy {
-    padding: 14px 14px 12px;
+    padding: 22px 24px;
   }
 
   .home-hero__title {
-    font-size: 20px;
+    font-size: clamp(28px, 7.4vw, 36px);
   }
 
   .home-hero__actions {
     gap: 8px;
   }
 
-  .home-hero__cta {
+  .home-hero__cta.vs-button {
     flex: 1;
     min-width: 0;
   }
 
   .home-hero__media,
   .home-hero__state {
-    min-height: 140px;
-    max-height: 160px;
+    min-height: 162px;
+    max-height: 190px;
+  }
+
+  .home-hero__state--error {
+    min-height: 162px;
+    max-height: none;
+  }
+
+  .home-hero__offline-mark {
+    width: 62px;
+    height: 62px;
+    border-radius: 20px;
+  }
+
+  .home-hero__offline-mark svg {
+    width: 25px;
+    height: 25px;
   }
 
   .home-hero__nav {
@@ -569,6 +671,35 @@ export default {
     width: 28px;
     height: 28px;
     font-size: 18px;
+  }
+
+  .home-hero__state--error {
+    gap: 10px;
+    padding: 18px 12px;
+  }
+
+  .home-hero__offline-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+  }
+
+  .home-hero__offline-mark svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .home-hero__offline-copy {
+    max-width: 230px;
+    gap: 5px;
+  }
+
+  .home-hero__offline-copy strong {
+    font-size: 14px;
+  }
+
+  .home-hero__offline-hint {
+    font-size: 11px;
   }
 }
 </style>

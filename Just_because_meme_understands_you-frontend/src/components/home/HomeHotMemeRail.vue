@@ -2,48 +2,46 @@
   <section class="home-hot-rail" :aria-label="title">
     <div class="meme-section-head">
       <div>
-        <p class="meme-section-kicker">{{ kicker }}</p>
         <h2 class="meme-section-title">{{ title }}</h2>
       </div>
     </div>
 
-    <div class="home-hot-rail__grid">
+    <div class="home-hot-rail__list">
       <router-link
         v-for="(item, index) in displayMemes"
         :key="item.id"
         :to="detailLocation(item.id)"
-        class="home-hot-rail__card"
+        class="home-hot-rail__row"
         :style="{ '--enter-delay': `${Math.min(index, 11) * 35}ms` }"
       >
-        <div class="home-hot-rail__cover">
-          <span class="home-hot-rail__rank" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</span>
-          <div class="home-hot-rail__media">
-            <ui-image
-              v-if="coverOf(item) && !coverErrors[item.id]"
-              :src="coverOf(item)"
-              :alt="item.name"
-              fit="cover"
-              class="home-hot-rail__img"
-              lazy
-              @error="onCoverError(item.id)"
-            />
-            <MemeCoverPlaceholder
-              v-else
-              :name="item.name"
-              :seed="item.id"
-              abstract
-            />
-          </div>
-          <div class="home-hot-rail__shade" aria-hidden="true" />
+        <span class="home-hot-rail__rank" :class="{ 'is-top': index < 3 }">{{ index + 1 }}</span>
+        <div class="home-hot-rail__media">
+          <ui-image
+            v-if="coverOf(item) && !coverErrors[item.id]"
+            :src="coverOf(item)"
+            :alt="item.name"
+            fit="cover"
+            class="home-hot-rail__img"
+            lazy
+            @error="onCoverError(item.id)"
+          />
+          <MemeCoverPlaceholder
+            v-else
+            :name="item.name"
+            :seed="item.id"
+            abstract
+          />
+        </div>
+        <div class="home-hot-rail__copy">
+          <p class="home-hot-rail__name" :title="item.name">{{ item.name || '未命名梗图' }}</p>
           <MemeCardStats
-            variant="overlay"
+            variant="inline"
             :spread="false"
             :page-views="item.pageViews"
             :likes="item.likes"
             :comments="item.comments"
           />
         </div>
-        <p class="home-hot-rail__name" :title="item.name">{{ item.name || '未命名梗图' }}</p>
       </router-link>
     </div>
   </section>
@@ -64,10 +62,6 @@ export default {
     memes: {
       type: Array,
       default: () => [],
-    },
-    kicker: {
-      type: String,
-      default: 'HOT TODAY',
     },
     title: {
       type: String,
@@ -101,112 +95,125 @@ export default {
 
 <style scoped>
 .home-hot-rail {
-  margin-bottom: 12px;
+  padding: 20px 18px 12px;
+  border: 1px solid var(--meme-border);
+  border-radius: var(--meme-radius-lg);
+  background: var(--meme-bg-card);
+  box-shadow: 0 4px 18px rgba(27, 69, 125, 0.035);
 }
 
-.home-hot-rail__grid {
+.home-hot-rail .meme-section-head {
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+
+.home-hot-rail__list {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.home-hot-rail__card {
+.home-hot-rail__row {
+  display: grid;
+  grid-template-columns: 21px 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
   min-width: 0;
-  text-decoration: none;
+  padding: 11px 3px;
+  border-bottom: 1px solid var(--meme-border);
   color: inherit;
-  animation: hot-rail-in 0.32s ease-out both;
+  text-decoration: none;
+  animation: hot-rail-in 0.3s ease-out both;
   animation-delay: var(--enter-delay, 0ms);
-  transition: transform 0.18s ease;
+  transition: background 0.16s ease;
 }
 
-.home-hot-rail__card:hover {
-  transform: translateY(-2px);
+.home-hot-rail__row:last-child {
+  border-bottom: none;
 }
 
-.home-hot-rail__cover {
-  position: relative;
-  aspect-ratio: 2 / 1;
-  border-radius: 10px;
-  background: var(--meme-bg-cover);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.07);
-  transition: box-shadow 0.2s ease;
-}
-
-.home-hot-rail__card:hover .home-hot-rail__cover {
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
-}
-
-/* 圆角裁切只作用在图片层，避免右侧点赞图标被 overflow 吃掉 */
-.home-hot-rail__media {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  overflow: hidden;
-  z-index: 0;
+.home-hot-rail__row:hover {
+  background: var(--meme-bg-muted);
 }
 
 .home-hot-rail__rank {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 3;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(8px);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .home-hot-rail__rank.is-top {
-  background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
-  box-shadow: 0 4px 12px var(--meme-focus-ring);
+  color: #fff;
+  background: var(--meme-primary);
+}
+
+.home-hot-rail__media {
+  width: 76px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--meme-bg-cover);
 }
 
 .home-hot-rail__img,
 .home-hot-rail__media :deep(.ui-image),
+.home-hot-rail__media :deep(.ui-image img),
 .home-hot-rail__media :deep(.meme-cover-ph) {
   width: 100%;
   height: 100%;
-  display: block;
 }
 
-.home-hot-rail__shade {
-  position: absolute;
-  inset: auto 0 0 0;
-  z-index: 1;
-  height: 48%;
-  border-radius: 0 0 10px 10px;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.72), transparent);
-  pointer-events: none;
+.home-hot-rail__media :deep(.meme-cover-ph) {
+  display: flex;
 }
 
-.home-hot-rail__cover :deep(.meme-card-stats) {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  z-index: 2;
-  width: auto;
-  box-sizing: border-box;
+.home-hot-rail__media :deep(.meme-cover-ph__abstract-mark) {
+  font-size: 23px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.home-hot-rail__media :deep(.meme-cover-ph__ring) {
+  border-width: 1px;
+}
+
+.home-hot-rail__copy {
+  min-width: 0;
 }
 
 .home-hot-rail__name {
-  margin: 6px 2px 0;
-  min-height: 1.3em;
-  font-size: 12px;
-  font-weight: 650;
+  margin: 0 0 8px;
   color: var(--meme-text);
-  line-height: 1.3;
-  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-hot-rail__row:hover .home-hot-rail__name {
+  color: var(--meme-primary);
+}
+
+.home-hot-rail__copy :deep(.meme-card-stats) {
+  gap: 9px;
+}
+
+.home-hot-rail__copy :deep(.meme-card-stats__chip) {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.home-hot-rail__copy :deep(.meme-card-stats__icon) {
+  width: 12px;
+  height: 12px;
 }
 
 @keyframes hot-rail-in {
@@ -221,21 +228,21 @@ export default {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-hot-rail__card {
+  .home-hot-rail__row {
     animation: none;
   }
 }
 
-@media (max-width: 960px) {
-  .home-hot-rail__grid {
+@media (max-width: 860px) {
+  .home-hot-rail__list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 22px;
   }
 }
 
-@media (max-width: 520px) {
-  .home-hot-rail__grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+@media (max-width: 560px) {
+  .home-hot-rail__list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

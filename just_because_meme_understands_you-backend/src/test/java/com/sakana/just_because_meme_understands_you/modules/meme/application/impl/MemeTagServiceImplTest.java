@@ -3,13 +3,16 @@ package com.sakana.just_because_meme_understands_you.modules.meme.application.im
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTagVO;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.assembler.MemeViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 
@@ -24,6 +27,9 @@ class MemeTagServiceImplTest {
 
     @Mock
     private MemeTagMapper memeTagMapper;
+
+    @Spy
+    private MemeViewMapper memeViewMapper = Mappers.getMapper(MemeViewMapper.class);
 
     @InjectMocks
     private MemeTagServiceImpl service;

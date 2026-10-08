@@ -3,6 +3,20 @@
  * @see https://api.apifox.cn/temp-links/api/485706738
  */
 import { request } from './request'
+import { hasPageTotal, normalizePageMetadata } from '@/utils/pageMetadata.mjs'
+
+export async function getFollowedTags() {
+  const res = await request('/users/me/followed-tags', { method: 'GET' })
+  return Array.isArray(res.data) ? res.data : []
+}
+
+export async function followTag(tagId) {
+  return request(`/users/me/followed-tags/${encodeURIComponent(tagId)}`, { method: 'PUT' })
+}
+
+export async function unfollowTag(tagId) {
+  return request(`/users/me/followed-tags/${encodeURIComponent(tagId)}`, { method: 'DELETE' })
+}
 
 function normalizeMemeItem(item) {
   if (!item || typeof item !== 'object') return null
@@ -37,7 +51,7 @@ export function getHomeBootstrap(params = {}) {
     feedSort: String(feedSort),
     feedSize: String(feedSize),
   })
-  return request(`/home/bootstrap?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/home?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       const data = res.data
       const feed = data.feed && typeof data.feed === 'object' ? data.feed : {}
@@ -49,9 +63,8 @@ export function getHomeBootstrap(params = {}) {
         feed: {
           sort: feed.sort || feedSort,
           list: normalizeMemeList(feed.list),
-          page: feed.page != null ? Number(feed.page) : 1,
-          size: feed.size != null ? Number(feed.size) : feedSize,
-          hasMore: feed.hasMore != null ? !!feed.hasMore : false,
+          totalAvailable: hasPageTotal(feed),
+          ...normalizePageMetadata(feed, { page: 1, size: feedSize }),
         },
       }
     }
@@ -66,7 +79,7 @@ export function getHomeBootstrap(params = {}) {
  */
 export function getHomeHotTags(limit = 10) {
   const query = new URLSearchParams({ limit: String(limit) })
-  return request(`/home/hot-tags?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/home/popular-tags?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       const tags = Array.isArray(res.data.tags) ? res.data.tags : []
       return tags.filter((tag) => tag && tag.id != null && tag.name)

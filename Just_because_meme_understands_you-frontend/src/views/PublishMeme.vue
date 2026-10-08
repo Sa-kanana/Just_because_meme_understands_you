@@ -246,9 +246,19 @@
           <footer class="publish-footer">
             <p class="publish-footer-hint">
               <i class="ri-shield-check-line" aria-hidden="true" />
-              提交后将进入审核，通过后会在首页展示
+              {{ draftSaved ? '草稿已自动保存到此浏览器' : '提交后将进入审核，通过后会在首页展示' }}
             </p>
             <div class="publish-actions">
+              <vs-button
+                v-if="hasDraftContent"
+                type="border"
+                color="primary"
+                class="publish-cancel-btn"
+                :disabled="submitting"
+                @click="discardDraft"
+              >
+                清空草稿
+              </vs-button>
               <vs-button
                 type="border"
                 color="primary"
@@ -305,13 +315,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from '@/utils/uiFeedback'
 import { getMemeTags, publishMeme } from '@/api/meme'
 import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
 import { isAuthErrorHandled } from '@/utils/authSession'
+import { readPublishDraft, savePublishDraft, clearPublishDraft } from '@/utils/publishDraft.mjs'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -322,15 +333,60 @@ const coverUploading = ref(false)
 const resourceUploading = ref(false)
 const imagePreviewVisible = ref(false)
 const imagePreviewSrc = ref('')
+const draftReady = ref(false)
+const draftSaved = ref(false)
 
-const form = reactive({
-  name: '',
-  introduction: '',
-  image: '',
-  tagIds: [],
-  resources: [],
-  resourceUrls: [],
-})
+function emptyForm() {
+  return {
+    name: '',
+    introduction: '',
+    image: '',
+    tagIds: [],
+    resources: [],
+    resourceUrls: [],
+  }
+}
+
+const form = reactive(emptyForm())
+
+const hasDraftContent = computed(() => Boolean(
+  form.name.trim() || form.introduction.trim() || form.image ||
+  form.tagIds.length || form.resources.length || form.resourceUrls.length
+))
+
+function draftStorage() {
+  try {
+    return window.localStorage
+  } catch (_) {
+    return null
+  }
+}
+
+watch(
+  () => authStore.isLoggedIn ? (authStore.currentUser?.id ?? authStore.currentUser?.userId) : null,
+  (id) => {
+    draftReady.value = false
+    Object.assign(form, emptyForm())
+    const restored = id != null ? readPublishDraft(draftStorage(), authStore.currentUser) : null
+    if (restored) Object.assign(form, restored)
+    draftSaved.value = Boolean(restored)
+    draftReady.value = id != null
+  },
+  { immediate: true, flush: 'sync' }
+)
+
+watch(form, () => {
+  if (!draftReady.value) return
+  draftSaved.value = savePublishDraft(draftStorage(), authStore.currentUser, form) && hasDraftContent.value
+}, { deep: true, flush: 'sync' })
+
+function discardDraft() {
+  draftReady.value = false
+  Object.assign(form, emptyForm())
+  clearPublishDraft(draftStorage(), authStore.currentUser)
+  draftSaved.value = false
+  draftReady.value = true
+}
 
 const canSubmit = computed(
   () =>
@@ -471,6 +527,9 @@ async function handleSubmit() {
       resources,
       resourceUrls: form.resourceUrls,
     })
+    draftReady.value = false
+    clearPublishDraft(draftStorage(), authStore.currentUser)
+    draftSaved.value = false
     toast.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
     const user = authStore.currentUser
     const rawId = user?.id ?? user?.userId

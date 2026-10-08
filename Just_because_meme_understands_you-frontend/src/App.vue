@@ -3,7 +3,7 @@
     <header class="site-header" :class="{ 'is-scrolled': headerScrolled }">
       <div class="header-left">
         <router-link to="/" class="logo-wrap">
-          <img class="logo-img" alt="网站 logo" src="/icon.svg?v=4" />
+          <img class="logo-img" alt="网站 logo" src="/icon.svg?v=9" />
           <span class="logo-text">只因“梗”懂你</span>
         </router-link>
         <nav class="nav-links">
@@ -15,6 +15,13 @@
             AI 搜梗
           </router-link>
           <router-link
+            to="/trends"
+            class="nav-link"
+            :class="{ active: $route.name === 'trends' }"
+          >
+            热梗趋势
+          </router-link>
+          <router-link
             :to="helpNavLocation"
             class="nav-link"
             :class="{ active: $route.name === 'help' }"
@@ -24,25 +31,20 @@
         </nav>
       </div>
 
-      <div class="header-center">
-        <vs-input
-          ref="headerSearchRef"
-          v-model="searchKeyword"
-          placeholder="搜索梗图、标签..."
-          clearable
-          block
-          icon-after
-          shape="rounded"
-          class="header-search"
-          @keydown.enter="handleSearch"
-          @click-icon="handleSearch"
-        >
-          <template #icon>
-            <i class="ri-search-line search-suffix-icon" aria-hidden="true" />
-          </template>
-        </vs-input>
-      </div>
       <div class="header-right">
+        <button
+          ref="headerSearchToggleRef"
+          type="button"
+          class="header-search-trigger"
+          :aria-expanded="searchOpen"
+          aria-controls="header-search-dialog"
+          aria-label="打开站内搜索"
+          title="搜索梗图和标签"
+          @click="toggleHeaderSearch"
+        >
+          <i class="ri-search-line" aria-hidden="true" />
+          <span>搜索</span>
+        </button>
         <button
           type="button"
           class="header-theme-btn"
@@ -107,6 +109,10 @@
                   <i class="ri-settings-3-line user-dropdown-icon"></i>
                   <span>账号设置</span>
                 </ui-dropdown-item>
+                <ui-dropdown-item command="safety">
+                  <i class="ri-shield-user-line user-dropdown-icon"></i>
+                  <span>社区安全</span>
+                </ui-dropdown-item>
                 <ui-dropdown-item command="feedback">
                   <i class="ri-chat-1-line user-dropdown-icon"></i>
                   <span>提交反馈/建议</span>
@@ -121,6 +127,59 @@
         </template>
       </div>
     </header>
+
+    <transition name="header-search-pop">
+      <div
+        v-if="searchOpen"
+        class="header-search-overlay"
+        @click.self="closeHeaderSearch"
+        @keydown="handleSearchDialogKeydown"
+      >
+        <section
+          id="header-search-dialog"
+          ref="headerSearchDialogRef"
+          class="header-search-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="header-search-title"
+          tabindex="-1"
+        >
+          <div class="header-search-dialog__heading">
+            <div>
+              <h2 id="header-search-title">搜索梗图</h2>
+              <p>输入梗图名称或标签，快速找到你想看的内容</p>
+            </div>
+            <button
+              type="button"
+              class="header-search-close"
+              aria-label="关闭搜索"
+              title="关闭"
+              @click="closeHeaderSearch"
+            >
+              <i class="ri-close-line" aria-hidden="true" />
+            </button>
+          </div>
+          <vs-input
+            ref="headerSearchRef"
+            v-model="searchKeyword"
+            placeholder="搜索梗图、标签..."
+            aria-label="搜索梗图或标签"
+            clearable
+            block
+            icon-after
+            shape="rounded"
+            class="header-search"
+            @keydown.enter="handleSearch"
+            @click-icon="handleSearch"
+          >
+            <template #icon>
+              <i class="ri-search-line search-suffix-icon" aria-hidden="true" />
+            </template>
+          </vs-input>
+          <p class="header-search-hint"><kbd>Enter</kbd> 开始搜索</p>
+        </section>
+      </div>
+    </transition>
 
     <!-- 顶部加载进度条：路由切换时展示，模拟进度更灵动 -->
     <div
@@ -211,6 +270,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
 import { useNotificationStore } from '@/stores/notification'
 import { useAiChatStore } from '@/stores/aiChat'
+import { useUserSafetyStore } from '@/stores/userSafety'
 import {
   buildUserProfileLocation,
   buildSearchLocation,
@@ -225,6 +285,7 @@ export default {
   data() {
     return {
       searchKeyword: '',
+      searchOpen: false,
       isRouteLoading: false,
       progressPercent: 0,
       progressTimer: null,
@@ -296,6 +357,7 @@ export default {
     this.startProgress()
     setTimeout(() => this.finishProgress(), 500)
     this.refreshNotificationBadge()
+    this.loadUserSafety()
   },
   beforeUnmount() {
     window.removeEventListener('route-loading', this.handleRouteLoading)
@@ -308,8 +370,9 @@ export default {
     },
     '$route'(to) {
       if (to.name === 'search' && String(to.query.focus || '') === '1') {
+        const shouldFocusSearch = String(to.query.from || '') !== 'header'
         this.$nextTick(() => {
-          this.focusHeaderSearch()
+          if (shouldFocusSearch) this.focusHeaderSearch()
           const query = { ...to.query }
           delete query.focus
           this.$router.replace({ name: 'search', query })
@@ -323,24 +386,69 @@ export default {
       if (val && !oldVal) {
         this.refreshNotificationBadge()
       }
+      if (val) this.loadUserSafety()
       if (!val) {
         useNotificationStore().reset()
         useAiChatStore().reset()
+        useUserSafetyStore().reset()
       }
     },
   },
   methods: {
-    focusHeaderSearch() {
-      const input = this.$refs.headerSearchRef
-      if (input && typeof input.focus === 'function') {
-        input.focus()
+    toggleHeaderSearch() {
+      if (this.searchOpen) {
+        this.closeHeaderSearch()
         return
       }
-      const el = input?.$el?.querySelector('input')
-      el?.focus()
+      this.focusHeaderSearch()
+    },
+    focusHeaderSearch() {
+      this.searchOpen = true
+      this.$nextTick(() => {
+        const input = this.$refs.headerSearchRef
+        if (input && typeof input.focus === 'function') {
+          input.focus()
+          return
+        }
+        input?.$el?.querySelector('input')?.focus()
+      })
+    },
+    closeHeaderSearch() {
+      this.searchOpen = false
+      this.$nextTick(() => this.$refs.headerSearchToggleRef?.focus())
+    },
+    handleSearchDialogKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        this.closeHeaderSearch()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const dialog = this.$refs.headerSearchDialogRef
+      const focusable = dialog?.querySelectorAll(
+        'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+      )
+      if (!focusable?.length) {
+        event.preventDefault()
+        dialog?.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     },
     handleSearch() {
       const keyword = this.searchKeyword?.trim() || ''
+      this.searchOpen = false
+      this.$nextTick(() => this.$refs.headerSearchToggleRef?.focus())
       this.$router.push(
         buildSearchLocation({
           keyword,
@@ -364,6 +472,9 @@ export default {
           break
         case 'account':
           this.goAccountSettings()
+          break
+        case 'safety':
+          this.$router.push({ name: 'userSafetySettings' })
           break
         case 'logout':
           this.handleLogout()
@@ -458,6 +569,13 @@ export default {
         .refreshUnreadCount()
         .catch(() => {})
     },
+    loadUserSafety() {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) return
+      const user = authStore.currentUser || {}
+      const userId = user.id != null ? user.id : user.userId
+      useUserSafetyStore().load(userId).catch(() => {})
+    },
     handleLogout() {
       this.logoutConfirmVisible = true
     },
@@ -530,14 +648,14 @@ export default {
   position: sticky;
   top: 0;
   z-index: 100;
-  height: 58px;
-  padding: 0 28px;
+  height: 68px;
+  padding: 0 clamp(20px, 4vw, 64px);
   display: grid;
-  grid-template-columns: auto minmax(220px, 380px) auto;
-  column-gap: 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 28px;
   align-items: center;
-  background: color-mix(in srgb, var(--meme-bg-elevated) 88%, transparent);
-  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 92%, transparent);
+  border-bottom: 1px solid var(--meme-border);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -552,13 +670,8 @@ export default {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 24px;
-}
-
-.header-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 30px;
+  min-width: 0;
 }
 
 .header-right {
@@ -584,6 +697,36 @@ export default {
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
+.header-search-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 76px;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--meme-border);
+  border-radius: 10px;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.header-search-trigger i {
+  font-size: 16px;
+}
+
+.header-search-trigger:hover,
+.header-search-trigger:focus-visible {
+  color: var(--meme-primary);
+  border-color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
 .header-theme-btn:hover {
   color: var(--meme-primary);
   border-color: var(--meme-primary);
@@ -598,10 +741,10 @@ export default {
 
 .header-auth__login.vs-button,
 .header-auth__register.vs-button {
-  height: 34px !important;
-  min-height: 34px !important;
-  padding: 0 14px !important;
-  border-radius: 999px !important;
+  height: 39px !important;
+  min-height: 39px !important;
+  padding: 0 19px !important;
+  border-radius: 11px !important;
   font-size: 13px !important;
   font-weight: 650 !important;
   box-shadow: none !important;
@@ -650,6 +793,8 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
   text-decoration: none;
 }
 
@@ -661,21 +806,39 @@ export default {
   display: block;
 }
 
+html.dark .logo-img {
+  filter: brightness(1.2) saturate(1.08);
+}
+
 .logo-text {
-  font-size: 18px;
-  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 19px;
+  font-weight: 750;
   letter-spacing: -0.02em;
   color: var(--meme-text);
+  white-space: nowrap;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.nav-links::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-link {
   position: relative;
+  flex: 0 0 auto;
   font-size: 14px;
   font-weight: 500;
   color: var(--meme-text-secondary);
@@ -683,6 +846,7 @@ export default {
   padding: 8px 12px;
   border-radius: var(--meme-radius-sm);
   transition: color 0.15s ease, background-color 0.15s ease;
+  white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -712,12 +876,12 @@ export default {
 
 .header-search {
   width: 100%;
-  max-width: 380px;
+  max-width: none;
 }
 
 .header-search :deep(.vs-input__wrapper) {
-  height: 38px;
-  border-radius: 999px !important;
+  height: 42px;
+  border-radius: 12px !important;
   background: var(--meme-bg-muted) !important;
   box-shadow: 0 0 0 1px var(--meme-border) inset;
   transition: box-shadow 0.18s ease, background 0.18s ease;
@@ -725,10 +889,10 @@ export default {
 
 .header-search :deep(.vs-input__original) {
   width: 100% !important;
-  height: 38px;
+  height: 42px;
   padding: 0 42px 0 16px !important;
   border: none !important;
-  border-radius: 999px !important;
+  border-radius: 12px !important;
   background: transparent !important;
   color: var(--meme-text) !important;
   font-size: 14px;
@@ -795,6 +959,114 @@ export default {
 .search-suffix-icon {
   font-size: 16px;
   line-height: 1;
+}
+
+.header-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(76px, 14vh, 132px) 16px 24px;
+  background: color-mix(in srgb, #10213b 34%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.header-search-dialog {
+  width: min(620px, 100%);
+  padding: 22px;
+  border: 1px solid var(--meme-border);
+  border-radius: 20px;
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 24px 72px rgba(16, 36, 66, 0.24);
+}
+
+.header-search-dialog__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.header-search-dialog__heading h2 {
+  margin: 0;
+  color: var(--meme-text);
+  font-size: 19px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.header-search-dialog__heading p {
+  margin: 5px 0 0;
+  color: var(--meme-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.header-search-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--meme-border);
+  border-radius: 10px;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.header-search-close:hover,
+.header-search-close:focus-visible {
+  color: var(--meme-primary);
+  border-color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
+.header-search-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 13px 2px 0;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+}
+
+.header-search-hint kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--meme-border);
+  border-radius: 5px;
+  background: var(--meme-bg-muted);
+  color: var(--meme-text-secondary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.header-search-pop-enter-active,
+.header-search-pop-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.header-search-pop-enter-active .header-search-dialog,
+.header-search-pop-leave-active .header-search-dialog {
+  transition: transform 0.18s ease;
+}
+
+.header-search-pop-enter-from,
+.header-search-pop-leave-to {
+  opacity: 0;
+}
+
+.header-search-pop-enter-from .header-search-dialog,
+.header-search-pop-leave-to .header-search-dialog {
+  transform: translateY(-8px) scale(0.985);
 }
 
 .icon-button {
@@ -905,9 +1177,134 @@ export default {
 }
 
 .page-main {
-  padding: 8px 24px 28px;
-  max-width: 1280px;
+  padding: 22px 24px 48px;
+  max-width: 1360px;
   margin: 0 auto;
+}
+
+@media (max-width: 1600px) and (min-width: 901px) {
+  .site-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 14px;
+    padding-inline: clamp(16px, 2.5vw, 32px);
+  }
+
+  .header-left {
+    gap: 12px;
+  }
+
+  .logo-text {
+    font-size: 17px;
+    white-space: nowrap;
+  }
+
+  .nav-links {
+    gap: 0;
+  }
+
+  .nav-link {
+    padding-inline: 6px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .site-header {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+    padding: 10px 20px 12px;
+  }
+
+  .header-left {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 14px;
+  }
+
+  .header-right {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .page-main {
+    padding: 18px 18px 40px;
+  }
+}
+
+@media (max-width: 560px) {
+  .site-header {
+    grid-template-rows: 36px 30px;
+    row-gap: 6px;
+    padding: 8px 14px 10px;
+  }
+
+  .header-left {
+    display: contents;
+  }
+
+  .logo-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .logo-img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+
+  .header-right {
+    gap: 5px;
+  }
+
+  .header-theme-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .header-search-trigger {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+  }
+
+  .header-search-trigger span {
+    display: none;
+  }
+
+  .header-auth {
+    gap: 5px;
+  }
+
+  .header-auth__login.vs-button,
+  .header-auth__register.vs-button {
+    height: 31px !important;
+    min-height: 31px !important;
+    padding: 0 9px !important;
+    font-size: 11px !important;
+  }
+
+  .nav-links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    overflow-x: auto;
+  }
+
+  .nav-link {
+    padding: 5px 9px;
+    font-size: 12px;
+  }
+
+  .page-main {
+    padding: 14px 14px 32px;
+  }
 }
 
 /* 顶部加载进度条：贴顶、细条、带过渡与高光 */

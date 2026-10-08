@@ -74,7 +74,7 @@ export default {
   },
   methods: {
     onCodeInput(value) {
-      const next = value != null ? String(value).toUpperCase() : ''
+      const next = value != null ? String(value) : ''
       this.$emit('update:captchaCode', next)
     },
     /**

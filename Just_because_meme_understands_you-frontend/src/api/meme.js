@@ -1,10 +1,11 @@
 /**
  * 梗的分页展示接口
- * 接口定义：GET /list?page=  （每次返回 8 个梗元素）
+ * 接口定义：GET /memes?page=  （每次返回 8 个梗元素）
  * @see https://api.apifox.com/temp-links/api/423205377
  */
 import { request } from './request'
 import { getViewSessionId } from '@/utils/viewSession'
+import { normalizePageMetadata } from '@/utils/pageMetadata.mjs'
 
 function normalizeFolderId(value) {
   if (value == null || value === '') return '0'
@@ -37,9 +38,9 @@ function normalizeFolderId(value) {
  * 获取梗分页列表
  * @param {Object} params
  * @param {number} [params.page=1]
- * @param {string} [params.sort='hot'] hot | new | comments | views | following
+ * @param {string} [params.sort='hot'] hot | new | comments | views | following | tags
  * @param {number} [params.size=16]
- * @returns {Promise<{ list: MemeItem[], page: number, size: number, hasMore: boolean }>}
+ * @returns {Promise<{ list: MemeItem[], page: number, size: number, total: number, hasMore: boolean }>}
  */
 function normalizeMemeItems(items) {
   if (!Array.isArray(items)) return []
@@ -58,37 +59,44 @@ export function getMemeList(params = {}) {
     sort: String(sort),
     size: String(size),
   })
-  return request(`/list?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/memes?${query}`, { method: 'GET' }).then((res) => {
     if (res && res.data && typeof res.data === 'object') {
       const data = res.data
       if (Array.isArray(data.list)) {
+        const metadata = normalizePageMetadata(data, { page, size })
         return {
           list: normalizeMemeItems(data.list),
-          page: data.page != null ? Number(data.page) : Number(page),
-          size: data.size != null ? Number(data.size) : Number(size),
-          hasMore: data.hasMore != null ? !!data.hasMore : false,
+          ...metadata,
         }
       }
       if (Array.isArray(data)) {
         const list = normalizeMemeItems(data)
+        const metadata = normalizePageMetadata(null, {
+          page,
+          size,
+          total: list.length,
+          hasMore: list.length >= Number(size),
+        })
         return {
           list,
-          page: Number(page),
-          size: Number(size),
-          hasMore: list.length >= Number(size),
+          ...metadata,
         }
       }
     }
     if (res && Array.isArray(res.data)) {
       const list = normalizeMemeItems(res.data)
+      const metadata = normalizePageMetadata(null, {
+        page,
+        size,
+        total: list.length,
+        hasMore: list.length >= Number(size),
+      })
       return {
         list,
-        page: Number(page),
-        size: Number(size),
-        hasMore: list.length >= Number(size),
+        ...metadata,
       }
     }
-    return { list: [], page: Number(page), size: Number(size), hasMore: false }
+    return { list: [], ...normalizePageMetadata(null, { page, size }) }
   })
 }
 
@@ -124,7 +132,7 @@ export function getMemeList(params = {}) {
 
 /**
  * 获取单个梗的详细信息
- * 接口定义：GET /detail?memeId= （梗的详细页面）
+ * 接口定义：GET /memes/{memeId}（梗的详细页面）
  * @see https://api.apifox.com/temp-links/api/425006824
  *
  * @param {number|string} memeId - 梗的唯一 id
@@ -135,8 +143,7 @@ export function getMemeDetail(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  const query = new URLSearchParams({ memeId: id })
-  return request(`/detail?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}`, { method: 'GET' }).then((res) => {
     // 接口文档：DataRespose<Meme>，{ code, message, data: { ...meme } }
     if (res && res.data && typeof res.data === 'object') {
       return res.data
@@ -148,7 +155,7 @@ export function getMemeDetail(memeId) {
 
 /**
  * 收藏梗
- * POST /detail/favorites
+ * PUT /users/me/favorites/{memeId}
  * @param {number|string} memeId
  * @param {number} [folderId=0]
  */
@@ -157,12 +164,9 @@ export function addMemeFavorite(memeId, folderId = 0) {
   if (!Number.isFinite(id) || id <= 0) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request('/detail/favorites', {
-    method: 'POST',
-    body: JSON.stringify({
-      memeId: id,
-      folderId: normalizeFolderId(folderId),
-    }),
+  return request(`/users/me/favorites/${encodeURIComponent(String(id))}`, {
+    method: 'PUT',
+    body: JSON.stringify({ folderId: normalizeFolderId(folderId) }),
   }).then((res) => {
     if (res && Number(res.code) === 1) {
       return res.data || {}
@@ -173,7 +177,7 @@ export function addMemeFavorite(memeId, folderId = 0) {
 
 /**
  * 取消收藏梗
- * DELETE /favorites/{memeId}
+ * DELETE /users/me/favorites/{memeId}
  * @param {number|string} memeId
  */
 export function removeMemeFavorite(memeId) {
@@ -181,7 +185,7 @@ export function removeMemeFavorite(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/favorites/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+  return request(`/users/me/favorites/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
     if (res && Number(res.code) === 1) {
       return res.data || {}
     }
@@ -191,7 +195,7 @@ export function removeMemeFavorite(memeId) {
 
 /**
  * 上报浏览
- * POST /detail/views
+ * POST /meme-views
  * @param {number|string} memeId
  * @param {{ source?: 'detail'|'list'|'search'|'share' }} [options]
  * @returns {Promise<{ memeId: number, pageViews: number, counted?: boolean }>}
@@ -202,7 +206,7 @@ export function reportMemeView(memeId, options = {}) {
     return Promise.reject(new Error('缺少梗 id'))
   }
   const source = options.source != null ? String(options.source).trim() : 'detail'
-  return request('/detail/views', {
+  return request('/meme-views', {
     method: 'POST',
     body: JSON.stringify({ memeId: id, source }),
     headers: {
@@ -222,14 +226,14 @@ export function reportMemeView(memeId, options = {}) {
 
 /**
  * 查询单个梗浏览量
- * GET /views/{memeId}/count
+ * GET /memes/{memeId}/views/count
  */
 export function getMemeViewCount(memeId) {
   const id = memeId != null ? String(memeId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/views/${encodeURIComponent(id)}/count`, { method: 'GET' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}/views/count`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       return {
         memeId: res.data.memeId != null ? Number(res.data.memeId) : Number(id),
@@ -242,7 +246,7 @@ export function getMemeViewCount(memeId) {
 
 /**
  * 批量查询浏览量
- * GET /views/counts?memeIds=1,2,3
+ * GET /meme-view-counts?memeIds=1,2,3
  */
 export function batchMemeViewCounts(memeIds) {
   const ids = (Array.isArray(memeIds) ? memeIds : [])
@@ -252,7 +256,7 @@ export function batchMemeViewCounts(memeIds) {
     return Promise.resolve({ items: [] })
   }
   const query = new URLSearchParams({ memeIds: ids.join(',') })
-  return request(`/views/counts?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/meme-view-counts?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       const items = Array.isArray(res.data.items) ? res.data.items : []
       return {
@@ -268,7 +272,7 @@ export function batchMemeViewCounts(memeIds) {
 
 /**
  * 点赞梗
- * POST /detail/likes
+ * PUT /users/me/liked-memes/{memeId}
  * @param {number|string} memeId
  * @returns {Promise<{ likeId?: number, memeId: number, liked: boolean, likeCount: number, createTime?: string }>}
  */
@@ -277,9 +281,8 @@ export function addMemeLike(memeId) {
   if (!Number.isFinite(id) || id <= 0) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request('/detail/likes', {
-    method: 'POST',
-    body: JSON.stringify({ memeId: id }),
+  return request(`/users/me/liked-memes/${encodeURIComponent(String(id))}`, {
+    method: 'PUT',
   }).then((res) => {
     if (res && Number(res.code) === 1) {
       return res.data || {}
@@ -290,14 +293,14 @@ export function addMemeLike(memeId) {
 
 /**
  * 取消点赞
- * DELETE /likes/{memeId}
+ * DELETE /users/me/liked-memes/{memeId}
  */
 export function removeMemeLike(memeId) {
   const id = memeId != null ? String(memeId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/likes/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+  return request(`/users/me/liked-memes/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
     if (res && Number(res.code) === 1) {
       return res.data || {}
     }
@@ -307,14 +310,14 @@ export function removeMemeLike(memeId) {
 
 /**
  * 查询当前用户是否已点赞
- * GET /likes/{memeId}/status
+ * GET /users/me/liked-memes/{memeId}
  */
 export function getMemeLikeStatus(memeId) {
   const id = memeId != null ? String(memeId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/likes/${encodeURIComponent(id)}/status`, { method: 'GET' }).then((res) => {
+  return request(`/users/me/liked-memes/${encodeURIComponent(id)}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       return {
         liked: !!res.data.liked,
@@ -327,7 +330,7 @@ export function getMemeLikeStatus(memeId) {
 
 /**
  * 批量查询点赞状态
- * GET /likes/status?memeIds=1,2,3
+ * GET /users/me/liked-memes?memeIds=1,2,3
  */
 export function batchMemeLikeStatus(memeIds) {
   const ids = (Array.isArray(memeIds) ? memeIds : [])
@@ -337,7 +340,7 @@ export function batchMemeLikeStatus(memeIds) {
     return Promise.resolve({ items: [] })
   }
   const query = new URLSearchParams({ memeIds: ids.join(',') })
-  return request(`/likes/status?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/users/me/liked-memes?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       const items = Array.isArray(res.data.items) ? res.data.items : []
       return {
@@ -353,7 +356,7 @@ export function batchMemeLikeStatus(memeIds) {
 
 /**
  * 查询当前用户是否已收藏该梗
- * GET /favorites/{memeId}/status
+ * GET /users/me/favorites/{memeId}
  * @param {number|string} memeId
  * @returns {Promise<{ favorited: boolean, folderId?: number, sortOrder?: number }>}
  */
@@ -362,7 +365,7 @@ export function getMemeFavoriteStatus(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/favorites/${encodeURIComponent(id)}/status`, { method: 'GET' }).then((res) => {
+  return request(`/users/me/favorites/${encodeURIComponent(id)}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data && typeof res.data === 'object') {
       return {
         favorited: !!res.data.favorited,
@@ -376,15 +379,15 @@ export function getMemeFavoriteStatus(memeId) {
 
 /**
  * 单条移动到目标夹
- * PUT /user/me/favorites/{memeId}/move?folderId=
+ * PATCH /users/me/favorites/{memeId}，请求体包含 targetFolderId
  */
 export function moveMemeFavorite(memeId, folderId) {
   const id = memeId != null ? String(memeId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少梗 id'))
   const fid = normalizeFolderId(folderId)
-  const query = new URLSearchParams({ folderId: fid })
-  return request(`/user/me/favorites/${encodeURIComponent(id)}/move?${query}`, {
-    method: 'PUT',
+  return request(`/users/me/favorites/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ targetFolderId: fid }),
   }).then((res) => {
     if (res && Number(res.code) === 1) return res.data || {}
     throw new Error((res && (res.message || res.msg)) || '移动收藏失败')
@@ -393,11 +396,11 @@ export function moveMemeFavorite(memeId, folderId) {
 
 /**
  * 批量移动收藏到目标夹
- * PUT /user/me/favorites/move
+ * PATCH /users/me/favorites
  */
 export function batchMoveFavorites(targetFolderId, memeIds) {
-  return request('/user/me/favorites/move', {
-    method: 'PUT',
+  return request('/users/me/favorites', {
+    method: 'PATCH',
     body: JSON.stringify({
       targetFolderId: normalizeFolderId(targetFolderId),
       memeIds: Array.isArray(memeIds) ? memeIds : [],
@@ -410,10 +413,10 @@ export function batchMoveFavorites(targetFolderId, memeIds) {
 
 /**
  * 夹内收藏排序
- * PUT /user/me/favorites/reorder
+ * PUT /users/me/favorites/order
  */
 export function reorderFavorites(folderId, favoriteIds) {
-  return request('/user/me/favorites/reorder', {
+  return request('/users/me/favorites/order', {
     method: 'PUT',
     body: JSON.stringify({
       folderId: normalizeFolderId(folderId),
@@ -427,7 +430,7 @@ export function reorderFavorites(folderId, favoriteIds) {
 
 /**
  * 分页获取根评论
- * GET /detail/{memeId}/comments
+ * GET /memes/{memeId}/comments
  */
 export function getMemeRootComments(memeId, params = {}) {
   const id = memeId != null ? String(memeId).trim() : ''
@@ -438,7 +441,7 @@ export function getMemeRootComments(memeId, params = {}) {
     size: String(size),
     sortType: String(sortType),
   })
-  return request(`/detail/${encodeURIComponent(id)}/comments?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}/comments?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       return res.data
     }
@@ -448,7 +451,7 @@ export function getMemeRootComments(memeId, params = {}) {
 
 /**
  * 分页获取子评论
- * GET /detail/comments/{rootId}/replies
+ * GET /comments/{rootId}/replies
  * @returns {Promise<{list: Array, page: number, size: number, total: number, hasMore: boolean}>}
  */
 export function getMemeCommentReplies(rootId, params = {}) {
@@ -456,7 +459,7 @@ export function getMemeCommentReplies(rootId, params = {}) {
   if (!id) return Promise.reject(new Error('缺少根评论 id'))
   const { page = 1, size = 10 } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
-  return request(`/detail/comments/${encodeURIComponent(id)}/replies?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/comments/${encodeURIComponent(id)}/replies?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       // 兼容旧版直接返回数组
       if (Array.isArray(res.data)) {
@@ -482,12 +485,12 @@ export function getMemeCommentReplies(rootId, params = {}) {
 
 /**
  * 评论定位（消息跳转）
- * GET /detail/comments/{commentId}/anchor
+ * GET /comments/{commentId}/context
  */
 export function getMemeCommentAnchor(commentId) {
   const id = commentId != null ? String(commentId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少评论 id'))
-  return request(`/detail/comments/${encodeURIComponent(id)}/anchor`, { method: 'GET' }).then((res) => {
+  return request(`/comments/${encodeURIComponent(id)}/context`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       const data = res.data
       return {
@@ -504,7 +507,7 @@ export function getMemeCommentAnchor(commentId) {
 
 /**
  * 发表评论（根评论 / 回复子评论）
- * POST /detail/comments
+ * POST /memes/{memeId}/comments
  * @param {Object} payload
  * @param {number|string} payload.memeId
  * @param {string} [payload.rootId='0']
@@ -518,13 +521,12 @@ export function addMemeComment(payload = {}) {
     return Promise.reject(new Error('缺少梗 id'))
   }
   const body = {
-    memeId,
     rootId: payload.rootId != null ? String(payload.rootId) : '0',
     parentId: payload.parentId != null ? String(payload.parentId) : '0',
     content: String(payload.content || '').trim(),
     imageUrls: Array.isArray(payload.imageUrls) ? payload.imageUrls : [],
   }
-  return request('/detail/comments', {
+  return request(`/memes/${encodeURIComponent(String(memeId))}/comments`, {
     method: 'POST',
     body: JSON.stringify(body),
   }).then((res) => {
@@ -535,25 +537,25 @@ export function addMemeComment(payload = {}) {
 
 /**
  * 删除评论
- * DELETE /detail/comments/{commentId}
+ * DELETE /comments/{commentId}
  */
 export function deleteMemeComment(commentId) {
   const id = commentId != null ? String(commentId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少评论 id'))
-  return request(`/detail/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
-    if (res && Number(res.code) === 1 && res.data) return res.data
+  return request(`/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+    if (res && Number(res.code) === 1) return res.data || true
     throw new Error((res && (res.message || res.msg)) || '删除评论失败')
   })
 }
 
 /**
  * 评论点赞
- * POST /detail/comments/{commentId}/likes
+ * PUT /comments/{commentId}/likes/me
  */
 export function likeMemeComment(commentId) {
   const id = commentId != null ? String(commentId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少评论 id'))
-  return request(`/detail/comments/${encodeURIComponent(id)}/likes`, { method: 'POST' }).then((res) => {
+  return request(`/comments/${encodeURIComponent(id)}/likes/me`, { method: 'PUT' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '点赞失败')
   })
@@ -561,12 +563,12 @@ export function likeMemeComment(commentId) {
 
 /**
  * 取消评论点赞
- * DELETE /detail/comments/{commentId}/likes
+ * DELETE /comments/{commentId}/likes/me
  */
 export function unlikeMemeComment(commentId) {
   const id = commentId != null ? String(commentId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少评论 id'))
-  return request(`/detail/comments/${encodeURIComponent(id)}/likes`, { method: 'DELETE' }).then((res) => {
+  return request(`/comments/${encodeURIComponent(id)}/likes/me`, { method: 'DELETE' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '取消点赞失败')
   })
@@ -574,12 +576,12 @@ export function unlikeMemeComment(commentId) {
 
 /**
  * 单条评论点赞状态
- * GET /detail/comments/{commentId}/likes/status
+ * GET /comments/{commentId}/likes/me
  */
 export function getMemeCommentLikeStatus(commentId) {
   const id = commentId != null ? String(commentId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少评论 id'))
-  return request(`/detail/comments/${encodeURIComponent(id)}/likes/status`, { method: 'GET' }).then((res) => {
+  return request(`/comments/${encodeURIComponent(id)}/likes/me`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '查询点赞状态失败')
   })
@@ -587,7 +589,7 @@ export function getMemeCommentLikeStatus(commentId) {
 
 /**
  * 批量评论点赞状态
- * GET /detail/comments/likes/status?commentIds=1,2,3
+ * GET /comment-like-statuses?commentIds=1,2,3
  */
 export function batchMemeCommentLikeStatus(commentIds = []) {
   const ids = (Array.isArray(commentIds) ? commentIds : [])
@@ -595,7 +597,7 @@ export function batchMemeCommentLikeStatus(commentIds = []) {
     .filter(Boolean)
   if (!ids.length) return Promise.resolve({ items: [] })
   const query = new URLSearchParams({ commentIds: ids.join(',') })
-  return request(`/detail/comments/likes/status?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/comment-like-statuses?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '批量查询点赞状态失败')
   })
@@ -603,10 +605,10 @@ export function batchMemeCommentLikeStatus(commentIds = []) {
 
 /**
  * 获取所有可用标签
- * GET /memes/tags
+ * GET /tags
  */
 export function getMemeTags() {
-  return request('/memes/tags', { method: 'GET' }).then((res) => {
+  return request('/tags', { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && Array.isArray(res.data)) return res.data
     throw new Error((res && (res.message || res.msg)) || '加载标签失败')
   })
@@ -665,7 +667,7 @@ export function deletePublishedMeme(memeId) {
 
 /**
  * 恢复已下架的梗（重新进入审核）
- * POST /memes/{memeId}/restore
+ * POST /memes/{memeId}/restorations
  * @param {number|string} memeId
  * @returns {Promise<{ memeId:number, status:number, statusDesc:string, restoredAt:string }>}
  */
@@ -674,7 +676,7 @@ export function restorePublishedMeme(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/memes/${encodeURIComponent(id)}/restore`, { method: 'POST' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}/restorations`, { method: 'POST' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '恢复失败')
   })
@@ -682,7 +684,7 @@ export function restorePublishedMeme(memeId) {
 
 /**
  * 彻底删除已下架的梗
- * DELETE /memes/{memeId}/purge
+ * DELETE /memes/{memeId}?permanent=true
  * @param {number|string} memeId
  * @returns {Promise<{ memeId:number, status:number, statusDesc:string, purgedAt:string }>}
  */
@@ -691,7 +693,7 @@ export function purgePublishedMeme(memeId) {
   if (!id) {
     return Promise.reject(new Error('缺少梗 id'))
   }
-  return request(`/memes/${encodeURIComponent(id)}/purge`, { method: 'DELETE' }).then((res) => {
+  return request(`/memes/${encodeURIComponent(id)}?permanent=true`, { method: 'DELETE' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '彻底删除失败')
   })

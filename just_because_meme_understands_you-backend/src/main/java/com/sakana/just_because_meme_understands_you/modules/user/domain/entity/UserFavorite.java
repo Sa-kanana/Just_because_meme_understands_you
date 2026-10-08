@@ -1,0 +1,35 @@
+package com.sakana.just_because_meme_understands_you.modules.user.domain.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+@Data
+@TableName("user_favorite")
+public class UserFavorite {
+
+    @TableId(type = IdType.ASSIGN_ID)
+    private Long id;
+
+    private Long userId;
+
+    private Long memeId;
+
+    private Long folderId;
+
+    @TableField("sort_order")
+    private Integer sortOrder;
+
+    @TableField("is_deleted")
+    private Integer isDeleted;
+
+    @TableField("create_time")
+    private LocalDateTime createTime;
+
+    @TableField("update_time")
+    private LocalDateTime updateTime;
+}

@@ -9,12 +9,12 @@
 import { request } from './request'
 
 const AUTH_ENDPOINTS = {
-  login: '/login',
-  renewLogin: '/login/refresh',
-  logout: '/logout',
-  githubAuthorize: '/login/oauth/github',
-  oauthExchange: '/login/oauth/exchange',
-  captcha: '/captcha',
+  login: '/auth/sessions',
+  renewLogin: '/auth/sessions/current',
+  logout: '/auth/sessions/current',
+  githubAuthorize: '/auth/oauth/github/authorizations',
+  oauthExchange: '/auth/oauth/sessions',
+  captcha: '/captchas',
 }
 
 function normalizeAuthToken(rawToken) {
@@ -48,7 +48,7 @@ function assertDataResponseSuccess(res, fallbackMessage) {
 
 /**
  * 获取图形人机验证码。
- * GET /captcha → { captchaId, imageBase64, expireSeconds }
+ * GET /captchas → { captchaId, imageBase64, expireSeconds }
  *
  * @returns {Promise<{ captchaId: string, imageBase64: string, expireSeconds: number }>}
  */
@@ -85,7 +85,7 @@ export function fetchCaptcha() {
 
 /**
  * 登录
- * 按 Apifox 接口文档：POST /login，Body 必填 email、password、loginType、captchaId、captchaCode；
+ * 按接口约定：POST /auth/sessions，Body 必填 email、password、loginType、captchaId、captchaCode；
  * 响应 DataRespose，成功时 data 含 token（JWT）、user（用户信息）。
  *
  * @param {LoginPayload} payload
@@ -147,7 +147,9 @@ export function login(payload = {}) {
  * @returns {string}
  */
 export function buildGithubAuthorizeUrl(redirectPath = '/') {
-  const base = process.env.VUE_APP_API_BASE_URL || '/api'
+  const configuredBase = process.env.VUE_APP_API_BASE_URL || '/api'
+  const normalizedBase = configuredBase.replace(/\/+$/, '')
+  const base = normalizedBase.endsWith('/v1') ? normalizedBase : `${normalizedBase}/v1`
   const redirect = redirectPath != null ? String(redirectPath).trim() : '/'
   const q = new URLSearchParams({ redirect: redirect || '/' })
   return `${base}${AUTH_ENDPOINTS.githubAuthorize}?${q.toString()}`
@@ -155,7 +157,7 @@ export function buildGithubAuthorizeUrl(redirectPath = '/') {
 
 /**
  * 用一次性 ticket 兑换登录态
- * POST /login/oauth/exchange
+ * POST /auth/oauth/sessions
  * @param {string} ticket
  * @returns {Promise<{ token: string, user: LoginUser }>}
  */
@@ -192,7 +194,7 @@ export function exchangeOauthTicket(ticket) {
 /**
  * 登录续航（自动续期）
  *
- * 默认对接接口：POST /login/renew（可通过 VUE_APP_AUTH_RENEW_ENDPOINT 覆盖）。
+ * 默认对接接口：PUT /auth/sessions/current（可通过 VUE_APP_AUTH_REFRESH_ENDPOINT 覆盖）。
  * 刷新凭证通过 HttpOnly Cookie 发送，前端无需、也不能读取 refresh token。
  * 成功时返回新的 access token（并由后端在响应头写入新 refresh Cookie，实现旋转）。
  *
@@ -203,7 +205,7 @@ export function renewLogin() {
     process.env.VUE_APP_AUTH_REFRESH_ENDPOINT || AUTH_ENDPOINTS.renewLogin
 
   return request(renewEndpoint, {
-    method: 'POST',
+    method: 'PUT',
     skipAuthRefresh: true,
     withCredentials: true,
   }).then((res) => {
@@ -247,7 +249,7 @@ export function logout(token) {
   }
 
   return request(AUTH_ENDPOINTS.logout, {
-    method: 'POST',
+    method: 'DELETE',
     headers: {
       Authorization: authHeader,
     },
@@ -262,7 +264,7 @@ export function logout(token) {
 /**
  * 发送注册验证码
  *
- * POST /register/send-code
+ * POST /registration-verification-codes
  * Body: { email, captchaId, captchaCode }
  *
  * @param {string|Object} emailOrPayload - 邮箱，或含 captcha 的对象
@@ -290,7 +292,7 @@ export function sendRegisterCode(emailOrPayload) {
     return Promise.reject(new Error('请完成人机验证'))
   }
 
-  return request('/register/send-code', {
+  return request('/registration-verification-codes', {
     method: 'POST',
     body: JSON.stringify({
       email: normalizedEmail,
@@ -386,7 +388,7 @@ export function register(payload = {}) {
     (email.includes('@') ? email.split('@')[0] : '') ||
     '梗友'
 
-  return request('/register', {
+  return request('/users', {
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -438,7 +440,7 @@ export function requestPasswordReset(email) {
   if (!normalizedEmail) {
     return Promise.reject(new Error('请输入邮箱'))
   }
-  return request('/password/reset/request', {
+  return request('/auth/password-reset-requests', {
     method: 'POST',
     body: JSON.stringify({ email: normalizedEmail }),
   }).then((res) => {
@@ -481,7 +483,7 @@ export function verifyResetCode(payload = {}) {
   if (!code) {
     return Promise.reject(new Error('请输入验证码'))
   }
-  return request('/password/reset/verify', {
+  return request('/auth/password-reset-verifications', {
     method: 'POST',
     body: JSON.stringify({ email, code }),
   }).then((res) => {
@@ -507,7 +509,7 @@ export function verifyResetCode(payload = {}) {
 /**
  * 第三步：执行重置（提交新密码）
  * 前端提交 token + newPassword；后端用 token 从 Redis 取 userId，更新 user_auth 密码（BCrypt），并使该用户 JWT 失效。
- * 接口定义：POST /password/reset/confirm，Body: { token, newPassword }，响应 DataRespose。
+ * 接口定义：PUT /auth/password-resets，Body: { token, newPassword }，响应 DataRespose。
  *
  * @param {Object} payload
  * @param {string} payload.token - 第二步返回的重置令牌
@@ -523,8 +525,8 @@ export function confirmPasswordReset(payload = {}) {
   if (!newPassword) {
     return Promise.reject(new Error('请输入新密码'))
   }
-  return request('/password/reset/confirm', {
-    method: 'POST',
+  return request('/auth/password-resets', {
+    method: 'PUT',
     body: JSON.stringify({ token, newPassword }),
   }).then((res) => {
     if (!res || typeof res !== 'object') {
@@ -542,5 +544,3 @@ export function confirmPasswordReset(payload = {}) {
     return { message: res.message || '密码已重置，请使用新密码登录' }
   })
 }
-
-

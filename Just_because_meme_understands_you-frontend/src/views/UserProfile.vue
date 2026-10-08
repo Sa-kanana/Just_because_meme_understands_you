@@ -53,15 +53,29 @@
               <i class="ri-edit-line" aria-hidden="true" />
               编辑信息
             </vs-button>
-            <FollowButton
-              v-else-if="profile.userId"
-              v-model="profile.isFollow"
-              :user-id="profile.userId"
-              :mutual="followMutual"
-              size="lg"
-              class="profile-hero__follow-btn"
-              @change="onProfileFollowChange"
-            />
+            <div v-else-if="profile.userId" class="profile-hero__social-actions">
+              <FollowButton
+                v-if="!safetyStatus.blocked || profile.isFollow"
+                v-model="profile.isFollow"
+                :user-id="profile.userId"
+                :mutual="followMutual"
+                :disabled="safetyStatus.blocked && !profile.isFollow"
+                size="lg"
+                class="profile-hero__follow-btn"
+                @change="onProfileFollowChange"
+              />
+              <span v-else class="profile-safety-note">{{ safetyStatus.blockedByTarget ? '对方已屏蔽你' : '已屏蔽该用户' }}</span>
+              <template v-if="isLoggedIn">
+                <vs-button type="border" size="small" :disabled="safetyBusy" @click="toggleMute">
+                  <i :class="safetyStatus.muted ? 'ri-volume-up-line' : 'ri-volume-mute-line'" aria-hidden="true" />
+                  {{ safetyStatus.muted ? '取消静音' : '静音' }}
+                </vs-button>
+                <vs-button type="border" size="small" color="danger" :disabled="safetyBusy || (safetyStatus.blockedByTarget && !safetyStatus.blockedByMe)" @click="toggleBlock">
+                  <i :class="safetyStatus.blockedByMe ? 'ri-user-unfollow-line' : 'ri-forbid-line'" aria-hidden="true" />
+                  {{ safetyStatus.blockedByMe ? '取消屏蔽' : '屏蔽' }}
+                </vs-button>
+              </template>
+            </div>
           </div>
         </div>
       </header>
@@ -1156,6 +1170,9 @@ import { buildMemeDetailLocation, buildToolPageLocation } from '@/utils/pageBrea
 import FollowButton from '@/components/user/FollowButton.vue'
 import FollowRelationDrawer from '@/components/user/FollowRelationDrawer.vue'
 import { getFollowStatus } from '@/api/follow'
+import { getUserSuppressionStatus } from '@/api/userSafety'
+import { useUserSafetyStore } from '@/stores/userSafety'
+import { canApplySafetyStatus } from '@/utils/userSafety.mjs'
 
 export default {
   name: 'UserProfilePage',
@@ -1217,6 +1234,9 @@ export default {
         },
       },
       followMutual: false,
+      safetyStatus: { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false },
+      safetyStatusEpoch: 0,
+      safetyBusy: false,
       relationDrawerVisible: false,
       relationDrawerTab: 'following',
       followStatusEpoch: 0,
@@ -1228,7 +1248,7 @@ export default {
       },
       publishedStatusCounts: { all: 0, live: 0, reviewing: 0, offline: 0, locked: 0 },
       publishedPageNo: 1,
-      publishedPageSize: 10,
+      publishedPageSize: 12,
       publishedLoading: false,
       publishedStatusFilter: 'all',
       deletePublishedDialogVisible: false,
@@ -1247,7 +1267,7 @@ export default {
       selectedFolderId: '0',
       folderContentPage: { list: [], total: 0, hasMore: false },
       folderContentPageNo: 1,
-      folderContentPageSize: 15,
+      folderContentPageSize: 12,
       folderContentLoading: false,
       folderSelectAll: false,
       selectedMemeIds: [],
@@ -1288,6 +1308,9 @@ export default {
       if (user.id != null) return String(user.id).trim()
       if (user.userId != null) return String(user.userId).trim()
       return ''
+    },
+    isLoggedIn() {
+      return useAuthStore().isLoggedIn
     },
     requestUserId() {
       if (this.routeUserId && /^\d+$/.test(this.routeUserId)) {
@@ -1366,6 +1389,8 @@ export default {
     '$route.params.userId': {
       immediate: true,
       handler() {
+        this.safetyStatusEpoch += 1
+        this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
         this.syncRouteUserId()
         this.resetFavoriteViewState()
         this.applyRouteTab()
@@ -1376,6 +1401,8 @@ export default {
       this.applyRouteTab()
     },
     currentUserId() {
+      this.safetyStatusEpoch += 1
+      this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
       this.syncRouteUserId()
       this.loadProfile()
     },
@@ -1468,6 +1495,7 @@ export default {
         this.loadPublishedMemes()
         this.applyRouteTab()
         this.refreshFollowMutual()
+        this.refreshSafetyStatus()
         if (this.activeTab === 'favorite') {
           this.loadFolders()
         }
@@ -1839,8 +1867,9 @@ export default {
             signature: this.editForm.signature,
             gender: this.editForm.gender,
             birthday: this.editForm.birthday || '',
-            avatar: this.editForm.avatar || '',
           }
+          const avatar = this.editForm.avatar != null ? String(this.editForm.avatar).trim() : ''
+          if (avatar) payload.avatar = avatar
           await updateUserProfile(payload, this.authToken)
 
           this.profile = {
@@ -1851,9 +1880,9 @@ export default {
           authStore.updateCurrentUser({
             nickname: payload.nickname,
             signature: payload.signature,
-            avatar: payload.avatar,
             gender: payload.gender,
             birthday: payload.birthday,
+            ...(payload.avatar ? { avatar: payload.avatar } : {}),
           })
 
           this.editDialogVisible = false
@@ -1901,6 +1930,62 @@ export default {
         }
       } catch (_) {
         // 状态刷新失败不影响主页展示
+      }
+    },
+    async refreshSafetyStatus() {
+      const targetId = String(this.profile.userId || '')
+      const viewerId = String(this.currentUserId || '')
+      const requestEpoch = ++this.safetyStatusEpoch
+      if (!this.isLoggedIn || this.isOwnProfile || !this.profile.userId) {
+        this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
+        return
+      }
+      try {
+        const status = await getUserSuppressionStatus(targetId)
+        if (!this.isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch)) return
+        this.safetyStatus = {
+          muted: Boolean(status.muted),
+          blocked: Boolean(status.blocked),
+          blockedByMe: Boolean(status.blockedByMe),
+          blockedByTarget: Boolean(status.blockedByTarget),
+        }
+      } catch (_) {
+        if (this.isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch)) {
+          this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
+        }
+      }
+    },
+    isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch) {
+      return canApplySafetyStatus({
+        requestTargetId: targetId,
+        requestViewerId: viewerId,
+        currentTargetId: this.profile.userId,
+        currentViewerId: this.currentUserId,
+        requestEpoch,
+        currentEpoch: this.safetyStatusEpoch,
+      })
+        && this.isLoggedIn
+    },
+    async toggleMute() {
+      await this.toggleSuppression('MUTE', this.safetyStatus.muted)
+    },
+    async toggleBlock() {
+      await this.toggleSuppression('BLOCK', this.safetyStatus.blockedByMe)
+    },
+    async toggleSuppression(type, active) {
+      if (this.safetyBusy || !this.profile.userId) return
+      this.safetyBusy = true
+      try {
+        const store = useUserSafetyStore()
+        await store.load(this.currentUserId)
+        if (active) await store.remove(this.profile.userId, type)
+        else await store.apply(this.profile.userId, type)
+        await this.refreshSafetyStatus()
+        toast.success(type === 'BLOCK' ? (active ? '已取消屏蔽' : '已屏蔽该用户') : (active ? '已取消静音' : '已静音该用户'))
+      } catch (error) {
+        toast.error(error?.message || '操作失败，请稍后重试')
+      } finally {
+        this.safetyBusy = false
       }
     },
     openRelationDrawer(tab) {
@@ -2409,6 +2494,19 @@ export default {
   padding-bottom: 4px;
 }
 
+.profile-hero__social-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-safety-note {
+  color: var(--meme-text-secondary);
+  font-size: 12px;
+}
+
 .profile-hero__edit-btn {
   min-width: 120px;
   height: 40px !important;
@@ -2557,8 +2655,25 @@ export default {
 
 .meme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.meme-grid > * {
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .meme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .meme-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .meme-card-item {
@@ -3819,8 +3934,8 @@ export default {
 
 @media (max-width: 768px) {
   .profile-page {
-    margin: -16px -32px -32px;
-    width: calc(100% + 64px);
+    margin: -16px -18px -32px;
+    width: calc(100% + 36px);
     padding: 12px 10px 20px;
   }
 
@@ -3882,6 +3997,14 @@ export default {
 
   .cropper-result-row {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .profile-page {
+    margin-left: -14px;
+    margin-right: -14px;
+    width: calc(100% + 28px);
   }
 }
 

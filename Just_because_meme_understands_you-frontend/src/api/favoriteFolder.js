@@ -2,7 +2,7 @@ import { request } from './request'
 
 /**
  * 收藏夹接口封装
- * 对应后端 /user/me/favorite-folders 与 /user/{userId}/favorite-folders
+ * 对应后端 /users/me/favorite-folders 与 /users/{userId}/favorite-folders
  */
 
 /** 雪花 ID 必须按字符串处理，避免 JS Number 精度丢失 */
@@ -38,25 +38,25 @@ function pickFolders(res) {
 
 /**
  * 获取本人收藏夹列表（含默认夹）
- * GET /user/me/favorite-folders
+ * GET /users/me/favorite-folders
  */
 export function getMyFavoriteFolders() {
-  return request('/user/me/favorite-folders', { method: 'GET' }).then(pickFolders)
+  return request('/users/me/favorite-folders', { method: 'GET' }).then(pickFolders)
 }
 
 /**
  * 查看他人公开收藏夹列表（他人仅返回公开自定义夹）
- * GET /user/{userId}/favorite-folders
+ * GET /users/{userId}/favorite-folders
  */
 export function getUserFavoriteFolders(userId) {
   const id = userId != null ? String(userId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少用户ID'))
-  return request(`/user/${encodeURIComponent(id)}/favorite-folders`, { method: 'GET' }).then(pickFolders)
+  return request(`/users/${encodeURIComponent(id)}/favorite-folders`, { method: 'GET' }).then(pickFolders)
 }
 
 /**
  * 创建收藏夹
- * POST /user/me/favorite-folders
+ * POST /users/me/favorite-folders
  */
 export function createFavoriteFolder(payload = {}) {
   const body = {
@@ -64,7 +64,7 @@ export function createFavoriteFolder(payload = {}) {
     description: payload.description != null ? String(payload.description).trim() : '',
     isPublic: payload.isPublic != null ? Number(payload.isPublic) : 1,
   }
-  return request('/user/me/favorite-folders', {
+  return request('/users/me/favorite-folders', {
     method: 'POST',
     body: JSON.stringify(body),
   }).then((res) => {
@@ -75,7 +75,7 @@ export function createFavoriteFolder(payload = {}) {
 
 /**
  * 更新收藏夹（folderId=0 可更新默认收藏夹元信息，不可删除）
- * PUT /user/me/favorite-folders/{folderId}
+ * PUT /users/me/favorite-folders/{folderId}
  */
 export function updateFavoriteFolder(folderId, payload = {}) {
   const id = folderId != null ? String(folderId).trim() : ''
@@ -84,7 +84,7 @@ export function updateFavoriteFolder(folderId, payload = {}) {
   if (payload.name != null) body.name = String(payload.name).trim()
   if (payload.description != null) body.description = String(payload.description).trim()
   if (payload.isPublic != null) body.isPublic = Number(payload.isPublic)
-  return request(`/user/me/favorite-folders/${encodeURIComponent(id)}`, {
+  return request(`/users/me/favorite-folders/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(body),
   }).then((res) => {
@@ -95,12 +95,12 @@ export function updateFavoriteFolder(folderId, payload = {}) {
 
 /**
  * 删除收藏夹（夹内梗移入默认夹）
- * DELETE /user/me/favorite-folders/{folderId}
+ * DELETE /users/me/favorite-folders/{folderId}
  */
 export function deleteFavoriteFolder(folderId) {
   const id = folderId != null ? String(folderId).trim() : ''
   if (!id) return Promise.reject(new Error('缺少收藏夹 id'))
-  return request(`/user/me/favorite-folders/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
+  return request(`/users/me/favorite-folders/${encodeURIComponent(id)}`, { method: 'DELETE' }).then((res) => {
     if (res && Number(res.code) === 1) return true
     throw new Error((res && (res.message || res.msg)) || '删除收藏夹失败')
   })
@@ -108,10 +108,10 @@ export function deleteFavoriteFolder(folderId) {
 
 /**
  * 收藏夹排序
- * PUT /user/me/favorite-folders/reorder
+ * PUT /users/me/favorite-folders/order
  */
 export function reorderFavoriteFolders(folderIds) {
-  return request('/user/me/favorite-folders/reorder', {
+  return request('/users/me/favorite-folders/order', {
     method: 'PUT',
     body: JSON.stringify({
       folderIds: Array.isArray(folderIds) ? folderIds.map(normalizeFolderId).filter((id) => id !== '0') : [],
@@ -124,7 +124,7 @@ export function reorderFavoriteFolders(folderIds) {
 
 /**
  * 分页获取用户收藏的梗（按夹）
- * GET /user/{userId}/favorites?folderId=&page=&size=
+ * GET /users/{userId}/favorites?folderId=&page=&size=
  */
 export function pageUserFavorites(userId, params = {}) {
   const id = userId != null ? String(userId).trim() : ''
@@ -132,7 +132,7 @@ export function pageUserFavorites(userId, params = {}) {
   const { folderId, page = 1, size = 12 } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
   if (folderId != null && folderId !== '') query.set('folderId', normalizeFolderId(folderId))
-  return request(`/user/${encodeURIComponent(id)}/favorites?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/users/${encodeURIComponent(id)}/favorites?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '获取收藏列表失败')
   })

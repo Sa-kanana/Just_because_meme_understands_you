@@ -63,7 +63,7 @@ app:
       client-id: # 请自行填写 GitHub OAuth App Client ID
       client-secret: # 请自行填写 GitHub OAuth App Client Secret
       # GitHub 应用回调须指向后端（不要走前端代理）
-      redirect-uri: http://localhost:8080/login/oauth/github/callback
+      redirect-uri: http://localhost:8080/v1/auth/oauth/github/callbacks
       # 本地前端（vue serve 默认 80 端口）
       frontend-callback-url: http://localhost/login/oauth/callback
       scope: read:user user:email
@@ -73,6 +73,12 @@ meme:
   agent:
     base-url: http://127.0.0.1:8000
     api-key: # 请自行填写，与 MemeAgent INTERNAL_API_KEY 一致
+    # 本地开发时 AI SSE 上游连接池最大活跃连接数
+    max-connections: 100
+    # 本地开发时最多排队等待上游连接的请求数
+    pending-acquire-max-count: 200
+    # 本地开发时等待上游连接池可用连接的最长毫秒数
+    pending-acquire-timeout-ms: 10000
     # write-api-key: # 可选；与 INTERNAL_API_KEY_WRITE 一致，空则回退 api-key
   ai:
     max-history-tokens: 3000
@@ -87,10 +93,6 @@ meme:
     admin-user-ids: []
 
 # ---------- Firecrawl 热梗采集 ----------
-meme:
-  agent:
-    base-url: http://127.0.0.1:8000
-    api-key: # 与 MemeAgent INTERNAL_API_KEY 一致
   crawl:
     enabled: true
     schedule-enabled: true
@@ -100,4 +102,3 @@ meme:
     limit: 5
     live-limit: 8
     live-hours: 48
-

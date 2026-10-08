@@ -2,11 +2,11 @@ import { request } from './request'
 
 /**
  * 获取反馈元数据（类型选项）
- * GET /feedback/meta
+ * GET /feedback/categories
  * @returns {Promise<{ categories: Array<{ value: string, label: string }>, notice: string }>}
  */
 export function getFeedbackMeta() {
-  return request('/feedback/meta', { method: 'GET' }).then((res) => {
+  return request('/feedback/categories', { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       const data = res.data
       return {

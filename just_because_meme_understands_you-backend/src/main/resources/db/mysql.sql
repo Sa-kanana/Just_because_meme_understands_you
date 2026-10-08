@@ -417,4 +417,116 @@ create table user_stats
 )
     comment '用户社交数据统计表';
 
+create table user_tag_follow
+(
+    user_id    bigint   not null,
+    tag_id     int      not null,
+    create_time datetime not null default CURRENT_TIMESTAMP,
+    primary key (user_id, tag_id),
+    constraint fk_tag_follow_tag foreign key (tag_id) references meme_tag (id) on delete cascade,
+    index idx_tag_follow_tag (tag_id, user_id)
+) comment '用户关注梗标签';
 
+create table meme_report
+(
+    id              bigint auto_increment primary key,
+    meme_id         bigint       not null,
+    reporter_user_id bigint      not null,
+    reason          varchar(32)  not null,
+    detail          varchar(500) null,
+    status          varchar(16)  not null default 'PENDING',
+    result          varchar(16)  null,
+    handled_by      bigint       null,
+    handling_note   varchar(500) null,
+    created_at      datetime     not null default CURRENT_TIMESTAMP,
+    handled_at      datetime     null,
+    unique key uq_meme_reporter (meme_id, reporter_user_id),
+    key idx_report_status_created (status, created_at, id),
+    key idx_report_meme (meme_id)
+) engine=InnoDB default charset=utf8mb4 comment='梗举报处理记录';
+
+create table community_report
+(
+    id               bigint auto_increment primary key comment '主键ID',
+    target_type      varchar(16)  not null comment '举报对象类型：梗或评论',
+    target_id        bigint       not null comment '被举报对象ID',
+    meme_id          bigint       not null comment '举报对象所属梗ID',
+    comment_id       bigint       null comment '被举报评论ID，梗举报时为空',
+    reporter_user_id bigint       not null comment '举报人用户ID',
+    reason           varchar(32)  not null comment '举报原因编码',
+    detail           varchar(500) null comment '举报补充说明',
+    status           varchar(16)  not null default 'PENDING' comment '处理状态：待处理或已处理',
+    result           varchar(24)  null comment '处理结果编码',
+    handled_by       bigint       null comment '处理管理员用户ID',
+    handling_note    varchar(500) null comment '管理员处理备注',
+    created_at       datetime     not null default CURRENT_TIMESTAMP comment '举报创建时间',
+    handled_at       datetime     null comment '举报处理完成时间',
+    unique key uq_community_report_target_reporter (target_type, target_id, reporter_user_id),
+    key idx_community_report_status_created (status, created_at, id),
+    key idx_community_report_meme (meme_id, created_at),
+    key idx_community_report_comment (comment_id)
+) engine=InnoDB default charset=utf8mb4 comment='统一梗与评论举报队列';
+
+create table user_suppression
+(
+    id             bigint      auto_increment primary key comment '主键ID',
+    owner_user_id  bigint      not null comment '发起静音或屏蔽的用户ID',
+    target_user_id bigint      not null comment '被静音或屏蔽的用户ID',
+    type           varchar(16) not null comment '关系类型：静音或屏蔽',
+    created_at     datetime    not null default CURRENT_TIMESTAMP comment '关系创建时间',
+    unique key uq_user_suppression (owner_user_id, target_user_id, type),
+    key idx_user_suppression_target (target_user_id, type),
+    key idx_user_suppression_owner (owner_user_id, created_at)
+) engine=InnoDB default charset=utf8mb4 comment='用户静音与屏蔽关系';
+
+create table meme_daily_snapshot
+(
+    id            bigint auto_increment primary key,
+    meme_id       bigint   not null,
+    snapshot_date date     not null,
+    page_views    bigint   not null default 0,
+    likes         bigint   not null default 0,
+    comments      bigint   not null default 0,
+    created_at    datetime not null default CURRENT_TIMESTAMP,
+    unique key uk_meme_snapshot_day (meme_id, snapshot_date),
+    key idx_snapshot_date (snapshot_date, meme_id)
+) comment '梗每日互动计数快照';
+
+create table meme_weekly_topic
+(
+    iso_week_year     smallint     not null comment 'ISO 周对应的年份',
+    iso_week_number   tinyint      not null comment 'ISO 周号',
+    tag_id            int          not null comment '选中的标签 ID',
+    tag_name          varchar(255) not null comment '标签名快照',
+    interaction_score bigint       not null default 0 comment '近 7 天互动增长分',
+    is_fallback       tinyint(1)   not null default 0 comment '是否因趋势历史不足而回退',
+    created_at        datetime     not null default current_timestamp comment '主题确定时间',
+    primary key (iso_week_year, iso_week_number)
+) engine=InnoDB default charset=utf8mb4 comment='每周热梗主题';
+
+create table meme_knowledge_card
+(
+    meme_id             bigint       not null primary key comment '梗 ID',
+    source_url          varchar(500) null comment '出处链接',
+    first_seen_date     date         null comment '首次出现日期',
+    popularity_context  varchar(2000) null comment '流行语境',
+    usage_examples      varchar(2000) null comment '用法示例',
+    evolution           varchar(2000) null comment '梗的演变',
+    related_meme_ids    varchar(1000) not null default '[]' comment '相关梗 ID JSON 数组',
+    updated_at          datetime     not null default current_timestamp on update current_timestamp comment '更新时间'
+) engine=InnoDB default charset=utf8mb4 comment='梗资料卡';
+
+create table meme_knowledge_correction
+(
+    id             bigint auto_increment primary key,
+    meme_id        bigint       not null comment '梗 ID',
+    user_id        bigint       not null comment '提交用户 ID',
+    changes_json   text         not null comment '待审核的字段差异 JSON',
+    status         varchar(16)  not null default 'PENDING' comment 'PENDING/APPROVED/REJECTED',
+    handled_by     bigint       null comment '处理管理员 ID',
+    handling_note  varchar(500) null comment '审核备注',
+    created_at     datetime     not null default current_timestamp,
+    handled_at     datetime     null,
+    key idx_knowledge_correction_status (status, created_at, id),
+    key idx_knowledge_correction_meme (meme_id)
+) engine=InnoDB default charset=utf8mb4 comment='梗资料纠错申请';

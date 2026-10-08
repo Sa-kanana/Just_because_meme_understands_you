@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from datetime import timezone
 import logging
 
+from app.core.settings import get_settings
 from app.retrieval.db import get_pool, vector_literal
-from app.retrieval.embeddings import embed_text
+from app.retrieval.embeddings import embed_text, embed_texts
 from app.schemas.knowledge import KnowledgeDocument
 
 logger = logging.getLogger(__name__)
@@ -41,27 +42,35 @@ async def upsert_knowledge_document(doc: KnowledgeDocument, chunks: list[str]) -
         logger.info("Skip knowledge ingest doc_id=%s unchanged hash=%s", doc.doc_id, doc.content_hash)
         return
 
+    # Keep external embedding calls outside the DB connection and transaction.
+    embeddings = await embed_texts(chunks)
+    updated_at = doc.updated_at.astimezone(timezone.utc)
+    title = doc.title.strip()
+    category = (doc.category or "").strip() or None
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM knowledge_vector_chunk WHERE doc_id = $1", doc.doc_id)
-            for idx, chunk in enumerate(chunks):
-                embedding = await embed_text(chunk)
-                await conn.execute(
-                    """
-                    INSERT INTO knowledge_vector_chunk
-                        (doc_id, chunk_index, content, content_hash, title, category, embedding, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)
-                    """,
-                    doc.doc_id,
-                    idx,
-                    chunk,
-                    doc.content_hash,
-                    doc.title.strip(),
-                    (doc.category or "").strip() or None,
-                    vector_literal(embedding),
-                    doc.updated_at.astimezone(timezone.utc),
-                )
+            await conn.executemany(
+                """
+                INSERT INTO knowledge_vector_chunk
+                    (doc_id, chunk_index, content, content_hash, title, category, embedding, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8)
+                """,
+                [
+                    (
+                        doc.doc_id,
+                        idx,
+                        chunk,
+                        doc.content_hash,
+                        title,
+                        category,
+                        vector_literal(embeddings[idx]),
+                        updated_at,
+                    )
+                    for idx, chunk in enumerate(chunks)
+                ],
+            )
 
 
 async def delete_knowledge_by_ids(doc_ids: list[str]) -> int:
@@ -82,7 +91,8 @@ async def delete_knowledge_by_ids(doc_ids: list[str]) -> int:
 async def similarity_search_knowledge(query: str, top_k: int) -> list[RetrievedKnowledgeChunk]:
     query_embedding = await embed_text(query)
     pool = get_pool()
-    async with pool.acquire() as conn:
+    acquire_timeout = get_settings().vector_pool_acquire_timeout_seconds
+    async with pool.acquire(timeout=acquire_timeout) as conn:
         rows = await conn.fetch(
             """
             SELECT doc_id, content, title,

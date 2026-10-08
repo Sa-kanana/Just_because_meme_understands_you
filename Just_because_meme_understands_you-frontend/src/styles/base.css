@@ -37,7 +37,7 @@ body {
   --vs-color: var(--meme-primary);
   font-weight: 600;
   letter-spacing: 0.01em;
-  border-radius: var(--meme-radius-sm) !important;
+  border-radius: 11px !important;
   transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.15s ease;
 }
 
@@ -95,7 +95,7 @@ body {
   width: 100%;
   max-width: none;
   border: 1px solid var(--meme-border) !important;
-  border-radius: var(--meme-radius-md) !important;
+  border-radius: var(--meme-radius-lg) !important;
   box-shadow: var(--meme-shadow-soft) !important;
   background-color: var(--meme-bg-card) !important;
   color: var(--meme-text) !important;
@@ -144,7 +144,7 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .meme-section-kicker {
@@ -159,9 +159,9 @@ body {
 
 .meme-section-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
   color: var(--meme-text);
 }
 

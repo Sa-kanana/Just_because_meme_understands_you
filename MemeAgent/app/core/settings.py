@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # 固定指向 MemeAgent 根目录，避免从仓库根/IDE 启动时读不到 .env
@@ -47,9 +47,66 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("VECTOR_DATABASE_URL", "vector_database_url"),
     )
+    # HNSW vector 索引的维度上限；pgvector 的 vector HNSW 索引最多支持 2000 维。
     vector_embedding_dim: int = Field(
         default=1536,
+        ge=1,
+        le=2000,
         validation_alias=AliasChoices("VECTOR_EMBEDDING_DIM", "vector_embedding_dim"),
+    )
+    # 每个 MemeAgent worker 的 PostgreSQL 连接池最小连接数。
+    vector_pool_min_size: int = Field(
+        default=1,
+        ge=1,
+        le=32,
+        validation_alias=AliasChoices("VECTOR_POOL_MIN_SIZE", "vector_pool_min_size"),
+    )
+    # 每个 MemeAgent worker 的 PostgreSQL 连接池最大连接数；部署时按 worker 数和数据库连接预算设置。
+    vector_pool_max_size: int = Field(
+        default=10,
+        ge=1,
+        le=64,
+        validation_alias=AliasChoices("VECTOR_POOL_MAX_SIZE", "vector_pool_max_size"),
+    )
+    # 等待 PostgreSQL 连接池空闲连接的最长时间（秒）。
+    vector_pool_acquire_timeout_seconds: float = Field(
+        default=5,
+        gt=0,
+        le=60,
+        validation_alias=AliasChoices(
+            "VECTOR_POOL_ACQUIRE_TIMEOUT_SECONDS",
+            "vector_pool_acquire_timeout_seconds",
+        ),
+    )
+    # PostgreSQL 单条命令超时时间（秒）。
+    vector_db_command_timeout_seconds: float = Field(
+        default=30,
+        gt=0,
+        le=300,
+        validation_alias=AliasChoices(
+            "VECTOR_DB_COMMAND_TIMEOUT_SECONDS",
+            "vector_db_command_timeout_seconds",
+        ),
+    )
+    # 进程内查询 embedding 缓存最多保留的向量条数，设为 0 可关闭缓存。
+    embedding_cache_max_entries: int = Field(
+        default=128,
+        ge=0,
+        le=4096,
+        validation_alias=AliasChoices(
+            "EMBEDDING_CACHE_MAX_ENTRIES",
+            "embedding_cache_max_entries",
+        ),
+    )
+    # 查询 embedding 缓存有效期（秒），设为 0 可关闭缓存。
+    embedding_cache_ttl_seconds: int = Field(
+        default=300,
+        ge=0,
+        le=86400,
+        validation_alias=AliasChoices(
+            "EMBEDDING_CACHE_TTL_SECONDS",
+            "embedding_cache_ttl_seconds",
+        ),
     )
 
     openai_api_key: str = Field(
@@ -63,6 +120,28 @@ class Settings(BaseSettings):
     openai_chat_model: str = Field(
         default="gpt-4o-mini",
         validation_alias=AliasChoices("OPENAI_CHAT_MODEL", "openai_chat_model"),
+    )
+    # 单次聊天模型请求超时（秒）
+    llm_request_timeout_seconds: float = Field(
+        default=35,
+        gt=0,
+        le=300,
+        validation_alias=AliasChoices(
+            "LLM_REQUEST_TIMEOUT_SECONDS",
+            "llm_request_timeout_seconds",
+        ),
+    )
+    # 单次聊天模型请求最大重试次数（不含第一次请求）
+    llm_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        validation_alias=AliasChoices("LLM_MAX_RETRIES", "llm_max_retries"),
+    )
+    # 仅在模型供应商支持时请求流式 token 用量，默认关闭以兼容 OpenAI 兼容端点
+    llm_stream_usage: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("LLM_STREAM_USAGE", "llm_stream_usage"),
     )
     openai_embedding_model: str = Field(
         default="text-embedding-3-small",
@@ -86,6 +165,46 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(
         default=5,
         validation_alias=AliasChoices("RETRIEVAL_TOP_K", "retrieval_top_k"),
+    )
+    # 站内向量与运营知识检索单次超时（秒）
+    retrieval_timeout_seconds: float = Field(
+        default=12,
+        gt=0,
+        le=120,
+        validation_alias=AliasChoices(
+            "RETRIEVAL_TIMEOUT_SECONDS",
+            "retrieval_timeout_seconds",
+        ),
+    )
+    # 站内检索最大重试次数（不含第一次请求）
+    retrieval_max_retries: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        validation_alias=AliasChoices(
+            "RETRIEVAL_MAX_RETRIES",
+            "retrieval_max_retries",
+        ),
+    )
+    # 实时联网工具单次超时（秒）
+    live_web_timeout_seconds: float = Field(
+        default=25,
+        gt=0,
+        le=300,
+        validation_alias=AliasChoices(
+            "LIVE_WEB_TIMEOUT_SECONDS",
+            "live_web_timeout_seconds",
+        ),
+    )
+    # Python 搜索 Agent 整条请求总时限（秒）
+    agent_total_timeout_seconds: float = Field(
+        default=120,
+        gt=0,
+        le=600,
+        validation_alias=AliasChoices(
+            "AGENT_TOTAL_TIMEOUT_SECONDS",
+            "agent_total_timeout_seconds",
+        ),
     )
     max_output_tokens: int = Field(
         default=512,
@@ -155,6 +274,13 @@ class Settings(BaseSettings):
             "firecrawl_bilibili_extra_urls",
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_vector_pool_bounds(self):
+        """确保连接池最小连接数不超过最大连接数。"""
+        if self.vector_pool_min_size > self.vector_pool_max_size:
+            raise ValueError("VECTOR_POOL_MIN_SIZE must be <= VECTOR_POOL_MAX_SIZE")
+        return self
 
     @field_validator("firecrawl_default_queries", "firecrawl_bilibili_extra_urls", mode="before")
     @classmethod

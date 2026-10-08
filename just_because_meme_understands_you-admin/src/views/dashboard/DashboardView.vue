@@ -1,12 +1,10 @@
 <template>
   <div>
-    <a-row :gutter="16">
-      <a-col :span="6" v-for="item in cards" :key="item.label">
-        <a-card :loading="loading">
-          <a-statistic :title="item.label" :value="item.value" />
-        </a-card>
-      </a-col>
-    </a-row>
+    <div class="dashboard-stats">
+      <a-card v-for="item in cards" :key="item.label" :loading="loading">
+        <a-statistic :title="item.label" :value="item.value" />
+      </a-card>
+    </div>
     <p class="hint">数据来自分页接口 total，点击侧栏进入对应管理页。</p>
   </div>
 </template>
@@ -52,9 +50,27 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .hint {
   margin-top: 16px;
   color: #86909c;
   font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .dashboard-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .dashboard-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

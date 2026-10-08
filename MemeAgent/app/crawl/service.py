@@ -512,8 +512,12 @@ async def _search_meme_details(
             items = await firecrawl_search(
                 settings, query=q, limit=4, include_markdown=include_markdown
             )
-        except Exception:
-            logger.exception("Firecrawl detail search failed query=%s", q)
+        except Exception as error:
+            logger.error(
+                "Firecrawl detail search failed query_chars=%s error_type=%s",
+                len(q),
+                type(error).__name__,
+            )
             continue
         for item in items:
             url = _url_from_item(item)
@@ -627,8 +631,12 @@ async def _enrich_topic(
             source_url=bilibili_url,
             detail_url=detail_url or "",
         )
-    except Exception:
-        logger.exception("Finalize intro failed topic=%s", topic)
+    except Exception as error:
+        logger.error(
+            "Finalize intro failed topic_chars=%s error_type=%s",
+            len(topic),
+            type(error).__name__,
+        )
         intro = bilibili_summary or fallback_intro(topic)
 
     if detail_url and detail_url == bilibili_url:
@@ -715,8 +723,12 @@ async def crawl_hot_memes(
                 include_markdown=request.include_markdown,
             )
             query_used.extend(extra_queries)
-        except Exception:
-            logger.exception("Enrich topic failed topic=%s", topic)
+        except Exception as error:
+            logger.error(
+                "Enrich topic failed topic_chars=%s error_type=%s",
+                len(topic),
+                type(error).__name__,
+            )
             continue
         url_key = hashlib.sha1(cand.source_url.encode("utf-8")).hexdigest()
         if url_key in seen_urls:

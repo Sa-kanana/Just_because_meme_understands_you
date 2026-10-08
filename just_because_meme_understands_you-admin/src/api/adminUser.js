@@ -33,7 +33,7 @@ export function fetchAdminUsers(params = {}) {
 export function updateAdminUserStatus(id, status) {
   const userId = id != null ? String(id).trim() : ''
   if (!userId) return Promise.reject(new Error('缺少 userId'))
-  return request(`/admin/users/${encodeURIComponent(userId)}/status`, {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   }).then((res) => assertData(res, '更新用户状态失败'))
@@ -42,7 +42,7 @@ export function updateAdminUserStatus(id, status) {
 export function updateAdminUserRole(id, role) {
   const userId = id != null ? String(id).trim() : ''
   if (!userId) return Promise.reject(new Error('缺少 userId'))
-  return request(`/admin/users/${encodeURIComponent(userId)}/role`, {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ role }),
   }).then((res) => assertData(res, '更新用户角色失败'))

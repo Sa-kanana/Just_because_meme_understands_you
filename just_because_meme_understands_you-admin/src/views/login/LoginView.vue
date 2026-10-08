@@ -1,7 +1,10 @@
 <template>
   <div class="login-page">
     <div class="login-card">
-      <h1>只因梗懂你 · 管理端</h1>
+      <div class="login-brand">
+        <img src="/icon.svg" alt="" />
+        <h1>只因“梗”懂你 · 管理端</h1>
+      </div>
       <p class="sub">仅 ROLE_ADMIN 可登录</p>
       <a-form :model="form" layout="vertical" @submit-success="onSubmit">
         <a-form-item field="email" label="邮箱" :rules="[{ required: true, message: '请输入邮箱' }]">
@@ -118,6 +121,22 @@ onMounted(() => {
   margin: 0 0 8px;
   font-size: 22px;
   color: #1d2129;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.login-brand img {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+}
+.login-brand h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.025em;
 }
 .sub {
   margin: 0 0 24px;

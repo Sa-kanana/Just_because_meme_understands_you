@@ -98,7 +98,7 @@ export function deleteAiSession(sessionId) {
 
 /**
  * 回填已发布梗到向量库（运维）
- * POST /ai/ingest/backfill
+ * POST /admin/ai/ingestion-jobs
  */
 export function backfillAiIngest(limit) {
   const query = new URLSearchParams()
@@ -106,14 +106,14 @@ export function backfillAiIngest(limit) {
     query.set('limit', String(Math.min(Number(limit), 2000)))
   }
   const suffix = query.toString() ? `?${query}` : ''
-  return request(`/ai/ingest/backfill${suffix}`, { method: 'POST' }).then((res) =>
+  return request(`/admin/ai/ingestion-jobs${suffix}`, { method: 'POST' }).then((res) =>
     unwrap(res, '回填失败')
   )
 }
 
 /**
  * AI 搜索流式（SSE）
- * POST /ai/search/stream
+ * POST /ai/searches
  *
  * @param {{ query: string, sessionId?: string, requestId?: string }} payload
  * @param {{
@@ -138,7 +138,7 @@ export async function streamAiSearch(payload = {}, handlers = {}) {
     body.requestId = String(payload.requestId).trim()
   }
 
-  const response = await streamRequest('/ai/search/stream', {
+  const response = await streamRequest('/ai/searches', {
     method: 'POST',
     body: JSON.stringify(body),
     signal: handlers.signal,

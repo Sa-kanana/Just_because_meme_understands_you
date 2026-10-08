@@ -1,0 +1,596 @@
+package com.sakana.just_because_meme_understands_you.modules.auth.application.impl;
+
+import com.sakana.just_because_meme_understands_you.common.exception.BizException;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.modules.auth.domain.AuthConstants;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserStatusConstants;
+import com.sakana.just_because_meme_understands_you.modules.auth.infrastructure.config.JwtUtil;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserAuth;
+import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserAuthMapper;
+import com.sakana.just_because_meme_understands_you.modules.auth.application.IAuthService;
+import com.sakana.just_because_meme_understands_you.modules.auth.application.ICaptchaService;
+import com.sakana.just_because_meme_understands_you.modules.auth.application.UserSessionRevoker;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
+import com.sakana.just_because_meme_understands_you.common.util.DigestUtil;
+import com.sakana.just_because_meme_understands_you.common.util.EmailValidatorUtil;
+import com.sakana.just_because_meme_understands_you.modules.auth.application.support.PasswordPolicy;
+import com.sakana.just_because_meme_understands_you.api.user.dto.LoginRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.dto.RegisterRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.dto.ResetPasswordRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.dto.SendCodeRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.AuthTokenBundleVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.LoginUserVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.RegisterResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.SendCodeResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.VerifyCodeResponseVO;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+
+/**
+ * 认证服务实现：登录、注册、忘记密码、退出登录。
+ *
+ * @author sakana
+ */
+@Slf4j
+@Service
+public class AuthServiceImpl implements IAuthService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    @Resource
+    private UserAuthMapper userAuthMapper;
+
+    @Resource
+    private IUserService userService;
+
+    @Resource
+    private PasswordEncoder passwordEncoder;
+
+    @Resource
+    private JwtUtil jwtUtil;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private JavaMailSender mailSender;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private UserSessionRevoker userSessionRevoker;
+
+    @Resource
+    private ICaptchaService captchaService;
+
+    /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
+    @Value("${spring.mail.username}")
+    private String mailFrom;
+
+    @Value("${jwt.expiration}")
+    private long accessTokenExpirationMillis;
+
+    @Value("${jwt.refresh-expiration}")
+    private long refreshTokenExpirationMillis;
+
+    // ==================== 登录 / 续航 ====================
+
+    @Transactional
+    @Override
+    public AuthTokenBundleVO login(LoginRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
+        String email = request.getEmail();
+        String rawPassword = request.getPassword();
+        String loginType = request.getLoginType();
+
+        if (!StringUtils.hasText(email) || !StringUtils.hasText(rawPassword) || !StringUtils.hasText(loginType)) {
+            throw new BizException(Result.CODE_ERROR, "请求参数不完整");
+        }
+
+        UserAuth userAuth = userAuthMapper.selectByIdentity(loginType, email);
+        if (userAuth == null || !passwordEncoder.matches(rawPassword, userAuth.getCredential())) {
+            throw new BizException(Result.CODE_ERROR, "账号或密码错误");
+        }
+
+        User user = userService.getById(userAuth.getUserId());
+        if (user == null) {
+            throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+        }
+        // 确保为正常用户
+        ensureUserActive(user);
+
+        String userId = String.valueOf(user.getId());
+        // 生成访问令牌
+        String accessToken = generateAccessToken(user, loginType);
+        String refreshToken = generateRefreshToken(userId, loginType);
+        storeRefreshToken(refreshToken, userId);
+        // 构建令牌包
+        return buildTokenBundle(accessToken, refreshToken, user);
+    }
+
+    @Override
+    public AuthTokenBundleVO renewLogin(String refreshToken) {
+        if (!StringUtils.hasText(refreshToken)) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌缺失或已过期，请重新登录");
+        }
+
+        io.jsonwebtoken.Claims claims;
+        try {
+            claims = jwtUtil.parseToken(refreshToken);
+        } catch (Exception ignored) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已过期，请重新登录");
+        }
+        if (!AuthConstants.TOKEN_TYPE_REFRESH.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
+        }
+
+        String userIdStr = claims.getSubject();
+        if (!StringUtils.hasText(userIdStr)) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
+        }
+
+        Long userId;
+        try {
+            userId = Long.parseLong(userIdStr);
+        } catch (NumberFormatException ignored) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "无效的刷新令牌，请重新登录");
+        }
+        //如果token不属于正确版本，直接吊销token并退出登录
+        if (!userSessionRevoker.isTokenVersionValid(userIdStr, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
+            userSessionRevoker.revokeRefreshToken(refreshToken, userIdStr);
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "会话已失效，请重新登录");
+        }
+
+        String refreshKey = AuthConstants.REFRESH_TOKEN_PREFIX + DigestUtil.md5Hex(refreshToken);
+        String cachedUserId = stringRedisTemplate.opsForValue().getAndDelete(refreshKey);
+        if (!StringUtils.hasText(cachedUserId) || !userIdStr.equals(cachedUserId)) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌已失效，请重新登录");
+        }
+        // 旋转：从会话集合摘掉旧 refresh
+        userSessionRevoker.revokeRefreshToken(refreshToken, userIdStr);
+
+        User user = userService.getById(userId);
+        if (user == null) {
+            throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "用户不存在或会话已失效，请重新登录");
+        }
+        // 确保为正常用户
+        ensureUserActive(user);
+        //如果claims中没有携带登录方式就将登录方式设为邮箱
+        String loginType = String.valueOf(claims.get(AuthConstants.CLAIM_LOGIN_TYPE));
+        if (!StringUtils.hasText(loginType) || "null".equals(loginType)) {
+            loginType = AuthConstants.LOGIN_TYPE_EMAIL;
+        }
+        // 生成新的访问令牌
+        String newAccessToken = generateAccessToken(user, loginType);
+        String newRefreshToken = generateRefreshToken(userIdStr, loginType);
+        storeRefreshToken(newRefreshToken, userIdStr);
+        // 构建令牌包
+        return buildTokenBundle(newAccessToken, newRefreshToken, user);
+    }
+
+    @Transactional
+    @Override
+    public AuthTokenBundleVO loginOrRegisterGithub(
+            String githubUserId,
+            String loginName,
+            String displayName,
+            String avatarUrl,
+            String email) {
+        if (!StringUtils.hasText(githubUserId)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "GitHub 用户标识缺失");
+        }
+        String githubId = githubUserId.trim();
+
+        UserAuth githubAuth = userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_GITHUB, githubId);
+        User user;
+        if (githubAuth != null) {
+            user = userService.getById(githubAuth.getUserId());
+            if (user == null) {
+                throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+            }
+            ensureUserActive(user);
+            // 已有账号：补头像（仅当本地为空）
+            if (!StringUtils.hasText(user.getAvatar()) && StringUtils.hasText(avatarUrl)) {
+                user.setAvatar(avatarUrl.trim());
+                userService.updateById(user);
+            }
+        } else {
+            //新建一个用户，将github上的用户信息复制到该用户上
+            user = new User();
+            user.setNickname(resolveUniqueNickname(loginName, displayName, githubId));
+            if (StringUtils.hasText(avatarUrl)) {
+                user.setAvatar(avatarUrl.trim());
+            }
+            user.setRole("ROLE_USER");
+            user.setStatus(UserStatusConstants.ACTIVE);
+            userService.save(user);
+
+            UserAuth auth = new UserAuth();
+            auth.setUserId(user.getId());
+            auth.setIdentityType(AuthConstants.LOGIN_TYPE_GITHUB);
+            auth.setIdentifier(githubId);
+            auth.setCredential(null);
+            userAuthMapper.insert(auth);
+
+            // 可选：绑定未占用的 GitHub 邮箱，便于后续找回/通知
+            if (StringUtils.hasText(email)) {
+                String normalizedEmail = email.trim().toLowerCase();
+                if (EmailValidatorUtil.isValidEmail(normalizedEmail)
+                        && userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, normalizedEmail) == null) {
+                    UserAuth emailAuth = new UserAuth();
+                    emailAuth.setUserId(user.getId());
+                    emailAuth.setIdentityType(AuthConstants.LOGIN_TYPE_EMAIL);
+                    emailAuth.setIdentifier(normalizedEmail);
+                    emailAuth.setCredential(null);
+                    userAuthMapper.insert(emailAuth);
+                }
+            }
+        }
+
+        String userId = String.valueOf(user.getId());
+        String accessToken = generateAccessToken(user, AuthConstants.LOGIN_TYPE_GITHUB);
+        String refreshToken = generateRefreshToken(userId, AuthConstants.LOGIN_TYPE_GITHUB);
+        storeRefreshToken(refreshToken, userId);
+        return buildTokenBundle(accessToken, refreshToken, user);
+    }
+
+    private String resolveUniqueNickname(String loginName, String displayName, String githubId) {
+        // ① 确定基础昵称：优先 displayName → loginName → "gh_" + githubId
+        String base = StringUtils.hasText(displayName) ? displayName.trim()
+                : (StringUtils.hasText(loginName) ? loginName.trim() : ("gh_" + githubId));
+        // ② 清洗：合并多余空白 → 截断 40 字 → 兜底
+        base = base.replaceAll("\\s+", " ").trim();
+        if (base.length() > 40) {
+            base = base.substring(0, 40);
+        }
+        if (!StringUtils.hasText(base)) {
+            base = "gh_" + githubId;
+        }
+        // ③ 第一级：直接使用 base，检查是否冲突
+        if (userService.lambdaQuery().eq(User::getNickname, base).count() == 0) {
+            return base;
+        }
+        // ④ 第二级：base + "_" + githubId 后 6 位
+        String suffix = githubId.length() > 6 ? githubId.substring(githubId.length() - 6) : githubId;
+        String candidate = base + "_" + suffix;
+        if (candidate.length() > 50) {
+            candidate = candidate.substring(0, 50);
+        }
+        if (userService.lambdaQuery().eq(User::getNickname, candidate).count() == 0) {
+            return candidate;
+        }
+        return ("u" + githubId);
+    }
+
+    // ==================== 注册 ====================
+
+    @Transactional
+    @Override
+    public RegisterResponseVO register(RegisterRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+
+        String email = request.getEmail();
+        String password = request.getPassword();
+        String confirmPassword = request.getConfirmPassword();
+        String verificationCode = request.getVerificationCode();
+        String nickname = request.getNickname();
+
+        if (!StringUtils.hasText(email)
+                || !StringUtils.hasText(password)
+                || !StringUtils.hasText(confirmPassword)
+                || !StringUtils.hasText(verificationCode)
+                || !StringUtils.hasText(nickname)) {
+            throw new BizException(Result.CODE_ERROR, "请求参数不完整");
+        }
+        if (!password.equals(confirmPassword)) {
+            throw new BizException(Result.CODE_ERROR, "两次密码输入不一致");
+        }
+        PasswordPolicy.validate(password);
+
+        // 校验邮箱是否已注册
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {
+            throw new BizException(Result.CODE_ERROR, "该邮箱已被注册");
+        }
+
+        // 校验验证码
+        String redisKey = AuthConstants.REGISTER_CODE_PREFIX + email;
+        String cachedCode = stringRedisTemplate.opsForValue().get(redisKey);
+        if (!StringUtils.hasText(cachedCode) || !verificationCode.equals(cachedCode)) {
+            throw new BizException(Result.CODE_ERROR, "验证码错误或已过期");
+        }
+
+        // 创建用户（主键由 MyBatis-Plus 雪花算法自动填充）
+        User user = new User();
+        user.setNickname(nickname);
+        user.setRole("ROLE_USER");
+        user.setStatus(UserStatusConstants.ACTIVE);
+        userService.save(user);
+        long userId = user.getId();
+
+        // 创建用户认证信息
+        UserAuth userAuth = new UserAuth();
+        userAuth.setUserId(userId);
+        userAuth.setIdentityType(AuthConstants.LOGIN_TYPE_EMAIL);
+        userAuth.setIdentifier(email);
+        userAuth.setCredential(passwordEncoder.encode(password));
+        userAuthMapper.insert(userAuth);
+
+        // 注册成功后删除验证码
+        stringRedisTemplate.delete(redisKey);
+
+        RegisterResponseVO responseVO = new RegisterResponseVO();
+        responseVO.setUserId(userId);
+        responseVO.setEmail(email);
+        responseVO.setNickname(nickname);
+        responseVO.setCreatedAt(java.time.Instant.now().toString());
+        return responseVO;
+    }
+
+    @Override
+    public SendCodeResponseVO sendRegisterCode(SendCodeRequestDTO request) {
+        captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
+        String email = request.getEmail();
+        validateEmailFormat(email);
+        // 已注册用户不允许重复发送注册验证码
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) != null) {
+            throw new BizException(Result.CODE_ERROR, "该邮箱已被注册");
+        }
+        return sendVerificationCode(
+                email,
+                AuthConstants.REGISTER_CODE_PREFIX,
+                AuthConstants.REGISTER_CODE_RATE_PREFIX,
+                AuthConstants.REGISTER_CODE_TTL_MINUTES,
+                "【Just Because Meme Understands You】注册验证码"
+        );
+    }
+
+    // ==================== 忘记密码 ====================
+
+    @Override
+    public SendCodeResponseVO sendForgotPasswordCode(String email) {
+        validateEmailFormat(email);
+        // 必须已注册才允许找回密码
+        if (userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email) == null) {
+            throw new BizException(Result.CODE_ERROR, "该邮箱未注册");
+        }
+        return sendVerificationCode(
+                email,
+                AuthConstants.FORGOT_PASSWORD_CODE_PREFIX,
+                AuthConstants.FORGOT_PASSWORD_RATE_PREFIX,
+                AuthConstants.FORGOT_PASSWORD_CODE_TTL_MINUTES,
+                "【Just Because Meme Understands You】重置密码验证码"
+        );
+    }
+
+    @Override
+    public VerifyCodeResponseVO verifyForgotPasswordCode(String email, String code) {
+        //参数校验
+        if (!StringUtils.hasText(email) || !StringUtils.hasText(code)) {
+            throw new BizException(Result.CODE_ERROR, "邮箱和验证码不能为空");
+        }
+        //重Redis获取验证码
+        String codeKey = AuthConstants.FORGOT_PASSWORD_CODE_PREFIX + email;
+        String cachedCode = stringRedisTemplate.opsForValue().get(codeKey);
+        if (!StringUtils.hasText(cachedCode) || !code.trim().equals(cachedCode)) {
+            throw new BizException(Result.CODE_ERROR, "验证码错误或已过期");
+        }
+        //校验用户是否存在
+        UserAuth userAuth = userAuthMapper.selectByIdentity(AuthConstants.LOGIN_TYPE_EMAIL, email);
+        if (userAuth == null) {
+            stringRedisTemplate.delete(codeKey);
+            throw new BizException(Result.CODE_ERROR, "用户不存在");
+        }
+        //签发一次性重置令牌
+        String resetToken = UUID.randomUUID().toString();
+        String resetKey = AuthConstants.RESET_TOKEN_PREFIX + resetToken;
+        stringRedisTemplate.opsForValue().set(
+                Objects.requireNonNull(resetKey),
+                Objects.requireNonNull(String.valueOf(userAuth.getUserId())),
+                AuthConstants.RESET_TOKEN_TTL_MINUTES,
+                TimeUnit.MINUTES
+        );
+        //删除验证码
+        stringRedisTemplate.delete(codeKey);
+
+        //返回resetToken
+        VerifyCodeResponseVO vo = new VerifyCodeResponseVO();
+        vo.setToken(resetToken);
+        return vo;
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequestDTO request) {
+        String token = request.getToken();
+        String newPassword = request.getNewPassword();
+        if (!StringUtils.hasText(token) || !StringUtils.hasText(newPassword)) {
+            throw new BizException(Result.CODE_ERROR, "token 和新密码不能为空");
+        }
+        PasswordPolicy.validate(newPassword);
+
+        String resetKey = AuthConstants.RESET_TOKEN_PREFIX + token;
+        String userIdStr = stringRedisTemplate.opsForValue().get(resetKey);
+        if (!StringUtils.hasText(userIdStr)) {
+            throw new BizException(Result.CODE_ERROR, "重置链接已过期，请重新获取验证码");
+        }
+
+        long userId = Long.parseLong(userIdStr);
+        UserAuth userAuth = userAuthMapper.selectByUserIdAndType(userId, AuthConstants.LOGIN_TYPE_EMAIL);
+        if (userAuth == null) {
+            stringRedisTemplate.delete(resetKey);
+            throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+        }
+
+        userAuth.setCredential(passwordEncoder.encode(newPassword));
+        userAuth.setPasswordChangedAt(java.time.LocalDateTime.now());
+        userAuthMapper.updateById(userAuth);
+        stringRedisTemplate.delete(resetKey);
+        userSessionRevoker.revokeAllByUserId(userIdStr);
+    }
+
+    // ==================== 退出登录 ====================
+
+    @Override
+    public void logout(String accessToken, String refreshToken) {
+        if (!StringUtils.hasText(accessToken)) {
+            throw new BizException(Result.CODE_ERROR, "未携带有效令牌");
+        }
+        io.jsonwebtoken.Claims claims;
+        try {
+            claims = jwtUtil.parseToken(accessToken);
+        } catch (Exception ignored) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "无效的令牌，请重新登录");
+        }
+        if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "无效的访问令牌");
+        }
+        //将访问令牌添加到黑名单
+        String blacklistKey = AuthConstants.ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(accessToken);
+        //获取访问令牌过期时间
+        long ttlMillis = claims.getExpiration().getTime() - System.currentTimeMillis();
+        //设置黑名单过期时间为访问令牌过期时间
+        if (ttlMillis < AuthConstants.BLACKLIST_MIN_TTL_MILLIS) {
+            ttlMillis = AuthConstants.BLACKLIST_MIN_TTL_MILLIS;
+        }
+        stringRedisTemplate.opsForValue().set(
+                Objects.requireNonNull(blacklistKey),
+                Objects.requireNonNull(String.valueOf(claims.getSubject())),
+                ttlMillis,
+                TimeUnit.MILLISECONDS
+        );
+        //在redis中注销刷新令牌
+        if (StringUtils.hasText(refreshToken)) {
+            userSessionRevoker.revokeRefreshToken(refreshToken, String.valueOf(claims.getSubject()));
+        }
+    }
+
+    // ==================== 私有辅助 ====================
+
+    /**
+     * 校验用户状态，status 为 0 视为禁用。
+     */
+    private void ensureUserActive(User user) {
+        if (user.getStatus() == null || user.getStatus() == UserStatusConstants.DISABLED) {
+            throw new BizException(Result.CODE_ERROR, "账号已被禁用");
+        }
+    }
+
+    /**
+     * 校验邮箱非空且格式合法。
+     */
+    private void validateEmailFormat(String email) {
+        if (!StringUtils.hasText(email)) {
+            throw new BizException(Result.CODE_ERROR, "邮箱不能为空");
+        }
+        if (!EmailValidatorUtil.isValidEmail(email)) {
+            throw new BizException(Result.CODE_ERROR, "邮箱格式不正确");
+        }
+    }
+
+    /**
+     * 通用发送验证码流程：频率限制 -> 生成 -> 写 Redis -> 发邮件，失败回滚 Redis。
+     * 合并注册验证码与忘记密码验证码的重复逻辑。
+     *
+     * @param email           邮箱
+     * @param codePrefix      验证码 Redis key 前缀
+     * @param ratePrefix      频率限制 Redis key 前缀
+     * @param ttlMinutes      验证码有效期（分钟）
+     * @param mailSubject     邮件主题
+     * @return 发送结果，含下次可发送的倒计时
+     */
+    private SendCodeResponseVO sendVerificationCode(String email, String codePrefix, String ratePrefix,
+                                                    long ttlMinutes, String mailSubject) {
+        String rateKey = ratePrefix + email;
+        //获取频率限制过期时间
+        Long expireSeconds = stringRedisTemplate.getExpire(rateKey, TimeUnit.SECONDS);
+        //返回频率限制倒计时
+        if (expireSeconds != null && expireSeconds > 0) {
+            SendCodeResponseVO rateLimitVO = new SendCodeResponseVO();
+            rateLimitVO.setRetryAfter(expireSeconds);
+            return rateLimitVO;
+        }
+        //生成验证码
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1000000));
+        //将验证码写入 Redis
+        String codeKey = codePrefix + email;
+        stringRedisTemplate.opsForValue().set(codeKey, code, ttlMinutes, TimeUnit.MINUTES);
+        //将频率限制写入 Redis
+        stringRedisTemplate.opsForValue().set(rateKey, "1", AuthConstants.CODE_RATE_LIMIT_SECONDS, TimeUnit.SECONDS);
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo(email);
+        message.setSubject(mailSubject);
+        message.setText("您的验证码为：" + code + "，有效期 " + ttlMinutes + " 分钟，请勿泄露给他人。");
+        try {
+            mailSender.send(message);
+        } catch (org.springframework.mail.MailException mailEx) {
+            log.warn("验证码邮件发送失败, email={}", email, mailEx);
+            stringRedisTemplate.delete(codeKey);
+            stringRedisTemplate.delete(rateKey);
+            throw new BizException(Result.CODE_ERROR, "验证码发送失败，请稍后重试");
+        }
+
+        SendCodeResponseVO responseVO = new SendCodeResponseVO();
+        responseVO.setRetryAfter(AuthConstants.CODE_RATE_LIMIT_SECONDS);
+        return responseVO;
+    }
+
+    private String generateAccessToken(User user, String loginType) {
+        Map<String, Object> claims = new HashMap<>(4);
+        claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS);
+        claims.put(AuthConstants.CLAIM_ROLE, user.getRole());
+        claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_VERSION, userSessionRevoker.currentTokenVersion(String.valueOf(user.getId())));
+        return jwtUtil.generateToken(String.valueOf(user.getId()), claims, accessTokenExpirationMillis);
+    }
+
+    private String generateRefreshToken(String userId, String loginType) {
+        Map<String, Object> claims = new HashMap<>(4);
+        claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH);
+        claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
+        claims.put(AuthConstants.CLAIM_TOKEN_VERSION, userSessionRevoker.currentTokenVersion(userId));
+        claims.put("tokenId", UUID.randomUUID().toString());
+        return jwtUtil.generateToken(userId, claims, refreshTokenExpirationMillis);
+    }
+
+    private void storeRefreshToken(String refreshToken, String userId) {
+        userSessionRevoker.registerSession(refreshToken, userId, refreshTokenExpirationMillis);
+    }
+
+    private AuthTokenBundleVO buildTokenBundle(String accessToken, String refreshToken, User user) {
+        LoginUserVO userVO = new LoginUserVO();
+        userVO.setId(user.getId());
+        userVO.setNickname(user.getNickname());
+        userVO.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
+        userVO.setSignature(user.getSignature());
+        userVO.setRole(user.getRole());
+        userVO.setStatus(user.getStatus());
+
+        AuthTokenBundleVO bundleVO = new AuthTokenBundleVO();
+        bundleVO.setAccessToken(accessToken);
+        bundleVO.setRefreshToken(refreshToken);
+        bundleVO.setUser(userVO);
+        return bundleVO;
+    }
+}

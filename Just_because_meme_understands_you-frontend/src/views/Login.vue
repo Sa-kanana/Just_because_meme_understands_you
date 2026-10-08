@@ -14,10 +14,10 @@
     >
       <ui-form-item label="邮箱" prop="email">
         <vs-input
+          ref="emailInput"
           v-model="form.email"
           block
           clearable
-          placeholder="name@example.com"
           autocomplete="email"
           class="auth-field"
         >
@@ -29,12 +29,12 @@
 
       <ui-form-item label="密码" prop="password">
         <vs-input
+          ref="passwordInput"
           v-model="form.password"
           type="password"
           show-password
           block
           clearable
-          placeholder="请输入密码"
           autocomplete="current-password"
           class="auth-field"
         >
@@ -139,8 +139,21 @@ export default {
     if (emailFromQuery) {
       this.form.email = String(emailFromQuery)
     }
+    this.$nextTick(() => this.syncAutofilledCredentials())
   },
   methods: {
+    syncAutofilledCredentials() {
+      const emailInput = this.$refs.emailInput && this.$refs.emailInput.inputRef
+      const passwordInput = this.$refs.passwordInput && this.$refs.passwordInput.inputRef
+
+      // 只补全空表单，保留路由预填和用户已输入的内容。
+      if (!this.form.email && emailInput && emailInput.value) {
+        this.form.email = emailInput.value
+      }
+      if (!this.form.password && passwordInput && passwordInput.value) {
+        this.form.password = passwordInput.value
+      }
+    },
     resolvePostLoginRedirect() {
       const redirectFromQuery = this.$route.query.redirect
       let redirectFromStorage = ''
@@ -171,6 +184,7 @@ export default {
     handleSubmit() {
       if (this.submitting) return
 
+      this.syncAutofilledCredentials()
       this.$refs.loginFormRef.validate((valid) => {
         if (!valid) return
         const captchaMsg =
