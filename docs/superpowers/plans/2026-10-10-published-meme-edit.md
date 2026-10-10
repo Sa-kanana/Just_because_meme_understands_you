@@ -41,10 +41,10 @@
 - Produces: `MemeEditRevisionMapper extends BaseMapper<MemeEditRevision>` and persisted fields defined in the spec.
 - `content_json` stores the complete editable payload; statuses are `PENDING`, `APPROVED`, `REJECTED`, `CANCELED`.
 
-- [ ] **Step 1: Write schema contract tests** asserting all required columns and Chinese comments exist, status defaults to `PENDING`, and indexes cover `(meme_id, status)` and `(status, created_at, id)`.
-- [ ] **Step 2: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it fails** because the migration resource does not exist.
-- [ ] **Step 3: Add the migration, entity, and mapper**. Include a Chinese `COMMENT` for every SQL column and Chinese field comments on the entity. Keep completed revision rows for audit; do not add a partial unique index.
-- [ ] **Step 4: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it passes.**
+- [x] **Step 1: Write schema contract tests** asserting all required columns and Chinese comments exist, status defaults to `PENDING`, and indexes cover `(meme_id, status)` and `(status, created_at, id)`.
+- [x] **Step 2: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it fails** because the migration resource does not exist.
+- [x] **Step 3: Add the migration, entity, and mapper**. Include a Chinese `COMMENT` for every SQL column and Chinese field comments on the entity. Keep completed revision rows for audit; do not add a partial unique index.
+- [x] **Step 4: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it passes.**
 
 ### Task 2: 用户提交修改稿与个人主页状态
 
