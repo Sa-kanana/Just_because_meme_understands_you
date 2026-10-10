@@ -42,9 +42,9 @@
 - `content_json` stores the complete editable payload; statuses are `PENDING`, `APPROVED`, `REJECTED`, `CANCELED`.
 
 - [ ] **Step 1: Write schema contract tests** asserting all required columns and Chinese comments exist, status defaults to `PENDING`, and indexes cover `(meme_id, status)` and `(status, created_at, id)`.
-- [ ] **Step 2: Run the schema test and confirm it fails** because the migration and entity do not exist.
+- [ ] **Step 2: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it fails** because the migration resource does not exist.
 - [ ] **Step 3: Add the migration, entity, and mapper**. Include a Chinese `COMMENT` for every SQL column and Chinese field comments on the entity. Keep completed revision rows for audit; do not add a partial unique index.
-- [ ] **Step 4: Run `mvn -pl just_because_meme_understands_you-backend -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it passes.**
+- [ ] **Step 4: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSchemaContractTest test` and confirm it passes.**
 
 ### Task 2: 用户提交修改稿与个人主页状态
 
@@ -60,14 +60,14 @@
 **Interfaces:**
 - `MemeEditRevisionService.submitEdit(Long userId, Long memeId, MemeEditRequestDTO request): MemeEditRevisionVO`
 - `MemeEditRevisionService.getLatestRevisionStatuses(List<Long> memeIds): Map<Long, MemeEditRevisionVO>`
-- `MemeController.updateOwnMeme(String memeId, MemeEditRequestDTO request, HttpServletRequest request): Result<MemeEditRevisionVO>` at `PUT /v1/memes/{memeId}`.
+- `MemeController.updateOwnMeme(String memeId, MemeEditRequestDTO body, HttpServletRequest servletRequest): Result<MemeEditRevisionVO>` at `PUT /v1/memes/{memeId}`.
 - `UserPublishedMemeVO` adds the latest edit revision status, submission time, and review note when the requester is the owner.
 
 - [ ] **Step 1: Add failing service tests** for author submission on status `1`/`3`, non-owner rejection, other status rejection, invalid tags/resources, and rejection of an existing `PENDING` revision.
-- [ ] **Step 2: Run `mvn -pl just_because_meme_understands_you-backend -Dtest=MemeEditRevisionSubmitTest test` and confirm the expected failures.**
+- [ ] **Step 2: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSubmitTest test` and confirm the expected failures.**
 - [ ] **Step 3: Implement owner/status validation, normalized JSON snapshot and deterministic base-content SHA-256.** Lock the parent meme row in the transaction before checking for a pending revision and inserting one.
 - [ ] **Step 4: Expose `PUT /v1/memes/{memeId}` and owner-only latest revision status in the user's published meme page response.** The request DTO contains only editable content fields.
-- [ ] **Step 5: Re-run the focused test and confirm all cases pass.**
+- [ ] **Step 5: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionSubmitTest test` and confirm all cases pass.**
 
 ### Task 3: 管理端审核与正式内容应用
 
@@ -91,11 +91,11 @@
 - Routes: `GET /admin/v1/meme-edit-revisions`, `GET /admin/v1/meme-edit-revisions/{id}`, `PATCH /admin/v1/meme-edit-revisions/{id}`.
 
 - [ ] **Step 1: Add failing tests** for approval content replacement, rejection preserving old content, hash conflict, duplicate action, safe status preservation (`1` stays `1`, `3` stays `3`), labels/resources, unchanged counters and notification outcome.
-- [ ] **Step 2: Run `mvn -pl just_because_meme_understands_you-backend -Dtest=MemeEditRevisionReviewTest test` and confirm failures.**
+- [ ] **Step 2: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionReviewTest test` and confirm failures.**
 - [ ] **Step 3: Implement revision paging/detail and transactional approval/rejection.** Compare canonical content hash before applying; lock the meme and revision rows; preserve identity, release time and counters; replace resource/tag relations and update tag counts by set difference.
 - [ ] **Step 4: Ensure OSS cleanup only runs after commit and never removes URLs reused by the approved version.** On rejection, clean only objects exclusively introduced by the rejected revision.
 - [ ] **Step 5: Add idempotent review notifications** with the revision/meme as target and include rejection notes for the author.
-- [ ] **Step 6: Re-run focused tests and confirm all cases pass.**
+- [ ] **Step 6: Run `mvn -f just_because_meme_understands_you-backend/pom.xml -Dtest=MemeEditRevisionReviewTest test` and confirm all cases pass.**
 
 ### Task 4: 用户端编辑表单与审核状态展示
 
@@ -104,14 +104,14 @@
 - Modify: `Just_because_meme_understands_you-frontend/src/views/UserProfile.vue`
 - Modify: `Just_because_meme_understands_you-frontend/src/views/PublishMeme.vue`
 - Modify: `Just_because_meme_understands_you-frontend/src/router/index.js` only if a dedicated edit route is needed; prefer the existing `publishMeme` route with an `edit` query parameter.
-- Test: frontend unit/component test if supported; otherwise run lint/build and verify the flow in the running app.
+- Test: `npm run lint` and `npm run build` in `Just_because_meme_understands_you-frontend`; verify route/form rendering in the existing browser if the local app is available.
 
 **Interfaces:**
 - `submitMemeEdit(memeId, payload): Promise<MemeEditRevisionVO>` sends a complete editable snapshot using `PUT /memes/{memeId}`.
 - `PublishMeme.vue` resolves `route.query.edit`, calls `getMemeDetail`, maps detail fields into the shared form, and submits through `submitMemeEdit`.
 - Personal list item fields: `editRevisionStatus`, `editRevisionCreatedAt`, `editRevisionNote`.
 
-- [ ] **Step 1: Add API-layer tests or a focused request mock** proving the edit request uses `PUT`, the expected payload whitelist and handles business errors.
+- [ ] **Step 1: Verify the API helper** sends `PUT /memes/{id}`, only editable fields, and surfaces server business errors; the frontend package has no unit-test runner, so use lint/build and browser verification instead of adding a dependency.
 - [ ] **Step 2: Add “编辑” to the owner card menu for statuses `1` and `3`; show pending status and rejection reason.**
 - [ ] **Step 3: Implement edit mode in the existing publish page**, preloading title, introduction, cover, tags, media and links; preserve form values after submission errors.
 - [ ] **Step 4: Show the confirmation copy from the spec and return to the owner’s published list after successful submission.**
@@ -139,9 +139,9 @@
 **Files:**
 - Modify: `docs/superpowers/plans/2026-10-10-published-meme-edit.md` to mark completed steps.
 - Modify: `docs/superpowers/specs/2026-10-10-published-meme-edit-design.md` only if implementation uncovers a necessary design correction.
-- Verify: backend focused tests/full relevant suite, user frontend build, admin frontend build, SQL migration contract.
+- Verify: backend focused tests/full relevant suite, user frontend lint/build, admin frontend lint/build, SQL migration contract.
 
-- [ ] **Step 1: Run backend focused tests and the relevant full test suite.**
+- [ ] **Step 1: Run `mvn -f just_because_meme_understands_you-backend/pom.xml test` and record the full backend suite result.**
 - [ ] **Step 2: Run user frontend lint/build and admin frontend lint/build.**
 - [ ] **Step 3: Review the final diff against the spec, checking that pre-existing workspace modifications remain intact and no unrelated files changed.**
 - [ ] **Step 4: Record verification results and remaining limitations in the plan.**
