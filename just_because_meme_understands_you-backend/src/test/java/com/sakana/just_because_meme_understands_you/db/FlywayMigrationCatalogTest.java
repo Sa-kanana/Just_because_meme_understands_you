@@ -36,6 +36,11 @@ class FlywayMigrationCatalogTest {
             "V2026101003__meme_edit_revisions.sql"
     );
 
+    /** 中文注释：将动态 SQL 字符串中的双单引号还原为实际执行 SQL，避免断言依赖转义写法。 */
+    private static String normalizePreparedSql(String sql) {
+        return sql.replace("''", "'");
+    }
+
     @Test
     void assignsEveryMigrationAUniqueVersion() {
         var versions = MIGRATIONS.stream()
@@ -62,11 +67,14 @@ class FlywayMigrationCatalogTest {
         try (migration) {
             sql = new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         }
+        sql = normalizePreparedSql(sql);
 
         assertTrue(sql.contains("ALTER TABLE `user`"), "迁移必须只扩展用户表");
         assertTrue(sql.contains("ADD COLUMN deleted_at DATETIME NULL"), "软删除标记需要可空时间字段");
         assertTrue(sql.contains("COMMENT '逻辑删除时间，NULL表示未删除'"), "新增字段必须包含中文注释");
         assertTrue(sql.contains("idx_user_deleted_create_time"), "普通和注销账号分页都需要索引支持");
+        assertTrue(sql.contains("information_schema.COLUMNS"), "已存在软删除字段时必须跳过重复添加");
+        assertTrue(sql.contains("information_schema.STATISTICS"), "已存在软删除索引时必须跳过重复添加");
     }
 
     @Test
@@ -79,8 +87,10 @@ class FlywayMigrationCatalogTest {
         try (migration) {
             sql = new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         }
+        sql = normalizePreparedSql(sql);
         assertTrue(sql.contains("ADD COLUMN status VARCHAR(16)"));
         assertTrue(sql.contains("COMMENT '消息状态：COMPLETED已完成、STOPPED用户停止、FAILED生成失败'"));
+        assertTrue(sql.contains("information_schema.COLUMNS"), "已存在消息状态字段时必须跳过重复添加");
     }
 
     @Test
@@ -93,9 +103,12 @@ class FlywayMigrationCatalogTest {
         try (migration) {
             sql = new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         }
+        sql = normalizePreparedSql(sql);
         assertTrue(sql.contains("ADD COLUMN source_event_id BIGINT UNSIGNED NULL"));
         assertTrue(sql.contains("COMMENT '来源 Outbox 事件 ID；为空表示非 Outbox 通知'"));
         assertTrue(sql.contains("UNIQUE KEY uk_user_notification_source_event (source_event_id)"));
+        assertTrue(sql.contains("information_schema.COLUMNS"), "已存在来源字段时必须跳过重复添加");
+        assertTrue(sql.contains("information_schema.STATISTICS"), "已存在唯一索引时必须跳过重复添加");
     }
 
     @Test
@@ -108,6 +121,7 @@ class FlywayMigrationCatalogTest {
         try (migration) {
             sql = new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         }
+        sql = normalizePreparedSql(sql);
 
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `role`"), "必须创建角色表");
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS user_role"), "必须创建用户角色关联表");
@@ -124,6 +138,7 @@ class FlywayMigrationCatalogTest {
                 "角色关联复制必须说明来源字段和目标字段");
         assertTrue(sql.contains("DROP COLUMN role"), "完成回填后必须移除 user.role 单字段");
         assertTrue(sql.contains("COMMENT '"), "所有新增列都必须有中文注释");
+        assertTrue(sql.contains("information_schema.COLUMNS"), "当前 schema 缺少旧 role 字段时必须跳过历史回填和删列");
     }
 
     @Test

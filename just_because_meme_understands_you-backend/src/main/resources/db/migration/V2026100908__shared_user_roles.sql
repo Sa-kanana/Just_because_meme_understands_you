@@ -34,7 +34,7 @@ SET @user_has_legacy_role = (
       AND COLUMN_NAME = 'role'
 );
 
--- 逐项字段复制说明：来源字段 user.id 写入目标字段 user_role.user_id；来源字段 user.role 映射后匹配 role.code；来源字段 role.id 写入目标字段 user_role.role_id。
+-- 逐项字段复制说明：来源字段 user.id 写入目标字段 user_role.user_id；来源字段 user.role 映射后决定目标字段 role.code；来源字段 role.id 写入目标字段 user_role.role_id。
 SET @user_role_migration_ddl = IF(
     @user_has_legacy_role = 0,
     'SELECT 1',
