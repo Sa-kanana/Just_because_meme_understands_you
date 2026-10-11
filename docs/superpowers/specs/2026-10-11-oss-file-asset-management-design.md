@@ -2,7 +2,7 @@
 
 ## 状态
 
-待用户审阅。本文根据 `OssUploadPolicyService`、`OssObjectPromoteService`、现有图片业务流程和附件方案整理。
+已由用户确认继续实施。本文根据 `OssUploadPolicyService`、`OssObjectPromoteService`、现有图片业务流程和附件方案整理。
 
 ## 目标与约束
 

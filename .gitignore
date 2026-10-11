@@ -29,6 +29,7 @@ docs/superpowers/specs/*
 !docs/superpowers/plans/
 docs/superpowers/plans/*
 !docs/superpowers/plans/2026-10-09-database-schema-clarity.md
+!docs/superpowers/plans/2026-10-11-oss-file-asset-management.md
 
 # Log file
 *.log
