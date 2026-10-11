@@ -58,7 +58,7 @@
 - [ ] 1. 先写结构契约测试，检查五张表、唯一约束、业务字段唯一约束、外键、状态/重试索引和每列中文注释。
 - [ ] 2. 在后端运行 `.\mvnw.cmd -Dtest=FileAssetSchemaContractTest test`，确认迁移资源缺失导致测试失败。
 - [ ] 3. 添加 Flyway 迁移、实体和 Mapper；遵循项目的信息架构检查写法，并在复制历史字段时逐项说明来源与目标。
-- [ ] 4. 注册迁移后运行 `.\mvnw.cmd -Dtest=FileAssetSchemaContractTest,FlywayMigrationCatalogTest test`，预期通过。
+- [ ] 4. 注册迁移后运行 `.\mvnw.cmd "-Dtest=FileAssetSchemaContractTest,FlywayMigrationCatalogTest" test`，预期通过。
 - [ ] 5. 提交：`feat: add file asset lifecycle schema`。
 
 ### Task 2：签发并确认安全上传票据
@@ -81,7 +81,7 @@
 **步骤：**
 
 - [ ] 1. 先为合法图片、非法 MIME/扩展名、超过 10 MiB、未授权首页场景、所有者不匹配、OSS 对象缺失、元数据不匹配和重复确认编写测试。
-- [ ] 2. 运行 `.\mvnw.cmd -Dtest=OssUploadTicketServiceTest,RestfulApiRouteContractTest test`，确认新流程尚未实现时失败。
+- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=OssUploadTicketServiceTest,RestfulApiRouteContractTest" test`，确认新流程尚未实现时失败。
 - [ ] 3. 实现服务端 UUID key：`tmp/{scene}/{userId}/{yyyyMMdd}/{uuid}.{ext}`；仅允许精确 key、声明 MIME 和大小范围；签名有效期 60 秒，文件上限 10 MiB。
 - [ ] 4. 运行聚焦测试，确认路由、权限和校验通过。
 - [ ] 5. 提交：`feat: issue tracked OSS upload tickets`。
@@ -125,7 +125,7 @@
 **步骤：**
 
 - [ ] 1. 先写测试覆盖临时资产所有者/确认校验、共享资产、同字段替换、最后引用延迟入队、待删除资产重绑并取消任务、回填未完成时阻止物理删除、非法/保护 key、dry-run、成功删除、重复领取和重试间隔/上限。
-- [ ] 2. 运行 `.\mvnw.cmd -Dtest=FileAssetServiceTest,FileAssetDeleteWorkerTest test`，确认核心实现缺失时失败。
+- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=FileAssetServiceTest,FileAssetDeleteWorkerTest" test`，确认核心实现缺失时失败。
 - [ ] 3. 实现事务内引用变更及有租约、有界的数据库 Worker。OSS 网络调用放在领取事务之外；外部删除前将资产置为 `DELETING`，阻止并发重新绑定。历史回填未完成时暂停 Worker 的 OSS 删除；删除失败且仍可重试时，将资产恢复为 `PENDING_DELETE` 并按退避时间重新排队。
 - [ ] 4. 保留安全的 promote/copy；在后续业务迁移完成后移除 `OssObjectPromoteService` 中的直接删除入口。
 - [ ] 5. 运行聚焦测试，确认共享/保护对象不被删除且重试有上限。
@@ -175,7 +175,7 @@
 **步骤：**
 
 - [ ] 1. 先测试新图绑定后再解绑旧图，以及删除首页图不再同步调用 OSS。
-- [ ] 2. 运行 `.\mvnw.cmd -Dtest=AdminHomeImageDeletionTest,UserProfileServiceStatsTest,FileAssetBusinessReferenceTest test`，确认原直接删除路径/遗漏引用的断言失败。
+- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=AdminHomeImageDeletionTest,UserProfileServiceStatsTest,FileAssetBusinessReferenceTest" test`，确认原直接删除路径/遗漏引用的断言失败。
 - [ ] 3. 将业务事务接入 `FileAssetService`，保持现有 URL 返回、缓存清理和软删除语义。
 - [ ] 4. 运行聚焦测试，确认业务事务没有 OSS 网络调用。
 - [ ] 5. 提交：`feat: track profile and comment image references`。
@@ -196,7 +196,7 @@
 **步骤：**
 
 - [ ] 1. 先测试发布绑定、共享对象、审核通过时引用迁移、拒绝/取消释放、永久清理入队和下架/恢复保留引用。
-- [ ] 2. 运行 `.\mvnw.cmd -Dtest=MemePublishServiceTest,MemeEditRevisionSubmitTest,MemeEditRevisionReviewTest,MemeDeleteServiceAdminTest test`，确认新引用转换尚未实现时失败。
+- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=MemePublishServiceTest,MemeEditRevisionSubmitTest,MemeEditRevisionReviewTest,MemeDeleteServiceAdminTest" test`，确认新引用转换尚未实现时失败。
 - [ ] 3. 在现有事务中实现引用转换，不改变审核、状态、缓存、标签计数和索引行为。
 - [ ] 4. 删除直接 OSS 删除路径及 `deleteMemeObjectsAfterCommit`、`deleteHomeImage` 的剩余调用。
 - [ ] 5. 运行聚焦测试，确认发布、审核和清理事务中不再直接删除 OSS。
