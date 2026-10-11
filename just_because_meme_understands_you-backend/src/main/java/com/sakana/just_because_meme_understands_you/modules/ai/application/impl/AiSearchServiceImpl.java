@@ -38,7 +38,7 @@ import com.sakana.just_because_meme_understands_you.common.validation.RequestIdP
 public class AiSearchServiceImpl implements IAiSearchService {
 
     // 提示词或模型策略变化时同步升级，避免复用旧流水线生成的答案。
-    private static final String AI_ANSWER_CACHE_PIPELINE_VERSION = "meme-search-v6-natural-language";
+    private static final String AI_ANSWER_CACHE_PIPELINE_VERSION = "meme-search-v7-natural-language-format";
     private static final String COMPLETED_MESSAGE_STATUS = "COMPLETED";
 
     private final MemeAgentClient memeAgentClient;

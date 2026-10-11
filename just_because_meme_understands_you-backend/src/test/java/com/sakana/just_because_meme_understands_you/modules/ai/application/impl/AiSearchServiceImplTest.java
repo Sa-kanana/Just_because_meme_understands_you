@@ -247,7 +247,7 @@ class AiSearchServiceImplTest {
         ArgumentCaptor<Object> contextCaptor = ArgumentCaptor.forClass(Object.class);
         verify(aiAnswerCache).fingerprint(contextCaptor.capture());
         Map<?, ?> cacheContext = (Map<?, ?>) contextCaptor.getValue();
-        assertEquals("meme-search-v6-natural-language", cacheContext.get("pipeline_version"));
+        assertEquals("meme-search-v7-natural-language-format", cacheContext.get("pipeline_version"));
         assertTrue(cacheContext.get("messages").toString().contains("前一轮问题"));
     }
 
