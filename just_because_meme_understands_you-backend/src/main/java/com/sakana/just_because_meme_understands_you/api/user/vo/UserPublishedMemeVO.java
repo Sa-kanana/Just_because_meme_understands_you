@@ -14,10 +14,10 @@ import java.util.List;
 public class UserPublishedMemeVO {
 
     /** 梗 id（Apifox SimpleMeme.id） */
-    private Integer id;
+    private Long id;
 
     /** 梗 id（兼容旧前端字段） */
-    private Integer memeId;
+    private Long memeId;
 
     /** 梗名称 */
     private String name;
@@ -48,6 +48,15 @@ public class UserPublishedMemeVO {
 
     /** 申诉驳回次数 */
     private Integer appealRejectCount;
+
+    /** 中文注释：本人查看时展示的最近一次修改审核状态。 */
+    private String editRevisionStatus;
+
+    /** 中文注释：最近一次修改稿提交时间。 */
+    private LocalDateTime editRevisionCreatedAt;
+
+    /** 中文注释：最近一次修改稿审核说明或驳回原因。 */
+    private String editRevisionNote;
 
     /** 关联标签 */
     private List<UserMemeTagVO> tags;

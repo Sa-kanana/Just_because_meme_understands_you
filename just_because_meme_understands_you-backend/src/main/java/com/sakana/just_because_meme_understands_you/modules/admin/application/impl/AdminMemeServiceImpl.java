@@ -5,20 +5,29 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageParamNormalizer;
+import com.sakana.just_because_meme_understands_you.api.admin.dto.AdminMemeCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserMapper;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.IAdminMemeService;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.assembler.AdminViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeApproveService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeDeleteService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.MemePublishService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeActionVO;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeDetailVO;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeListItemVO;
+import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeResourceVO;
+import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeTagVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -53,7 +62,38 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
     private MemeDeleteService memeDeleteService;
 
     @Resource
+    private MemePublishService memePublishService;
+
+    @Resource
     private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private MemeCatalogPort memeCatalogPort;
+
+    /** 以当前管理员身份创建梗，并复用用户发布链路完成 OSS 转正和审核入库。 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MemeCreateResponseVO create(Long adminUserId, AdminMemeCreateRequestDTO request) {
+        if (request == null || !StringUtils.hasText(request.getName())) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "梗名称不能为空");
+        }
+
+        String name = request.getName().trim();
+        LambdaQueryWrapper<Meme> duplicateQuery = new LambdaQueryWrapper<>();
+        duplicateQuery.eq(Meme::getName, name)
+                .ne(Meme::getStatus, MemeVisibilitySupport.STATUS_PURGED);
+        Long duplicateCount = memeMapper.selectCount(duplicateQuery);
+        if (duplicateCount != null && duplicateCount > 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "同名梗已存在");
+        }
+
+        MemeCreateRequestDTO publishRequest = new MemeCreateRequestDTO();
+        publishRequest.setName(name);
+        publishRequest.setIntroduction(request.getIntroduction());
+        publishRequest.setImage(request.getImage());
+        publishRequest.setTagIds(request.getTagIds());
+        return memePublishService.publish(adminUserId, publishRequest);
+    }
 
     @Override
     public PageVO<AdminMemeListItemVO> page(Integer page, Integer size, Integer status, String keyword, Long userId) {
@@ -130,6 +170,13 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
         return toAction(updated);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AdminMemeActionVO delete(Long memeId) {
+        Meme deleted = memeDeleteService.purgeByAdmin(memeId);
+        return toAction(deleted);
+    }
+
     private Meme requireMeme(Long memeId) {
         if (memeId == null || memeId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
@@ -154,7 +201,7 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
         if (users != null) {
             for (User u : users) {
                 if (u != null && u.getId() != null) {
-                    map.put(u.getId(), u.getNickname());
+                    map.put(u.getId(), UserDisplayPolicy.displayName(u, "匿名用户"));
                 }
             }
         }
@@ -170,6 +217,39 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
     private AdminMemeDetailVO toDetail(Meme meme, Map<Long, String> nicknameMap) {
         AdminMemeDetailVO vo = adminViewMapper.toAdminMemeDetailVO(meme);
         fillComputedFields(vo, meme, nicknameMap);
+        Long memeId = meme.getId();
+        Map<Long, List<MemeCatalogPort.MemeTagSummary>> tagsByMemeId =
+                memeCatalogPort.findTagsByMemeIds(List.of(memeId));
+        List<MemeCatalogPort.MemeTagSummary> tagSummaries = tagsByMemeId == null
+                ? List.of()
+                : tagsByMemeId.getOrDefault(memeId, List.of());
+        vo.setTags(tagSummaries.stream()
+                .filter(Objects::nonNull)
+                .map(tag -> {
+                    AdminMemeTagVO detailTag = new AdminMemeTagVO();
+                    detailTag.setId(tag.id());
+                    detailTag.setName(tag.name());
+                    detailTag.setRelatedQuantity(tag.relatedQuantity());
+                    return detailTag;
+                })
+                .toList());
+
+        List<MemeCatalogPort.MemeResourceSummary> resourceSummaries = memeCatalogPort.findResourcesByMemeId(memeId);
+        vo.setResources(resourceSummaries == null ? List.of() : resourceSummaries.stream()
+                .filter(Objects::nonNull)
+                .map(resource -> {
+                    AdminMemeResourceVO detailResource = new AdminMemeResourceVO();
+                    detailResource.setId(resource.id());
+                    detailResource.setType(MemeResourceType.fromCode(resource.resourceType()).getApiType());
+                    detailResource.setTitle(resource.title());
+                    detailResource.setUrl(resource.resourceUrl() == null || resource.resourceUrl().isBlank()
+                            ? ""
+                            : ossUrlHelper.toPublicUrl(resource.resourceUrl()));
+                    detailResource.setSortOrder(resource.sortOrder());
+                    detailResource.setStatus(resource.status());
+                    return detailResource;
+                })
+                .toList());
         return vo;
     }
 

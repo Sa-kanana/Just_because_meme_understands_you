@@ -17,10 +17,16 @@ public interface IAuthService {
      */
     AuthTokenBundleVO login(LoginRequestDTO request);
 
+    /** 管理端登录：复用普通用户凭据验证，并要求 ADMIN 或 SUPER_ADMIN 角色。 */
+    AuthTokenBundleVO loginAdmin(LoginRequestDTO request);
+
     /**
      * 登录自动续航：校验旧 JWT 后签发新 JWT 并返回最新用户信息。
      */
     AuthTokenBundleVO renewLogin(String refreshToken);
+
+    /** 管理端续期：共享 refresh 验证并要求 ADMIN 或 SUPER_ADMIN 角色。 */
+    AuthTokenBundleVO renewAdminLogin(String refreshToken);
 
     /**
      * 注册逻辑：

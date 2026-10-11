@@ -39,7 +39,7 @@ class MemeTagControllerTest {
 
         GetMapping mapping = MemeController.class.getMethod("listTags").getAnnotation(GetMapping.class);
         assertNotNull(mapping);
-        assertArrayEquals(new String[]{"/memes/tags"}, mapping.value());
+        assertArrayEquals(new String[]{"/tags"}, mapping.value());
 
         Result<List<MemeTagVO>> result = memeController.listTags();
 

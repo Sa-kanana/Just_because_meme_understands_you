@@ -10,7 +10,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.M
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiIngestService;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeIndexEventPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDeleteResponseVO;
@@ -78,7 +78,7 @@ public class MemeDeleteService {
     private IMemeService memeService;
 
     @Resource
-    private IAiIngestService aiIngestService;
+    private MemeIndexEventPort memeIndexEventPort;
 
     /**
      * 用户主动下架：1/2 → 3。
@@ -208,27 +208,22 @@ public class MemeDeleteService {
             meme.setStatus(MemeVisibilitySupport.STATUS_PURGED);
             meme.setPurgedAt(now);
             memeMapper.updateById(meme);
-            Long memeIdLong = meme.getId().longValue();
+            memeIndexEventPort.requestRemoval(memeId);
+            Long memeIdLong = meme.getId();
             deactivateResources(memeIdLong);
             Meme snapshot = new Meme().setId(meme.getId()).setImage(meme.getImage());
             Long ownerId = meme.getUserId();
-            scheduleAfterCommit(() -> runAfterPurge(ownerId, memeIdLong, snapshot));
+            scheduleAfterCommit(() -> runAfterPurge(ownerId, memeIdLong, snapshot, false, List.of()));
             return meme;
         }
 
         meme.setStatus(MemeVisibilitySupport.STATUS_LOCKED);
         meme.setOfflineAt(now);
         memeMapper.updateById(meme);
-        Long memeIdLong = meme.getId().longValue();
+        memeIndexEventPort.requestRemoval(meme.getId());
+        Long memeIdLong = meme.getId();
         Long userId = meme.getUserId();
-        scheduleAfterCommit(() -> {
-            evictCaches(userId, memeIdLong);
-            try {
-                aiIngestService.removeMeme(memeIdLong);
-            } catch (Exception e) {
-                log.warn("申诉驳回后清理向量失败 memeId={}", memeIdLong, e);
-            }
-        });
+        scheduleAfterCommit(() -> evictCaches(userId, memeIdLong));
         return meme;
     }
 
@@ -247,22 +242,43 @@ public class MemeDeleteService {
         LocalDateTime offlineAt = meme.getOfflineAt() != null ? meme.getOfflineAt() : meme.getUpdateTime();
         assertPurgeCooldown(offlineAt);
 
+        return toPurgeResponse(memeId, purgeMeme(meme));
+    }
+
+    /**
+     * 管理端彻底删除梗，不受发布者归属和当前展示状态限制。
+     * 已删除记录按幂等请求处理，公开梗会同步回滚标签关联数量。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Meme purgeByAdmin(Long memeId) {
+        Meme meme = loadMeme(memeId);
+        if (Objects.equals(meme.getStatus(), MemeVisibilitySupport.STATUS_PURGED)) {
+            return meme;
+        }
+        purgeMeme(meme);
+        return meme;
+    }
+
+    private LocalDateTime purgeMeme(Meme meme) {
+        Long memeId = meme.getId();
+        boolean wasPublic = Objects.equals(meme.getStatus(), MemeVisibilitySupport.STATUS_NORMAL);
+        List<Integer> tagIds = wasPublic ? loadTagIdsByMemeId(memeId) : List.of();
         LocalDateTime now = LocalDateTime.now();
         meme.setStatus(MemeVisibilitySupport.STATUS_PURGED);
         meme.setPurgedAt(now);
         meme.setUpdateTime(now);
         memeMapper.updateById(meme);
+        memeIndexEventPort.requestRemoval(memeId);
 
-        Long memeIdLong = memeId;
-        deactivateResources(memeIdLong);
-        Meme snapshot = new Meme().setId(meme.getId()).setImage(meme.getImage());
+        deactivateResources(memeId);
+        Meme snapshot = new Meme().setId(memeId).setImage(meme.getImage());
         Long ownerId = meme.getUserId();
-        scheduleAfterCommit(() -> runAfterPurge(ownerId, memeIdLong, snapshot));
-        return toPurgeResponse(memeId, now);
+        scheduleAfterCommit(() -> runAfterPurge(ownerId, memeId, snapshot, wasPublic, tagIds));
+        return now;
     }
 
     private LocalDateTime markStatusChange(Meme meme, int targetStatus, String reason, boolean recordOfflineMeta) {
-        Long memeId = meme.getId().longValue();
+        Long memeId = meme.getId();
         Integer previousStatus = meme.getStatus();
         LocalDateTime now = LocalDateTime.now();
         meme.setStatus(targetStatus);
@@ -273,6 +289,7 @@ public class MemeDeleteService {
             meme.setOfflineReason(reason);
         }
         memeMapper.updateById(meme);
+        memeIndexEventPort.requestRemoval(memeId);
 
         deactivateResources(memeId);
         List<Integer> tagIds = loadTagIdsByMemeId(memeId);
@@ -283,13 +300,14 @@ public class MemeDeleteService {
     }
 
     private LocalDateTime relistToNormal(Meme meme) {
-        Long memeId = meme.getId().longValue();
+        Long memeId = meme.getId();
         LocalDateTime now = LocalDateTime.now();
         meme.setStatus(MemeVisibilitySupport.STATUS_NORMAL);
         meme.setUpdateTime(now);
         meme.setOfflineReason(null);
         meme.setAppealRejectCount(0);
         memeMapper.updateById(meme);
+        memeIndexEventPort.requestUpsert(memeId);
 
         reactivateResources(memeId);
         List<Integer> tagIds = loadTagIdsByMemeId(memeId);
@@ -299,21 +317,17 @@ public class MemeDeleteService {
     }
 
     private LocalDateTime submitAppeal(Meme meme) {
-        Long memeId = meme.getId().longValue();
+        Long memeId = meme.getId();
         LocalDateTime now = LocalDateTime.now();
         meme.setStatus(MemeVisibilitySupport.STATUS_RESTORE_REVIEWING);
         meme.setUpdateTime(now);
         memeMapper.updateById(meme);
+        memeIndexEventPort.requestRemoval(memeId);
 
         reactivateResources(memeId);
         Long userId = meme.getUserId();
         scheduleAfterCommit(() -> {
             evictCaches(userId, memeId);
-            try {
-                aiIngestService.removeMeme(memeId);
-            } catch (Exception e) {
-                log.warn("提交申诉后清理向量失败 memeId={}", memeId, e);
-            }
         });
         return now;
     }
@@ -333,7 +347,8 @@ public class MemeDeleteService {
         if (memeId == null || memeId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
         }
-        Meme meme = memeMapper.selectById(memeId);
+        // 中文注释：所有生命周期变更必须拿到正式梗行锁，避免审核通过后被旧实体整行覆盖。
+        Meme meme = memeMapper.selectByIdForUpdate(memeId);
         if (meme == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在");
         }
@@ -374,7 +389,7 @@ public class MemeDeleteService {
     private List<Integer> loadTagIdsByMemeId(Long memeId) {
         List<MemeTagRelation> relations = memeTagRelationMapper.selectList(
                 new LambdaQueryWrapper<MemeTagRelation>()
-                        .eq(MemeTagRelation::getMemeId, memeId.intValue())
+                        .eq(MemeTagRelation::getMemeId, memeId)
         );
         if (relations == null || relations.isEmpty()) {
             return List.of();
@@ -410,11 +425,6 @@ public class MemeDeleteService {
                 log.warn("标签计数回滚失败 memeId={}", memeId, e);
             }
         }
-        try {
-            aiIngestService.removeMeme(memeId);
-        } catch (Exception e) {
-            log.warn("AI 向量删除失败 memeId={}", memeId, e);
-        }
     }
 
     private void runAfterRelist(Long userId, Long memeId, List<Integer> tagIds) {
@@ -424,24 +434,21 @@ public class MemeDeleteService {
         } catch (Exception e) {
             log.warn("重新上架标签计数失败 memeId={}", memeId, e);
         }
-        try {
-            aiIngestService.syncMeme(memeId);
-        } catch (Exception e) {
-            log.warn("重新上架灌库失败 memeId={}", memeId, e);
-        }
     }
 
-    private void runAfterPurge(Long userId, Long memeId, Meme snapshot) {
+    private void runAfterPurge(Long userId, Long memeId, Meme snapshot, boolean wasPublic, List<Integer> tagIds) {
         evictCaches(userId, memeId);
+        if (wasPublic) {
+            try {
+                memePublishAsyncHandler.decrementTagRelatedQuantity(tagIds);
+            } catch (Exception e) {
+                log.warn("永久删除梗后回滚标签计数失败 memeId={}", memeId, e);
+            }
+        }
         try {
             memeOssCleanupHandler.cleanupMemeAssets(snapshot);
         } catch (Exception e) {
             log.warn("OSS 清理失败 memeId={}", memeId, e);
-        }
-        try {
-            aiIngestService.removeMeme(memeId);
-        } catch (Exception e) {
-            log.warn("AI 向量删除失败(purge) memeId={}", memeId, e);
         }
     }
 

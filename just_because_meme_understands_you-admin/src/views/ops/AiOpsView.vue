@@ -1,7 +1,7 @@
 <template>
   <div class="ops">
     <a-alert type="info" show-icon style="margin-bottom: 16px">
-      本页用于运维「热梗爬取」与「梗向量灌库」，与「知识库」文档 RAG 无关。日常审核请优先使用
+      本页用于运维 AI 搜索、知识 RAG、热梗爬取与向量灌库。日常审核请优先使用
       <a-link @click="$router.push({ name: 'memes' })">梗管理</a-link>
       。
     </a-alert>
@@ -168,6 +168,7 @@
         </a-descriptions-item>
       </a-descriptions>
     </a-card>
+
   </div>
 </template>
 

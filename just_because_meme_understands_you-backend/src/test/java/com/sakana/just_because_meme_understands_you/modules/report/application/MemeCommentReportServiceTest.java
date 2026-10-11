@@ -48,7 +48,7 @@ class MemeCommentReportServiceTest {
     @Test
     void storesCommentAndParentMemeForUnifiedModerationQueue() {
         when(comments.selectById(31L)).thenReturn(comment(31L, 7L, 9L, 0));
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(8L).setStatus(1));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(8L).setStatus(1));
         when(reports.insert(any(CommunityReport.class))).thenAnswer(call -> {
             CommunityReport report = call.getArgument(0);
             report.setId(42L);
@@ -67,7 +67,7 @@ class MemeCommentReportServiceTest {
     @Test
     void rejectsOwnOrDeletedCommentAndCommentOnInvisibleMeme() {
         when(comments.selectById(31L)).thenReturn(comment(31L, 7L, 3L, 0));
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(8L).setStatus(1));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(8L).setStatus(1));
         assertEquals(403, assertThrows(BizException.class,
                 () -> service.submitComment(31L, 3L, "ABUSE", "")).getCode());
 
@@ -76,7 +76,7 @@ class MemeCommentReportServiceTest {
                 () -> service.submitComment(31L, 3L, "ABUSE", "")).getCode());
 
         when(comments.selectById(31L)).thenReturn(comment(31L, 7L, 9L, 0));
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(8L).setStatus(3));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(8L).setStatus(3));
         assertEquals(404, assertThrows(BizException.class,
                 () -> service.submitComment(31L, 3L, "ABUSE", "")).getCode());
         verify(reports, never()).insert(any(CommunityReport.class));
@@ -85,7 +85,7 @@ class MemeCommentReportServiceTest {
     @Test
     void mapsUniqueTargetCollisionToBusinessError() {
         when(comments.selectById(31L)).thenReturn(comment(31L, 7L, 9L, 0));
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(8L).setStatus(1));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(8L).setStatus(1));
         when(reports.insert(any(CommunityReport.class))).thenThrow(new DuplicateKeyException("unique"));
         assertEquals(400, assertThrows(BizException.class,
                 () -> service.submitComment(31L, 3L, "ABUSE", "")).getCode());

@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.modules.oss.application;
 
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
 import com.sakana.just_because_meme_understands_you.modules.auth.domain.AuthConstants;
 import com.sakana.just_because_meme_understands_you.api.user.vo.OssUploadPolicyVO;
 import jakarta.annotation.Resource;
@@ -96,7 +97,13 @@ public class OssUploadPolicyService {
                 throw new BizException(Result.CODE_UNAUTHORIZED, "请先登录后再上传");
             }
             Object role = httpServletRequest.getAttribute(AuthConstants.CLAIM_ROLE);
-            if (!AuthConstants.ROLE_ADMIN.equals(role == null ? null : String.valueOf(role))) {
+            String legacyRole = role == null ? null : String.valueOf(role);
+            java.util.List<String> roleCodes = AuthContext.currentRoles(httpServletRequest);
+            boolean hasAdminRole = roleCodes.contains("ADMIN")
+                    || roleCodes.contains("SUPER_ADMIN")
+                    || AuthConstants.ROLE_ADMIN.equals(legacyRole)
+                    || AuthConstants.ROLE_SUPER_ADMIN.equals(legacyRole);
+            if (!hasAdminRole) {
                 throw new BizException(Result.CODE_FORBIDDEN, "无权上传该类型文件");
             }
         }

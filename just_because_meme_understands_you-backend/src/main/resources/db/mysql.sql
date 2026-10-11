@@ -9,10 +9,16 @@ create table admin_knowledge
     category     varchar(64)                        null comment '分类',
     tags         varchar(500)                       null comment '标签逗号分隔',
     content_hash varchar(64)                        not null comment '内容哈希幂等',
+    content_sha256 char(64)                           null comment '标准化正文 SHA-256 去重指纹',
+    index_status varchar(24) default 'PENDING'      not null comment '向量索引状态：PENDING、PROCESSING、READY、FAILED、DELETE_PENDING、DELETED',
+    index_revision bigint unsigned default 0        not null comment '单调递增的向量操作版本',
+    index_task_id bigint unsigned                   null comment '最近一次向量操作对应的发件箱事件 ID',
+    index_error  varchar(1000)                      null comment '最近一次向量操作错误摘要',
     status       tinyint  default 1                 not null comment '1发布 0删除',
-    creator_id   bigint                             null,
-    create_time  datetime default CURRENT_TIMESTAMP not null,
-    update_time  datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP
+    creator_id   bigint                             null comment '创建管理员 ID',
+    create_time  datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    update_time  datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    unique key uk_admin_knowledge_content_sha256 (content_sha256)
 )
     comment '管理员知识库（SSOT）';
 
@@ -22,16 +28,37 @@ create index idx_admin_knowledge_hash
 create index idx_admin_knowledge_status
     on admin_knowledge (status);
 
+create table integration_outbox_event
+(
+    id              bigint unsigned auto_increment not null comment '发件箱事件主键',
+    aggregate_type  varchar(64)                    not null comment '业务聚合类型',
+    aggregate_id    bigint unsigned                not null comment '业务聚合标识',
+    event_type      varchar(100)                   not null comment '集成事件类型',
+    payload         json                           not null comment '事件载荷快照',
+    status          varchar(20) default 'PENDING'  not null comment '投递状态：待处理、处理中、重试、已完成或失败',
+    attempts        int unsigned default 0         not null comment '已尝试投递次数',
+    created_at      datetime(3) default CURRENT_TIMESTAMP(3) not null comment '事件创建时间',
+    next_attempt_at datetime(3) default CURRENT_TIMESTAMP(3) not null comment '下次允许投递时间',
+    locked_at       datetime(3)                    null comment '本次处理租约时间',
+    delivered_at    datetime(3)                    null comment '成功投递时间',
+    last_error      varchar(1000)                  null comment '最近一次投递错误摘要',
+    primary key (id),
+    key idx_outbox_status_retry (status, next_attempt_at, id),
+    key idx_outbox_aggregate (aggregate_type, aggregate_id, id)
+)
+    comment '模块集成事务发件箱';
+
 create table ai_chat_message
 (
     id             bigint                             not null comment '雪花 ID'
         primary key,
     session_id     bigint                             not null comment '会话 ID',
     role           varchar(16)                        not null comment 'user/assistant/system',
+    status         varchar(16) default 'COMPLETED'    not null comment '消息状态：COMPLETED已完成、STOPPED用户停止、FAILED生成失败',
     content        text                               not null comment '消息正文',
     request_id     varchar(64)                        null comment '关联一次流式请求',
     token_estimate int                                null comment '估算 token 数',
-    create_time    datetime default CURRENT_TIMESTAMP not null
+    create_time    datetime default CURRENT_TIMESTAMP not null comment '消息创建时间'
 )
     comment 'AI 搜索消息';
 
@@ -56,6 +83,11 @@ create table ai_chat_session
 create index idx_ai_chat_session_user
     on ai_chat_session (user_id, is_deleted, update_time);
 
+alter table ai_chat_message
+    add constraint fk_ai_chat_message_session
+        foreign key (session_id) references ai_chat_session (id)
+            on delete restrict on update restrict;
+
 create table home_image
 (
     id           bigint auto_increment comment '主键ID'
@@ -78,9 +110,9 @@ create table meme
     introduction        varchar(255)  null comment '介绍',
     name                varchar(255)  null comment '名字',
     image               varchar(255)  null comment '图片url',
-    page_views          int default 0 null comment '浏览量',
-    likes               int default 0 null comment '点赞数',
-    comments            int default 0 null comment '评论数',
+    page_views          int default 0 not null comment '浏览量',
+    likes               int default 0 not null comment '点赞数',
+    comments            int default 0 not null comment '评论数',
     status              tinyint       not null comment '状态（1.正常，2.审核中，3.下架）',
     release_time        datetime      null comment '发布时间',
     update_time         datetime      null comment '更新时间',
@@ -92,9 +124,6 @@ create table meme
     purged_at           datetime      null comment '彻底删除时间'
 )
     comment '梗';
-
-create index idx_meme_user_id
-    on meme (user_id);
 
 create index idx_release_time
     on meme (release_time);
@@ -113,12 +142,6 @@ create index idx_status_page_views
 
 create index idx_status_release
     on meme (status asc, release_time desc, id desc);
-
-create index idx_status_release_time
-    on meme (status, release_time);
-
-create index idx_status_views
-    on meme (status asc, page_views desc, id desc);
 
 create index idx_user_create
     on meme (user_id asc, release_time desc);
@@ -160,33 +183,35 @@ create index idx_root_replies
 
 create table meme_comment_images
 (
-    id              bigint auto_increment
+    id              bigint auto_increment comment '评论图片主键'
         primary key,
     meme_comment_id bigint        not null comment '关联的评论 ID',
     url             varchar(512)  not null comment '图片 URL',
-    sort_order      int default 0 null comment '图片在当前评论中的排序'
+    sort_order      int default 0 null comment '图片在当前评论中的排序',
+    key idx_comment_id (meme_comment_id),
+    constraint fk_meme_comment_images_comment
+        foreign key (meme_comment_id) references meme_comment (id)
+            on delete restrict on update restrict
 )
     comment '评论相关的图片';
 
-create index idx_comment_id
-    on meme_comment_images (meme_comment_id);
-
 create table meme_resource
 (
-    id            bigint auto_increment
+    id            bigint auto_increment comment '梗资源主键'
         primary key,
-    meme_id       bigint                             not null,
-    resource_url  varchar(500)                       not null,
+    meme_id       bigint                             not null comment '所属梗ID',
+    resource_url  varchar(500)                       not null comment '资源地址',
     resource_type tinyint  default 1                 not null comment '1=OSS图片 2=外链 3=视频',
     title         varchar(128)                       null comment '展示标题，外链必填',
     sort_order    int      default 0                 not null comment '展示排序，越小越靠前',
-    status        tinyint  default 1                 not null comment '1=正常 0=审核隐藏',
-    create_time   datetime default CURRENT_TIMESTAMP not null
+    status        tinyint  default 1                 not null comment '资源状态：1正常可用，0下架隐藏，2内容替换后归档',
+    create_time   datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    key idx_meme_sort (meme_id, status, sort_order),
+    constraint fk_meme_resource_meme
+        foreign key (meme_id) references meme (id)
+            on delete restrict on update restrict
 )
     comment '梗相关的链接';
-
-create index idx_meme_sort
-    on meme_resource (meme_id, status, sort_order);
 
 create table meme_tag
 (
@@ -200,11 +225,16 @@ create table meme_tag
 create index idx_related_quantity
     on meme_tag (related_quantity desc, id desc);
 
+create index idx_meme_tag_name
+    on meme_tag (name);
+
 create table meme_tag_relation
 (
-    meme_id     bigint unsigned not null comment '梗ID',
-    meme_tag_id bigint unsigned not null comment '标签ID',
-    primary key (meme_id, meme_tag_id)
+    meme_id     bigint not null comment '梗ID',
+    meme_tag_id int    not null comment '标签ID',
+    primary key (meme_id, meme_tag_id),
+    constraint fk_meme_tag_relation_meme foreign key (meme_id) references meme (id) on delete cascade,
+    constraint fk_meme_tag_relation_tag foreign key (meme_tag_id) references meme_tag (id) on delete cascade
 )
     comment '梗与其标签的关联表';
 
@@ -240,30 +270,72 @@ create table user
     birthday    date                                  null comment '生日',
     signature   varchar(255)                          null comment '个性标签',
     status      tinyint     default 1                 null comment '0:禁用, 1:正常',
-    role        varchar(20) default 'ROLE_USER'       null comment '角色（ROLE_USER,ROLE_ADMIN）',
-    create_time datetime    default CURRENT_TIMESTAMP null,
+    create_time datetime    default CURRENT_TIMESTAMP null comment '用户创建时间',
     update_time datetime                              null comment '最后修改时间',
+    deleted_at  datetime                              null comment '逻辑删除时间，NULL表示未删除',
     constraint uk_nickname
         unique (nickname)
 )
     comment '用户基础信息表';
 
+create index idx_user_deleted_create_time
+    on user (deleted_at, create_time, id);
+
+create table `role`
+(
+    id          bigint auto_increment not null comment '角色主键'
+        primary key,
+    code        varchar(32)           not null comment '角色代码：USER、ADMIN、SUPER_ADMIN',
+    name        varchar(64)           not null comment '角色中文名称',
+    create_time datetime default CURRENT_TIMESTAMP not null comment '角色创建时间',
+    constraint uk_role_code
+        unique (code)
+)
+    comment '系统角色定义表';
+
+insert into `role` (code, name)
+values ('USER', '普通用户'), ('ADMIN', '管理员'), ('SUPER_ADMIN', '超级管理员');
+
+create table user_role
+(
+    user_id     bigint   not null comment '关联的用户主键',
+    role_id     bigint   not null comment '关联的角色主键',
+    create_time datetime default CURRENT_TIMESTAMP not null comment '角色分配时间',
+    primary key (user_id, role_id),
+    key idx_user_role_role (role_id, user_id),
+    constraint fk_user_role_user
+        foreign key (user_id) references user (id)
+            on delete restrict on update restrict,
+    constraint fk_user_role_role
+        foreign key (role_id) references `role` (id)
+            on delete restrict on update restrict
+)
+    comment '用户角色关联表';
+
+-- 初始化用户角色关联时，来源字段 user.id 写入目标字段 user_role.user_id。
+-- 初始化用户角色关联时，来源字段 role.id 写入目标字段 user_role.role_id。
+insert into user_role (user_id, role_id)
+select user.id, `role`.id
+from user
+join `role` on `role`.code = 'USER';
+
 create table user_auth
 (
-    id                  bigint auto_increment
+    id                  bigint auto_increment comment '账号记录主键'
         primary key,
-    user_id             bigint       not null,
+    user_id             bigint       not null comment '所属用户ID',
     identity_type       varchar(20)  not null comment 'email, github, wechat',
     identifier          varchar(100) not null comment '邮箱或OpenID',
     password            varchar(255) null comment '密码或Token',
     password_changed_at datetime     null comment '最近改密时间',
+    key idx_user_id (user_id),
     constraint uk_identity
-        unique (identity_type, identifier)
+        unique (identity_type, identifier),
+    constraint fk_user_auth_user
+        foreign key (user_id) references user (id)
+            on delete restrict on update restrict
 )
     comment '用户账号表';
-
-create index idx_user_id
-    on user_auth (user_id);
 
 create table user_comment_like
 (
@@ -292,13 +364,10 @@ create table user_favorite
     is_deleted  tinyint  default 0                 not null comment '逻辑删除标记（0:未删除，1:已删除）',
     create_time datetime default CURRENT_TIMESTAMP not null comment '收藏时间',
     update_time datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
-    constraint uk_user_meme_deleted
-        unique (user_id, meme_id, is_deleted)
+    constraint uk_user_meme
+        unique (user_id, meme_id)
 )
     comment '用户收藏表' collate = utf8mb4_general_ci;
-
-create index idx_user_folder
-    on user_favorite (user_id, folder_id);
 
 create index idx_user_folder_sort
     on user_favorite (user_id, folder_id, is_deleted, sort_order);
@@ -314,8 +383,8 @@ create table user_favorite_folder
     sort_order  int      default 0                 not null comment '收藏夹列表排序',
     meme_count  int      default 0                 not null comment '冗余计数',
     is_deleted  tinyint  default 0                 not null comment '逻辑删除',
-    create_time datetime default CURRENT_TIMESTAMP not null,
-    update_time datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    create_time datetime default CURRENT_TIMESTAMP not null comment '收藏夹创建时间',
+    update_time datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '收藏夹更新时间',
     constraint uk_user_name_deleted
         unique (user_id, name, is_deleted)
 )
@@ -331,10 +400,10 @@ create table user_like
     user_id     bigint                             not null comment '点赞用户',
     meme_id     bigint                             not null comment '被赞梗 id',
     is_deleted  tinyint  default 0                 not null comment '0有效 1已取消',
-    create_time datetime default CURRENT_TIMESTAMP not null,
-    update_time datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
-    constraint uk_user_meme_deleted
-        unique (user_id, meme_id, is_deleted)
+    create_time datetime default CURRENT_TIMESTAMP not null comment '点赞创建时间',
+    update_time datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '点赞更新时间',
+    constraint uk_user_meme
+        unique (user_id, meme_id)
 )
     comment '用户点赞梗表';
 
@@ -358,10 +427,12 @@ create table user_notification
     ref_id      bigint                  null comment '辅引用：如评论id、关系id',
     extra_json  varchar(1024)           null comment '扩展JSON（梗封面、审核原因等）',
     group_key   varchar(64)             null comment '聚合键，如 like_meme:{memeId}',
+    source_event_id bigint unsigned     null comment '来源 Outbox 事件 ID；为空表示非 Outbox 通知',
     is_read     tinyint      default 0  not null comment '0未读 1已读',
     is_deleted  tinyint      default 0  not null comment '0正常 1删除',
     create_time datetime                not null,
-    update_time datetime                not null
+    update_time datetime                not null,
+    unique key uk_user_notification_source_event (source_event_id)
 )
     comment '用户消息通知表';
 
@@ -384,11 +455,9 @@ create table user_relation
     from_user_id bigint                             not null comment '关注者ID (动作发起人)',
     to_user_id   bigint                             not null comment '被关注者ID (梗主)',
     create_time  datetime default CURRENT_TIMESTAMP null comment '关注时间',
-    is_deleted   tinyint  default 0                 not null,
-    update_time  datetime                           null,
+    is_deleted   tinyint  default 0                 not null comment '逻辑删除状态：0有效，1已取消',
+    update_time  datetime                           null comment '关系更新时间',
     constraint uk_from_to
-        unique (from_user_id, to_user_id),
-    constraint uk_relation
         unique (from_user_id, to_user_id)
 )
     comment '用户关注关系表';
@@ -396,26 +465,38 @@ create table user_relation
 create index idx_from_create
     on user_relation (from_user_id asc, create_time desc);
 
-create index idx_from_user
-    on user_relation (from_user_id);
-
 create index idx_to_create
     on user_relation (to_user_id asc, create_time desc);
-
-create index idx_to_user
-    on user_relation (to_user_id);
 
 create table user_stats
 (
     user_id        bigint        not null comment '关联user的id'
         primary key,
-    meme_count     int default 0 null comment '发布的梗数量',
-    like_received  int default 0 null comment '获得的获赞总数',
-    favorite_count int default 0 null comment '收藏的梗数量',
-    follow_count   int default 0 null comment '关注人数',
-    fans_count     int default 0 null comment '粉丝人数'
+    like_received  int default 0 not null comment '获得的获赞总数',
+    favorite_count int default 0 not null comment '收藏的梗数量',
+    follow_count   int default 0 not null comment '关注人数',
+    fans_count     int default 0 not null comment '粉丝人数',
+    constraint fk_user_stats_user
+        foreign key (user_id) references user (id)
+            on delete restrict on update restrict
 )
     comment '用户社交数据统计表';
+
+create table user_stats_orphan_archive
+(
+    archive_id     bigint auto_increment comment '归档记录主键'
+        primary key,
+    source_user_id bigint       not null comment '来源 user_stats.user_id，原用户ID',
+    meme_count     int          not null comment '来源 user_stats.meme_count，发布梗数量',
+    like_received  int          not null comment '来源 user_stats.like_received，获得点赞数量',
+    favorite_count int          not null comment '来源 user_stats.favorite_count，收藏数量',
+    follow_count   int          not null comment '来源 user_stats.follow_count，关注数量',
+    fans_count     int          not null comment '来源 user_stats.fans_count，粉丝数量',
+    archived_at    datetime     not null default CURRENT_TIMESTAMP comment '统计记录归档时间',
+    constraint uk_user_stats_orphan_source_user
+        unique (source_user_id)
+)
+    comment '无法关联用户的历史统计记录归档表';
 
 create table user_tag_follow
 (
@@ -427,23 +508,22 @@ create table user_tag_follow
     index idx_tag_follow_tag (tag_id, user_id)
 ) comment '用户关注梗标签';
 
-create table meme_report
+create table meme_report_archive
 (
-    id              bigint auto_increment primary key,
-    meme_id         bigint       not null,
-    reporter_user_id bigint      not null,
-    reason          varchar(32)  not null,
-    detail          varchar(500) null,
-    status          varchar(16)  not null default 'PENDING',
-    result          varchar(16)  null,
-    handled_by      bigint       null,
-    handling_note   varchar(500) null,
-    created_at      datetime     not null default CURRENT_TIMESTAMP,
-    handled_at      datetime     null,
+    id              bigint auto_increment primary key comment '举报记录主键',
+    meme_id         bigint       not null comment '被举报梗ID',
+    reporter_user_id bigint      not null comment '举报人用户ID',
+    reason          varchar(32)  not null comment '举报原因编码',
+    detail          varchar(500) null comment '举报补充说明',
+    status          varchar(16)  not null default 'PENDING' comment '处理状态',
+    result          varchar(16)  null comment '处理结果编码',
+    handled_by      bigint       null comment '处理管理员用户ID',
+    handling_note   varchar(500) null comment '管理员处理备注',
+    created_at      datetime     not null default CURRENT_TIMESTAMP comment '举报创建时间',
+    handled_at      datetime     null comment '举报处理完成时间',
     unique key uq_meme_reporter (meme_id, reporter_user_id),
-    key idx_report_status_created (status, created_at, id),
-    key idx_report_meme (meme_id)
-) engine=InnoDB default charset=utf8mb4 comment='梗举报处理记录';
+    key idx_report_status_created (status, created_at, id)
+) engine=InnoDB default charset=utf8mb4 comment='历史梗举报记录归档，仅用于审计查询';
 
 create table community_report
 (
@@ -481,15 +561,18 @@ create table user_suppression
 
 create table meme_daily_snapshot
 (
-    id            bigint auto_increment primary key,
-    meme_id       bigint   not null,
-    snapshot_date date     not null,
-    page_views    bigint   not null default 0,
-    likes         bigint   not null default 0,
-    comments      bigint   not null default 0,
-    created_at    datetime not null default CURRENT_TIMESTAMP,
+    id            bigint auto_increment primary key comment '快照主键',
+    meme_id       bigint   not null comment '所属梗ID',
+    snapshot_date date     not null comment '快照日期',
+    page_views    bigint   not null default 0 comment '累计浏览量',
+    likes         bigint   not null default 0 comment '累计点赞数',
+    comments      bigint   not null default 0 comment '累计评论数',
+    created_at    datetime not null default CURRENT_TIMESTAMP comment '快照写入时间',
     unique key uk_meme_snapshot_day (meme_id, snapshot_date),
-    key idx_snapshot_date (snapshot_date, meme_id)
+    key idx_snapshot_date (snapshot_date, meme_id),
+    constraint fk_meme_daily_snapshot_meme
+        foreign key (meme_id) references meme (id)
+            on delete restrict on update restrict
 ) comment '梗每日互动计数快照';
 
 create table meme_weekly_topic
@@ -503,30 +586,3 @@ create table meme_weekly_topic
     created_at        datetime     not null default current_timestamp comment '主题确定时间',
     primary key (iso_week_year, iso_week_number)
 ) engine=InnoDB default charset=utf8mb4 comment='每周热梗主题';
-
-create table meme_knowledge_card
-(
-    meme_id             bigint       not null primary key comment '梗 ID',
-    source_url          varchar(500) null comment '出处链接',
-    first_seen_date     date         null comment '首次出现日期',
-    popularity_context  varchar(2000) null comment '流行语境',
-    usage_examples      varchar(2000) null comment '用法示例',
-    evolution           varchar(2000) null comment '梗的演变',
-    related_meme_ids    varchar(1000) not null default '[]' comment '相关梗 ID JSON 数组',
-    updated_at          datetime     not null default current_timestamp on update current_timestamp comment '更新时间'
-) engine=InnoDB default charset=utf8mb4 comment='梗资料卡';
-
-create table meme_knowledge_correction
-(
-    id             bigint auto_increment primary key,
-    meme_id        bigint       not null comment '梗 ID',
-    user_id        bigint       not null comment '提交用户 ID',
-    changes_json   text         not null comment '待审核的字段差异 JSON',
-    status         varchar(16)  not null default 'PENDING' comment 'PENDING/APPROVED/REJECTED',
-    handled_by     bigint       null comment '处理管理员 ID',
-    handling_note  varchar(500) null comment '审核备注',
-    created_at     datetime     not null default current_timestamp,
-    handled_at     datetime     null,
-    key idx_knowledge_correction_status (status, created_at, id),
-    key idx_knowledge_correction_meme (meme_id)
-) engine=InnoDB default charset=utf8mb4 comment='梗资料纠错申请';

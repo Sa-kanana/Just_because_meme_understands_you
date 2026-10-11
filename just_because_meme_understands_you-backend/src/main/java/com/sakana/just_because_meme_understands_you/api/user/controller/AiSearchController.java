@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.api.user.controller;
 
 import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.api.user.dto.AiSearchStreamRequestDTO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.AiStreamTaskVO;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiStreamTaskService;
@@ -14,8 +15,8 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
@@ -25,6 +26,7 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/v1/ai")
 public class AiSearchController {
 
+    /** 创建、恢复、订阅和取消用户 AI 搜索后台任务的应用服务。 */
     @Resource
     private IAiStreamTaskService aiStreamTaskService;
 
@@ -34,22 +36,20 @@ public class AiSearchController {
      */
     @PostMapping(value = "/searches", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public com.sakana.just_because_meme_understands_you.common.response.Result<AiStreamTaskVO> createSearch(
+    public Result<AiStreamTaskVO> createSearch(
             @Valid @RequestBody AiSearchStreamRequestDTO request,
             HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
         log.info("AI search task requested userId={} sessionId={}", userId, request.getSessionId());
-        return com.sakana.just_because_meme_understands_you.common.response.Result.success(
-                AiStreamTaskVO.from(aiStreamTaskService.submit(userId, request)));
+        return Result.success(AiStreamTaskVO.from(aiStreamTaskService.submit(userId, request)));
     }
 
     /** 查询当前用户最近一个可恢复的 AI 搜索任务。 */
     @GetMapping(value = "/searches/current", produces = MediaType.APPLICATION_JSON_VALUE)
-    public com.sakana.just_because_meme_understands_you.common.response.Result<AiStreamTaskVO> getCurrent(
+    public Result<AiStreamTaskVO> getCurrent(
             HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
-        return com.sakana.just_because_meme_understands_you.common.response.Result.success(
-                aiStreamTaskService.getCurrent(userId).map(AiStreamTaskVO::from).orElse(null));
+        return Result.success(aiStreamTaskService.getCurrent(userId).map(AiStreamTaskVO::from).orElse(null));
     }
 
     /** 按事件游标订阅任务事件，断线后可从最后确认的 ID 继续回放。 */
@@ -64,12 +64,11 @@ public class AiSearchController {
 
     /** 显式取消当前用户拥有的运行中任务。 */
     @PostMapping(value = "/searches/{taskId}/cancel", produces = MediaType.APPLICATION_JSON_VALUE)
-    public com.sakana.just_because_meme_understands_you.common.response.Result<AiStreamTaskVO> cancel(
+    public Result<AiStreamTaskVO> cancel(
             @PathVariable("taskId") String taskId,
             HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
         AiStreamTaskSnapshot cancelled = aiStreamTaskService.cancel(userId, taskId);
-        return com.sakana.just_because_meme_understands_you.common.response.Result.success(
-                AiStreamTaskVO.from(cancelled));
+        return Result.success(AiStreamTaskVO.from(cancelled));
     }
 }

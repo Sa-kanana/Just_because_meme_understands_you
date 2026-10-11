@@ -20,10 +20,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
 @RestController
-@RequestMapping("/v1/admin/sensitive-words")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@RequestMapping("/admin/v1/sensitive-words")
 public class AdminSensitiveWordController {
 
     @Resource

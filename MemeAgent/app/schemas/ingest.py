@@ -19,8 +19,13 @@ class IngestRequest(BaseModel):
 
 
 class IngestAcceptedResponse(BaseModel):
+    """兼容旧字段结构；接口返回时本批向量任务已经完成。"""
+
+    # 中文注释：表示请求已成功处理完成，保留该字段兼容原有内部调用方。
     accepted: bool = True
+    # 中文注释：已经完成的文档向量处理或删除任务数。
     task_count: int
+    # 中文注释：本批次中因数据未变化等原因而跳过的任务数。
     skipped: int = 0
 
 

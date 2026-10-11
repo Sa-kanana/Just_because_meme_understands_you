@@ -29,7 +29,7 @@ public class MemeTagRelation implements Serializable {
      * 梗ID
      */
     @TableId(value = "meme_id", type = IdType.AUTO)
-    private Integer memeId;
+    private Long memeId;
 
     /**
      * 标签ID

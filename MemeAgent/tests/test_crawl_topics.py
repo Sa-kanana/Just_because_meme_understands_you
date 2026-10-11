@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """extract_topics_from_markdown unit tests (no Firecrawl)."""
 
-from app.crawl.service import extract_topics_from_markdown
+from app.crawl.service import _normalize_topic, extract_topics_from_markdown
+
+
+def test_normalizer_discards_generic_roundup_titles_but_keeps_real_meme_names():
+    assert _normalize_topic("热门网络热梗盘点") is None
+    assert _normalize_topic("电子榨菜") == "电子榨菜"
 
 
 def test_extract_quoted_and_hashtag():

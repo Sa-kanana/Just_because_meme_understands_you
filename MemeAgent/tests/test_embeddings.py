@@ -62,3 +62,23 @@ async def test_embed_texts_does_not_store_local_vectors_after_provider_failure(m
 
     with pytest.raises(RuntimeError, match="Embedding API request failed"):
         await embeddings.embed_texts(["chunk"], settings)
+
+
+async def test_embed_texts_splits_provider_batches_at_25_and_preserves_order(monkeypatch):
+    calls = []
+
+    class ProviderLimitedEmbeddings:
+        async def aembed_documents(self, texts):
+            calls.append(list(texts))
+            if len(texts) > 25:
+                raise ValueError("provider accepts at most 25 inputs")
+            return [[float(text.removeprefix("chunk-"))] for text in texts]
+
+    monkeypatch.setattr(embeddings, "_get_embeddings", lambda _settings: ProviderLimitedEmbeddings())
+    settings = Settings(internal_api_key="test-key", openai_api_key="test-key", vector_embedding_dim=1)
+    texts = [f"chunk-{index}" for index in range(51)]
+
+    vectors = await embeddings.embed_texts(texts, settings)
+
+    assert [len(batch) for batch in calls] == [25, 25, 1]
+    assert vectors == [[float(index)] for index in range(51)]

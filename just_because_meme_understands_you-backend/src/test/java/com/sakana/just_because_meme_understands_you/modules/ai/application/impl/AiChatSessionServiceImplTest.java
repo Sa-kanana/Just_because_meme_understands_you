@@ -1,6 +1,8 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.application.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiStreamTaskService;
 import com.sakana.just_because_meme_understands_you.modules.ai.domain.entity.AiChatSession;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,6 +43,8 @@ class AiChatSessionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), "test"), AiChatSession.class);
         service = new AiChatSessionServiceImpl();
         ReflectionTestUtils.setField(service, "sessionMapper", sessionMapper);
         ReflectionTestUtils.setField(service, "messageMapper", messageMapper);

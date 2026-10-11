@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.modules.notification.domain.NotificationConstants;
 import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeComment;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.notification.domain.entity.UserNotification;
 import jakarta.annotation.Resource;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
@@ -113,8 +114,8 @@ public class NotificationAssembler {
         User user = actorMap != null ? actorMap.get(actorId) : null;
         NotificationActorVO actor = new NotificationActorVO();
         actor.setUserId(actorId);
-        actor.setNickname(user != null && StringUtils.hasText(user.getNickname()) ? user.getNickname() : "梗友");
-        actor.setAvatar(user != null ? ossUrlHelper.toPublicUrl(user.getAvatar()) : "");
+        actor.setNickname(UserDisplayPolicy.displayName(user, "梗友"));
+        actor.setAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(user)));
         return actor;
     }
 

@@ -5,12 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.api.user.dto.AiSearchStreamRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.AiSearchPreparation;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiAnswerCache;
-import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiBusinessContextAssembler;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiRateLimiter;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.TokenBudgetTrimmer;
 import com.sakana.just_because_meme_understands_you.modules.ai.domain.entity.AiChatMessage;
 import com.sakana.just_because_meme_understands_you.modules.ai.domain.entity.AiChatSession;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
+import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentStreamRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.persistence.mapper.AiChatMessageMapper;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.persistence.mapper.AiChatSessionMapper;
@@ -65,9 +65,6 @@ class AiSearchServiceImplTest {
     private AiAnswerCache aiAnswerCache;
     @Mock
     private AiRateLimiter aiRateLimiter;
-    @Mock
-    private AiBusinessContextAssembler businessContextAssembler;
-
     private MemeAgentProperties properties;
     private AiSearchServiceImpl service;
 
@@ -82,7 +79,6 @@ class AiSearchServiceImplTest {
                 tokenBudgetTrimmer,
                 aiAnswerCache,
                 aiRateLimiter,
-                businessContextAssembler,
                 new ObjectMapper()
         );
 
@@ -90,16 +86,14 @@ class AiSearchServiceImplTest {
         session.setId(SESSION_ID);
         session.setUserId(USER_ID);
         session.setIsDeleted(0);
-        when(memeAgentClient.isConfigured()).thenReturn(true);
-        when(aiRateLimiter.tryAcquire(USER_ID)).thenReturn(true);
-        when(sessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(session);
+        lenient().when(memeAgentClient.isConfigured()).thenReturn(true);
+        lenient().when(aiRateLimiter.tryAcquire(USER_ID)).thenReturn(true);
+        lenient().when(sessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(session);
         lenient().when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         lenient().when(tokenBudgetTrimmer.trim(any(), anyInt())).thenReturn(List.of());
         when(tokenBudgetTrimmer.estimateTokens(anyString())).thenReturn(1);
-        when(aiAnswerCache.fingerprint(any())).thenReturn("test-context-fingerprint");
+        lenient().when(aiAnswerCache.fingerprint(any())).thenReturn("test-context-fingerprint");
         lenient().when(aiAnswerCache.get(USER_ID, QUERY, "test-context-fingerprint")).thenReturn(Optional.empty());
-        when(businessContextAssembler.assemble(QUERY))
-                .thenReturn(AiBusinessContextAssembler.AssembledContext.empty());
     }
 
     @Test
@@ -111,6 +105,22 @@ class AiSearchServiceImplTest {
         assertEquals(SESSION_ID, preparation.sessionId());
         assertEquals("request-1", preparation.requestId());
         verifyNoAssistantPersistence();
+    }
+
+    @Test
+    void aiSearchDoesNotSendMysqlKeywordCandidatesAlongsideVectorRetrieval() {
+        when(memeAgentClient.stream(any())).thenReturn(Flux.just(
+                event("meta", "{\"request_id\":\"request-1\",\"retrieved\":[]}"),
+                event("token", "{\"text\":\"回答\"}"),
+                event("done", "{\"finish_reason\":\"stop\"}")));
+
+        collectEvents(request());
+
+        ArgumentCaptor<MemeAgentStreamRequestDTO> captor =
+                ArgumentCaptor.forClass(MemeAgentStreamRequestDTO.class);
+        verify(memeAgentClient).stream(captor.capture());
+        assertEquals(List.of(), captor.getValue().getContext().getHintMemeIds());
+        assertEquals(Map.of(), captor.getValue().getContext().getExtra());
     }
 
     @Test
@@ -129,12 +139,13 @@ class AiSearchServiceImplTest {
     void savesAndCachesOnlyAfterNormalDone() {
         when(memeAgentClient.stream(any())).thenReturn(Flux.just(
                 event("meta", "{\"request_id\":\"request-1\"}"),
+                event("cite", "{\"meme_id\":\"60\",\"score\":0.9,\"title\":\"不明觉厉\"}"),
                 event("token", "{\"text\":\"完整答案\"}"),
                 event("done", "{\"finish_reason\":\"stop\"}")));
         assertEquals(130000L, properties.getAi().getStreamIdleTimeoutMs());
 
         List<ServerSentEvent<String>> events = collectEvents(request());
-        assertEquals(List.of("session", "meta", "token", "done"), eventNames(events));
+        assertEquals(List.of("session", "meta", "cite", "token", "done"), eventNames(events));
 
         verifyAssistantSaved("完整答案");
         verify(aiAnswerCache).put(USER_ID, QUERY, "test-context-fingerprint", "完整答案");
@@ -150,6 +161,18 @@ class AiSearchServiceImplTest {
         assertEquals(List.of("session", "token", "done"), eventNames(events));
 
         verifyAssistantSaved("候选梗摘要");
+        verify(aiAnswerCache, never()).put(anyLong(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void doesNotCacheUnknownAnswerWithoutVectorEvidence() {
+        when(memeAgentClient.stream(any())).thenReturn(Flux.just(
+                event("meta", "{\"request_id\":\"request-1\",\"retrieved\":[]}"),
+                event("token", "{\"text\":\"不知道。\"}"),
+                event("done", "{\"finish_reason\":\"stop\"}")));
+
+        collectEvents(request());
+
         verify(aiAnswerCache, never()).put(anyLong(), anyString(), anyString(), anyString());
     }
 
@@ -207,6 +230,7 @@ class AiSearchServiceImplTest {
     void conversationHistoryDoesNotReuseQueryOnlyCachedAnswer() {
         AiChatMessage history = new AiChatMessage();
         history.setRole("user");
+        history.setStatus("COMPLETED");
         history.setContent("前一轮问题，限定这次回答的上下文");
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(history));
         when(tokenBudgetTrimmer.trim(any(), anyInt())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -223,22 +247,52 @@ class AiSearchServiceImplTest {
         ArgumentCaptor<Object> contextCaptor = ArgumentCaptor.forClass(Object.class);
         verify(aiAnswerCache).fingerprint(contextCaptor.capture());
         Map<?, ?> cacheContext = (Map<?, ?>) contextCaptor.getValue();
-        assertTrue(cacheContext.get("pipeline_version").toString().contains("meme-search-v2"));
+        assertTrue(cacheContext.get("pipeline_version").toString().contains("meme-search-v5"));
         assertTrue(cacheContext.get("messages").toString().contains("前一轮问题"));
     }
 
     @Test
-    void logsStreamLatencyAndOutcomeTelemetry(CapturedOutput output) {
+    void sendsOnlyCompletedMessagesAsNextRequestContext() {
+        List<AiChatMessage> history = List.of(
+                historyMessage("user", "已完成的问题", "COMPLETED"),
+                historyMessage("assistant", "已完成的回答", "COMPLETED"),
+                historyMessage("assistant", "停止后保留的片段", "STOPPED"),
+                historyMessage("assistant", "失败的回答", "FAILED"),
+                historyMessage("assistant", "仍在生成的内容", "GENERATING")
+        );
+        when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(history);
+        when(tokenBudgetTrimmer.trim(any(), anyInt())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(memeAgentClient.stream(any())).thenReturn(Flux.just(
+                event("token", "{\"text\":\"新回答\"}"),
+                event("done", "{\"finish_reason\":\"stop\"}")));
+
+        collectEvents(request());
+
+        ArgumentCaptor<MemeAgentStreamRequestDTO> captor =
+                ArgumentCaptor.forClass(MemeAgentStreamRequestDTO.class);
+        verify(memeAgentClient).stream(captor.capture());
+        assertEquals(List.of("已完成的问题", "已完成的回答"), captor.getValue().getMessages().stream()
+                .map(MemeAgentStreamRequestDTO.ChatMessage::getContent)
+                .toList());
+    }
+
+    private static AiChatMessage historyMessage(String role, String content, String status) {
+        AiChatMessage message = new AiChatMessage();
+        message.setRole(role);
+        message.setContent(content);
+        message.setStatus(status);
+        return message;
+    }
+
+    @Test
+    void streamsAnswersWithoutLatencyTelemetry(CapturedOutput output) {
         when(memeAgentClient.stream(any())).thenReturn(Flux.just(
                 event("token", "{\"text\":\"完整答案\"}"),
                 event("done", "{\"finish_reason\":\"stop\"}")));
 
         collectEvents(request());
 
-        assertTrue(output.getOut().contains("ai_stream_metrics"));
-        assertTrue(output.getOut().contains("cache_hit=false"));
-        assertTrue(output.getOut().contains("outcome=done"));
-        assertTrue(output.getOut().contains("ttft_ms="));
+        assertFalse(output.getOut().contains("ai_stream_metrics"));
     }
 
     @Test
@@ -261,7 +315,7 @@ class AiSearchServiceImplTest {
     }
 
     @Test
-    void logsCacheHitTelemetryAndReplaysTheCachedAnswer(CapturedOutput output) {
+    void replaysCachedAnswersWithoutLatencyTelemetry(CapturedOutput output) {
         doReturn(Optional.of("缓存答案"))
                 .when(aiAnswerCache).get(USER_ID, QUERY, "test-context-fingerprint");
 
@@ -269,8 +323,7 @@ class AiSearchServiceImplTest {
 
         assertEquals(List.of("session", "meta", "token", "done"), eventNames(events));
         assertTrue(events.stream().anyMatch(event -> event.data().contains("缓存答案")));
-        assertTrue(output.getOut().contains("ai_stream_metrics"));
-        assertTrue(output.getOut().contains("cache_hit=true"));
+        assertFalse(output.getOut().contains("ai_stream_metrics"));
         verify(memeAgentClient, never()).stream(any());
     }
 
@@ -308,5 +361,17 @@ class AiSearchServiceImplTest {
         assertFalse(captor.getAllValues().stream().anyMatch(message ->
                 "assistant".equals(message.getRole())));
         verify(aiAnswerCache, never()).put(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void persistsStoppedPartialAnswerWithStoppedStatus() {
+        service.persistStoppedAnswer(SESSION_ID, "request-1", "已经生成的部分内容");
+
+        ArgumentCaptor<AiChatMessage> captor = ArgumentCaptor.forClass(AiChatMessage.class);
+        verify(messageMapper).insert(captor.capture());
+        AiChatMessage savedMessage = captor.getValue();
+        assertEquals("assistant", savedMessage.getRole());
+        assertEquals("已经生成的部分内容", savedMessage.getContent());
+        assertEquals("STOPPED", savedMessage.getStatus());
     }
 }

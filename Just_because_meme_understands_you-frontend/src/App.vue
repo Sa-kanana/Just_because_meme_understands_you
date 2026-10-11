@@ -4,7 +4,16 @@
       <div class="header-left">
         <router-link to="/" class="logo-wrap">
           <img class="logo-img" alt="网站 logo" src="/icon.svg?v=9" />
-          <span class="logo-text">只因“梗”懂你</span>
+          <span class="logo-text" aria-label="只因梗懂你">
+            <span>只因</span>
+            <span class="logo-text__accent">
+              “梗”
+              <svg viewBox="0 0 36 8" aria-hidden="true">
+                <path d="M1 6c8-4 12-5 17-3 3 1 3 3 6 3 3 0 7-3 11-4" />
+              </svg>
+            </span>
+            <span>懂你</span>
+          </span>
         </router-link>
         <nav class="nav-links">
           <router-link
@@ -195,7 +204,7 @@
       </div>
     </div>
 
-    <main class="page-main">
+    <main class="page-main" :class="{ 'page-main--home': $route.name === 'home', 'page-main--publish': $route.name === 'publishMeme' }">
       <GlobalBreadcrumb />
       <router-view />
 
@@ -811,12 +820,41 @@ html.dark .logo-img {
 }
 
 .logo-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
   flex-shrink: 0;
-  font-size: 19px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-size: clamp(19px, 1.15vw, 22px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
   color: var(--meme-text);
   white-space: nowrap;
+}
+
+.logo-text__accent {
+  position: relative;
+  display: inline-block;
+  margin-inline: 2px;
+  background: linear-gradient(120deg, var(--meme-primary-dark) 0%, var(--meme-primary) 58%, #35b7f2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.logo-text__accent svg {
+  position: absolute;
+  left: 24%;
+  bottom: -4px;
+  width: 58%;
+  height: 7px;
+  overflow: visible;
+  fill: none;
+  stroke: #9a75ee;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .nav-links {
@@ -839,8 +877,9 @@ html.dark .logo-img {
 .nav-link {
   position: relative;
   flex: 0 0 auto;
-  font-size: 14px;
-  font-weight: 500;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--meme-text-secondary);
   text-decoration: none;
   padding: 8px 12px;
@@ -1182,6 +1221,88 @@ html.dark .logo-img {
   margin: 0 auto;
 }
 
+.page-main--home {
+  max-width: 1760px;
+  padding-top: 18px;
+}
+
+.page-main--publish {
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  width: 100%;
+  max-width: none;
+  padding: 0 clamp(14px, 3.2vw, 48px) 48px;
+}
+
+.page-main--publish::before,
+.page-main--publish::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.page-main--publish::before {
+  z-index: -2;
+  top: 0;
+  bottom: 0;
+  background-color: #edf5ff;
+  background-image:
+    radial-gradient(ellipse at 50% 14%, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.2) 56%, transparent 90%),
+    linear-gradient(180deg, #eaf3ff 0%, #f7fbff 52%, #edf5ff 100%);
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: 100% 100%, 100% 100%;
+}
+
+.page-main--publish::after {
+  z-index: -1;
+  top: 0;
+  height: min(40vw, 1100px);
+  background: url('~@/assets/publish-page-background.jpg') center top / 100% 100% no-repeat;
+  opacity: 0.78;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 68%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 68%, transparent 100%);
+}
+
+html:has(.page-main--publish) {
+  scrollbar-width: none;
+}
+
+html:has(.page-main--publish)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html.dark .page-main--publish::before {
+  opacity: 0.46;
+}
+
+html.dark .page-main--publish::after {
+  opacity: 0.12;
+}
+
+.page-main--publish > .global-breadcrumb {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .page-main--publish::after {
+    left: 50%;
+    width: 100vw;
+    height: 360px;
+    transform: translateX(-50%);
+    background-size: auto 360px;
+    background-position: 32% top;
+    opacity: 0.42;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 70%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0%, #000 70%, transparent 100%);
+  }
+}
+
 @media (max-width: 1600px) and (min-width: 901px) {
   .site-header {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1194,7 +1315,7 @@ html.dark .logo-img {
   }
 
   .logo-text {
-    font-size: 17px;
+    font-size: 19px;
     white-space: nowrap;
   }
 

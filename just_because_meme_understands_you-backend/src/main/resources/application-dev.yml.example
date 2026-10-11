@@ -43,6 +43,11 @@ jwt:
   secret: just_because_meme_understands_you_jwt_secret_dev_only
   cookie-secure: false
 
+# ---------- 共享用户角色 ----------
+auth:
+  # 首次初始化超级管理员时填写一个已注册账号邮箱；成功后可以清空或移除该变量
+  bootstrap-super-admin-email: ${AUTH_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
+
 # ---------- 本地安全 / CORS ----------
 app:
   security:
@@ -87,10 +92,6 @@ meme:
     rate-limit-per-minute: 20
     chars-per-token-estimate: 3
     backfill-enabled: true
-  ops:
-    require-admin: true
-    # 本地无 ROLE_ADMIN 时可把本人 userId 加入白名单
-    admin-user-ids: []
 
 # ---------- Firecrawl 热梗采集 ----------
   crawl:

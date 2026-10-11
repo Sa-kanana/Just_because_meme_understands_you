@@ -89,7 +89,9 @@ public class MemePublishService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        String imageKey = ossObjectPromoteService.promoteMemeImage(request.getImage(), userId);
+        String imageKey = StringUtils.hasText(request.getImage())
+                ? ossObjectPromoteService.promoteMemeImage(request.getImage().trim(), userId)
+                : null;
 
         // 1. 写入 meme 主表
         Meme meme = new Meme();
@@ -105,7 +107,7 @@ public class MemePublishService {
         meme.setUpdateTime(now);
         meme.setUserId(userId);
         memeMapper.insert(meme);
-        Integer memeId = meme.getId();
+        Long memeId = meme.getId();
         if (memeId == null) {
             throw new BizException(Result.CODE_ERROR, "梗主表写入失败");
         }
@@ -136,9 +138,6 @@ public class MemePublishService {
         }
         if (!StringUtils.hasText(request.getName())) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称不能为空");
-        }
-        if (!StringUtils.hasText(request.getImage())) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "封面图不能为空");
         }
     }
 
@@ -178,7 +177,7 @@ public class MemePublishService {
         }
     }
 
-    private void saveMediaResources(Long userId, Integer memeId, List<String> resourceUrls) {
+    private void saveMediaResources(Long userId, Long memeId, List<String> resourceUrls) {
         if (resourceUrls == null || resourceUrls.isEmpty()) {
             return;
         }
@@ -193,7 +192,7 @@ public class MemePublishService {
             }
             String normalized = ossObjectPromoteService.promoteMemeMediaOrKeepExternal(url, userId);
             MemeResource resource = new MemeResource();
-            resource.setMemeId(memeId.longValue());
+            resource.setMemeId(memeId);
             resource.setResourceUrl(normalized);
             resource.setResourceType(MemeResourceType.MEDIA.getCode());
             resource.setSortOrder(sortOrder++);
@@ -203,7 +202,7 @@ public class MemePublishService {
         }
     }
 
-    private void saveStructuredLinks(Integer memeId, List<MemeResourceItemDTO> resources) {
+    private void saveStructuredLinks(Long memeId, List<MemeResourceItemDTO> resources) {
         if (resources == null || resources.isEmpty()) {
             return;
         }
@@ -242,7 +241,7 @@ public class MemePublishService {
             MemeResourceType type = MemeResourceType.fromApiType(item.getType());
             int sortOrder = item.getSortOrder() != null ? item.getSortOrder() : 0;
             MemeResource resource = new MemeResource();
-            resource.setMemeId(memeId.longValue());
+            resource.setMemeId(memeId);
             resource.setResourceUrl(item.getUrl().trim());
             resource.setResourceType(type.getCode());
             resource.setTitle(item.getTitle().trim());
@@ -272,7 +271,7 @@ public class MemePublishService {
         }
     }
 
-    private void saveTagRelations(Integer memeId, List<Integer> tagIds) {
+    private void saveTagRelations(Long memeId, List<Integer> tagIds) {
         for (Integer tagId : tagIds) {
             MemeTagRelation relation = new MemeTagRelation();
             relation.setMemeId(memeId);
@@ -284,7 +283,7 @@ public class MemePublishService {
     /**
      * 事务提交后再触发异步链路，避免主事务回滚却已累加计数 / 加入布隆。
      */
-    private void scheduleAfterPublishCommitted(Long userId, Integer memeId, List<Integer> tagIds) {
+    private void scheduleAfterPublishCommitted(Long userId, Long memeId, List<Integer> tagIds) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -297,7 +296,7 @@ public class MemePublishService {
         }
     }
 
-    private void runAfterPublish(Long userId, Integer memeId, List<Integer> tagIds) {
+    private void runAfterPublish(Long userId, Long memeId, List<Integer> tagIds) {
         // 布隆过滤器热加载：同步追加，保证后续评论/收藏不被误拦
         try {
             memeBloomFilterService.add(memeId);
@@ -316,7 +315,7 @@ public class MemePublishService {
     /**
      * 供评论/收藏入口做快速存在性预判。
      */
-    public boolean mightExist(Integer memeId) {
+    public boolean mightExist(Long memeId) {
         return memeBloomFilterService.mightContain(memeId);
     }
 }

@@ -26,6 +26,12 @@ const routes = [
         meta: { title: '梗管理' },
       },
       {
+        path: 'meme-edit-revisions',
+        name: 'meme-edit-revisions',
+        component: () => import('@/views/memes/MemeEditRevisionQueue.vue'),
+        meta: { title: '修改稿审核' },
+      },
+      {
         path: 'reports',
         name: 'reports',
         component: () => import('@/views/reports/ReportsView.vue'),
@@ -60,12 +66,6 @@ const routes = [
         name: 'knowledge',
         component: () => import('@/views/knowledge/KnowledgeListView.vue'),
         meta: { title: '知识库' },
-      },
-      {
-        path: 'knowledge/corrections',
-        name: 'knowledge-corrections',
-        component: () => import('@/views/knowledge/MemeKnowledgeCorrectionsView.vue'),
-        meta: { title: '资料纠错审核' },
       },
       {
         path: 'ops',

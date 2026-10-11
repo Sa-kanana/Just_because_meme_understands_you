@@ -44,7 +44,7 @@ class AdminReportQueueContextTest {
         page.setRecords(List.of(row));
         page.setTotal(1);
         doReturn(page).when(reports).selectPage(any(Page.class), any());
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setName("梗标题").setStatus(1));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setName("梗标题").setStatus(1));
         MemeComment comment = new MemeComment();
         comment.setId(31L);
         comment.setUserId(8L);
@@ -91,7 +91,7 @@ class AdminReportQueueContextTest {
         page.setRecords(List.of(row));
         page.setTotal(1);
         doReturn(page).when(reports).selectPage(any(Page.class), any());
-        when(memes.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setName("梗标题").setStatus(1));
+        when(memes.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setName("梗标题").setStatus(1));
         when(comments.selectById(32L)).thenReturn(null);
 
         MemeReportService service = new MemeReportService();

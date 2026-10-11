@@ -81,15 +81,15 @@ async def delete_by_meme_ids(meme_ids: list[str]) -> int:
         )
     # asyncpg returns 'DELETE N'
     try:
-        return int(result.split()[-1])
+        deleted_count = int(result.split()[-1])
     except (ValueError, IndexError):
-        return 0
+        deleted_count = 0
+    return deleted_count
 
 
 async def similarity_search(query: str, top_k: int) -> list[RetrievedChunk]:
     query_embedding = await embed_text(query)
-    # Meme introductions are capped at 5,000 chars and chunked into at most six
-    # chunks. Overfetch before merge_retrieved deduplicates by meme_id.
+    # 简介最多拆成六个片段；多取片段后由候选排序按 meme_id 去重。
     candidate_limit = max(1, top_k) * MAX_CHUNKS_PER_MEME
     pool = get_pool()
     acquire_timeout = get_settings().vector_pool_acquire_timeout_seconds
@@ -119,79 +119,6 @@ async def similarity_search(query: str, top_k: int) -> list[RetrievedChunk]:
             )
         )
     return results
-
-
-async def fetch_chunks_by_meme_ids(meme_ids: list[str], per_meme: int = 1) -> list[RetrievedChunk]:
-    """按业务 meme_id 拉取向量片段（供 hint 融合）。"""
-    ids = [str(m).strip() for m in meme_ids if str(m).strip()]
-    if not ids:
-        return []
-    pool = get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT meme_id, content, chunk_index
-            FROM (
-                SELECT meme_id, content, chunk_index,
-                       ROW_NUMBER() OVER (PARTITION BY meme_id ORDER BY chunk_index ASC) AS row_num
-                FROM meme_vector_chunk
-                WHERE meme_id = ANY($1::varchar[])
-            ) ranked
-            WHERE row_num <= $2
-            ORDER BY array_position($1::varchar[], meme_id), chunk_index ASC
-            """,
-            ids,
-            max(1, per_meme),
-        )
-    # 保留调用方传入顺序及每个 meme 内的块顺序。
-    results: list[RetrievedChunk] = []
-    for row in rows:
-        results.append(
-            RetrievedChunk(
-                meme_id=row["meme_id"],
-                content=row["content"],
-                score=0.55,
-                title=_extract_title(row["content"]),
-            )
-        )
-    return results
-
-
-def merge_retrieved(
-    vector_hits: list[RetrievedChunk],
-    hint_hits: list[RetrievedChunk],
-    mysql_snippets: list[RetrievedChunk],
-    top_k: int,
-    rrf_k: int = 60,
-) -> list[RetrievedChunk]:
-    """RRF 融合语义结果与 Java 业务候选；hint 和 snippet 合并为一个来源。"""
-    merged: dict[str, RetrievedChunk] = {}
-    fused_scores: dict[str, float] = {}
-    rank_constant = max(1, rrf_k)
-
-    business_candidates: dict[str, RetrievedChunk] = {}
-    for chunk in (*hint_hits, *mysql_snippets):
-        business_candidates.setdefault(chunk.meme_id, chunk)
-
-    for source in (vector_hits, list(business_candidates.values())):
-        seen_in_source: set[str] = set()
-        rank = 0
-        for chunk in source:
-            if chunk.meme_id in seen_in_source:
-                continue
-            seen_in_source.add(chunk.meme_id)
-            rank += 1
-            fused_scores[chunk.meme_id] = fused_scores.get(chunk.meme_id, 0.0) + (
-                1.0 / (rank_constant + rank)
-            )
-
-            # Keep the best original result payload and its source score for citations.
-            existing = merged.get(chunk.meme_id)
-            if existing is None or chunk.score > existing.score:
-                merged[chunk.meme_id] = chunk
-
-    ordered = sorted(merged.values(), key=lambda c: fused_scores[c.meme_id], reverse=True)
-    return ordered[: max(1, top_k)]
 
 
 def _extract_title(content: str) -> str | None:

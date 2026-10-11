@@ -18,6 +18,7 @@ import com.sakana.just_because_meme_understands_you.modules.report.domain.entity
 import com.sakana.just_because_meme_understands_you.modules.report.application.assembler.AdminReportViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.report.infrastructure.persistence.mapper.CommunityReportMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserMapper;
 import jakarta.annotation.Resource;
 import org.springframework.dao.DuplicateKeyException;
@@ -207,12 +208,13 @@ public class MemeReportService {
             }
         }
         User reporter = userMapper.selectById(row.getReporterUserId());
-        if (reporter != null) vo.setReporterName(reporter.getNickname());
+        if (reporter != null) vo.setReporterName(UserDisplayPolicy.displayName(reporter, "匿名用户"));
         if (vo.getTargetAuthorId() != null) {
             User author = userMapper.selectById(vo.getTargetAuthorId());
             if (author != null) {
-                vo.setTargetAuthorName(author.getNickname());
-                if (TARGET_COMMENT.equals(row.getTargetType())) vo.setCommentAuthorName(author.getNickname());
+                String authorName = UserDisplayPolicy.displayName(author, "匿名用户");
+                vo.setTargetAuthorName(authorName);
+                if (TARGET_COMMENT.equals(row.getTargetType())) vo.setCommentAuthorName(authorName);
             }
         }
         return vo;

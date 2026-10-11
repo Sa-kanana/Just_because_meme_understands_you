@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 
 from app.api.deps import WriteAuth
 from app.ingest.worker import enqueue_ingest
@@ -13,7 +13,7 @@ from app.schemas.ingest import (
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
-@router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=IngestAcceptedResponse)
+@router.post("", response_model=IngestAcceptedResponse)
 async def ingest_documents(
     payload: IngestRequest,
     _auth: WriteAuth,

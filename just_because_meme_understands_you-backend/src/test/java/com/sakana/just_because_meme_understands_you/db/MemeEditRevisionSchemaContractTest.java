@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MemeEditRevisionSchemaContractTest {
 
     private static final String MIGRATION_RESOURCE =
-            "/db/migration/V2026101002__meme_edit_revisions.sql";
+            "/db/migration/V2026101003__meme_edit_revisions.sql";
 
     @Test
     void migrationDocumentsEveryColumnAndAddsReviewIndexes() throws Exception {

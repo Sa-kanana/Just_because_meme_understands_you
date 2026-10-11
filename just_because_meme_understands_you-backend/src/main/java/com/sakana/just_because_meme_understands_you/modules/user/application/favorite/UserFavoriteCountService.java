@@ -90,7 +90,6 @@ public class UserFavoriteCountService {
         if (stats == null) {
             stats = new UserStats();
             stats.setUserId(userId);
-            stats.setMemeCount(0);
             stats.setLikeReceived(0);
             stats.setFollowCount(0);
             stats.setFansCount(0);

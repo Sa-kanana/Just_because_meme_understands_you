@@ -7,6 +7,7 @@ import com.sakana.just_because_meme_understands_you.common.exception.BizExceptio
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageParamNormalizer;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserRelation;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserStats;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserRelationMapper;
@@ -240,13 +241,9 @@ public class UserFollowServiceImpl implements IUserFollowService {
             User user = userMap.get(uid);
             FollowListItemVO item = new FollowListItemVO();
             item.setUserId(String.valueOf(uid));
-            item.setNickname(user != null && StringUtils.hasText(user.getNickname())
-                    ? user.getNickname().trim()
-                    : "匿名用户");
-            item.setAvatar(user != null ? ossUrlHelper.toPublicUrl(user.getAvatar()) : "");
-            item.setSignature(user != null && StringUtils.hasText(user.getSignature())
-                    ? user.getSignature().trim()
-                    : "");
+            item.setNickname(UserDisplayPolicy.displayName(user, "匿名用户"));
+            item.setAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(user)));
+            item.setSignature(UserDisplayPolicy.displaySignature(user));
             item.setFollowTime(relation.getCreateTime() == null
                     ? ""
                     : relation.getCreateTime().format(FOLLOW_TIME_FMT));
@@ -300,7 +297,6 @@ public class UserFollowServiceImpl implements IUserFollowService {
         }
         UserStats created = new UserStats();
         created.setUserId(userId);
-        created.setMemeCount(0);
         created.setLikeReceived(0);
         created.setFavoriteCount(0);
         created.setFollowCount(0);

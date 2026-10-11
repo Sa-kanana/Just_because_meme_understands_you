@@ -19,6 +19,9 @@ public class AiChatMessage {
 
     private String role;
 
+    /** 中文说明：消息状态为 COMPLETED、STOPPED 或 FAILED。 */
+    private String status;
+
     private String content;
 
     private String requestId;

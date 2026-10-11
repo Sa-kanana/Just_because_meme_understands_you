@@ -1,4 +1,6 @@
 import { request, streamRequest } from './request'
+import { readAiStreamSse } from '@/utils/aiStreamSse.mjs'
+import { normalizeAiTaskStatus } from '@/utils/aiStreamLifecycle.mjs'
 
 function unwrap(res, fallbackMsg) {
   if (!res || typeof res !== 'object') {
@@ -30,6 +32,7 @@ function normalizeMessage(raw) {
     id,
     sessionId: raw.sessionId != null ? String(raw.sessionId) : '',
     role: raw.role != null ? String(raw.role) : '',
+    status: normalizeAiTaskStatus(raw.status || 'COMPLETED'),
     content: raw.content || '',
     requestId: raw.requestId || '',
     tokenEstimate: Number.isFinite(Number(raw.tokenEstimate)) ? Number(raw.tokenEstimate) : 0,
@@ -46,6 +49,19 @@ function normalizePage(data, itemMapper) {
     size: Number.isFinite(Number(src.size)) ? Number(src.size) : 10,
     total: Number.isFinite(Number(src.total)) ? Number(src.total) : list.length,
     hasMore: Boolean(src.hasMore),
+  }
+}
+
+function normalizeTask(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const taskId = raw.taskId != null ? String(raw.taskId).trim() : ''
+  if (!taskId) return null
+  return {
+    taskId,
+    sessionId: raw.sessionId != null ? String(raw.sessionId) : '',
+    requestId: raw.requestId != null ? String(raw.requestId) : '',
+    status: normalizeAiTaskStatus(raw.status),
+    expiresAtMillis: Number.isFinite(Number(raw.expiresAtMillis)) ? Number(raw.expiresAtMillis) : 0,
   }
 }
 
@@ -94,6 +110,69 @@ export function deleteAiSession(sessionId) {
     unwrap(res, '删除会话失败')
     return true
   })
+}
+
+/** 创建后台 AI 搜索任务，浏览器断开后后端仍会继续生成。 */
+export async function createAiSearchTask(payload = {}) {
+  const query = payload.query != null ? String(payload.query).trim() : ''
+  if (!query) throw new Error('query 不能为空')
+  const body = { query }
+  if (payload.sessionId != null && String(payload.sessionId).trim()) {
+    body.sessionId = String(payload.sessionId).trim()
+  }
+  if (payload.requestId != null && String(payload.requestId).trim()) {
+    body.requestId = String(payload.requestId).trim()
+  }
+  const data = unwrap(await request('/ai/searches', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }), '创建 AI 搜索失败')
+  const task = normalizeTask(data)
+  if (!task) throw new Error('AI 搜索任务响应缺少 taskId')
+  return task
+}
+
+/** 查询当前登录用户尚在保留期内的 AI 搜索任务。 */
+export async function getCurrentAiSearchTask() {
+  const data = unwrap(await request('/ai/searches/current', { method: 'GET' }), '恢复 AI 搜索失败')
+  return normalizeTask(data)
+}
+
+/** 从指定事件 ID 之后读取后台任务 SSE，断线时可再次调用恢复。 */
+export async function streamAiSearchTask(taskId, afterEventId = 0, handlers = {}) {
+  const id = taskId != null ? String(taskId).trim() : ''
+  if (!id) throw new Error('缺少 taskId')
+  const cursor = Number.isFinite(Number(afterEventId)) ? Math.max(0, Number(afterEventId)) : 0
+  const query = new URLSearchParams({ after: String(cursor) })
+  const response = await streamRequest(`/ai/searches/${encodeURIComponent(id)}/events?${query}`, {
+    method: 'GET',
+    signal: handlers.signal,
+  })
+  if (!response.ok) {
+    let message = `AI 搜索事件读取失败: ${response.status}`
+    try {
+      const json = await response.clone().json()
+      message = json.message || json.msg || message
+    } catch {
+      // 响应不是 JSON 时保留 HTTP 状态作为错误信息。
+    }
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+  return readAiStreamSse(response, handlers)
+}
+
+/** 请求后端取消任务；切换页面只应停止事件读取器。 */
+export async function cancelAiSearchTask(taskId) {
+  const id = taskId != null ? String(taskId).trim() : ''
+  if (!id) throw new Error('缺少 taskId')
+  const data = unwrap(await request(`/ai/searches/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+  }), '停止 AI 搜索失败')
+  const task = normalizeTask(data)
+  if (!task) throw new Error('停止 AI 搜索响应缺少 taskId')
+  return task
 }
 
 /**

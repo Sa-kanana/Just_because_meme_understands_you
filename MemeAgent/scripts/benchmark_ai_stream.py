@@ -62,7 +62,11 @@ def _build_payload(index: int, args: argparse.Namespace, template: dict | None) 
         return payload
 
     payload = json.loads(json.dumps(template))
-    request_id_field = "request_id" if "request_id" in payload or "requestId" not in payload else "requestId"
+    request_id_field = (
+        "request_id"
+        if "request_id" in payload or "requestId" not in payload
+        else "requestId"
+    )
     payload[request_id_field] = f"benchmark-{index}-{uuid.uuid4().hex}"
     return payload
 
@@ -145,7 +149,11 @@ def _send_request(
 
 async def _run(args: argparse.Namespace) -> dict:
     """按指定并发运行请求，并返回聚合吞吐与延迟指标。"""
-    template = json.loads(Path(args.body_file).read_text(encoding="utf-8")) if args.body_file else None
+    template = (
+        json.loads(Path(args.body_file).read_text(encoding="utf-8"))
+        if args.body_file
+        else None
+    )
     semaphore = asyncio.Semaphore(args.concurrency)  # 限制同时打开的 SSE 请求数。
 
     async def run_one(index: int) -> BenchmarkResult:
@@ -155,7 +163,11 @@ async def _run(args: argparse.Namespace) -> dict:
     started_at = time.perf_counter()
     results = await asyncio.gather(*(run_one(index) for index in range(1, args.requests + 1)))
     total_seconds = max(0.001, time.perf_counter() - started_at)
-    successful = [result for result in results if 200 <= result.status_code < 300 and result.error_events == 0]
+    successful = [
+        result
+        for result in results
+        if 200 <= result.status_code < 300 and result.error_events == 0
+    ]
     durations = [result.elapsed_ms for result in successful]
     ttfts = [result.ttft_ms for result in successful if result.ttft_ms is not None]
     return {

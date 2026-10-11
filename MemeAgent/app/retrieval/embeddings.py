@@ -8,10 +8,13 @@ from collections import OrderedDict
 
 from langchain_openai import OpenAIEmbeddings
 
+from app.core.managed_tasks import managed_task_registry
 from app.core.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
+# 中文注释：当前 embedding 服务单次最多接受 25 个输入文本，超出会返回 400。
+_EMBEDDING_PROVIDER_MAX_BATCH_SIZE = 25
 _embeddings: OpenAIEmbeddings | None = None
 # 进程内缓存只存向量与哈希键，不保留原始查询文本。
 _embedding_cache: OrderedDict[str, tuple[float, list[float]]] = OrderedDict()
@@ -49,7 +52,10 @@ async def embed_text(text: str, settings: Settings | None = None) -> list[float]
 
     task = _embedding_inflight.get(cache_key)
     if task is None:
-        task = asyncio.create_task(_load_and_cache_embedding(cache_key, normalized, cfg))
+        task = managed_task_registry.create_task(
+            _load_and_cache_embedding(cache_key, normalized, cfg),
+            name="shared-query-embedding",
+        )
         _embedding_inflight[cache_key] = task
         task.add_done_callback(
             lambda completed: _embedding_inflight.pop(cache_key, None)
@@ -112,18 +118,24 @@ async def _load_and_cache_embedding(
 
 
 async def embed_texts(texts: list[str], settings: Settings | None = None) -> list[list[float]]:
-    """Embed a document's chunks in batches instead of issuing one request per chunk."""
+    """按供应商批次上限分批嵌入文档片段，并保持输入顺序。"""
     cfg = settings or get_settings()
     normalized = [re.sub(r"\s+", " ", text.strip()) for text in texts]
     if not normalized:
         return []
     if not cfg.openai_api_key:
-        return [_deterministic_embedding(text, cfg.vector_embedding_dim) for text in normalized]
+        vectors = [_deterministic_embedding(text, cfg.vector_embedding_dim) for text in normalized]
+        return vectors
     try:
-        embeddings = await _get_embeddings(cfg).aembed_documents(normalized)
-        if len(embeddings) != len(normalized):
-            raise ValueError("Embedding API returned an unexpected number of vectors")
-        return embeddings
+        client = _get_embeddings(cfg)
+        vectors: list[list[float]] = []
+        for start in range(0, len(normalized), _EMBEDDING_PROVIDER_MAX_BATCH_SIZE):
+            batch = normalized[start : start + _EMBEDDING_PROVIDER_MAX_BATCH_SIZE]
+            batch_vectors = await client.aembed_documents(batch)
+            if len(batch_vectors) != len(batch):
+                raise ValueError("Embedding API returned an unexpected number of vectors")
+            vectors.extend(batch_vectors)
+        return vectors
     except Exception as exc:
         logger.exception("Embedding API batch request failed")
         raise RuntimeError(

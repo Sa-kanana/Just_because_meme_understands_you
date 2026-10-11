@@ -47,6 +47,10 @@ public class UserNotification {
     /** 聚合键（可选） */
     private String groupKey;
 
+    /** 创建该通知的 Outbox 事件 ID；为空表示非 Outbox 通知。 */
+    @TableField("source_event_id")
+    private Long sourceEventId;
+
     @TableField("is_read")
     private Integer isRead;
 

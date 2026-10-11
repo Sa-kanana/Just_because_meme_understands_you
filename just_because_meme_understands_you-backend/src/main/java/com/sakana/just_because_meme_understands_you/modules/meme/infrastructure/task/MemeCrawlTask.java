@@ -1,7 +1,7 @@
 package com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.task;
 
-import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeCrawlService;
+import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.config.MemeCrawlProperties;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,15 +15,14 @@ import org.springframework.stereotype.Component;
 public class MemeCrawlTask {
 
     @Resource
-    private MemeAgentProperties memeAgentProperties;
+    private MemeCrawlProperties memeCrawlProperties;
 
     @Resource
     private MemeCrawlService memeCrawlService;
 
     @Scheduled(cron = "${meme.crawl.cron:0 0 10 1,8,15,22 * *}")
     public void scheduledCrawl() {
-        MemeAgentProperties.Crawl crawl = memeAgentProperties.getCrawl();
-        if (crawl == null || !crawl.isEnabled() || !crawl.isScheduleEnabled()) {
+        if (!memeCrawlProperties.isEnabled() || !memeCrawlProperties.isScheduleEnabled()) {
             return;
         }
         try {

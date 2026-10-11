@@ -8,6 +8,6 @@ public class AdminUserPatchRequestDTO {
 
     private Integer status;
 
-    @Pattern(regexp = "ROLE_USER|ROLE_ADMIN", message = "用户角色不受支持")
+    @Pattern(regexp = "(?i)(ROLE_)?(USER|ADMIN|SUPER_ADMIN)", message = "用户角色不受支持")
     private String role;
 }

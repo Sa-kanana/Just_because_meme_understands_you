@@ -1,11 +1,6 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.application.support;
 
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.projection.MemeTagBindDTO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -25,13 +20,10 @@ public class AiBusinessContextAssembler {
     private static final int DEFAULT_HINT_LIMIT = 8;
     private static final int INTRO_SNIPPET_MAX = 180;
 
-    private final MemeMapper memeMapper;
-    private final MemeTagRelationMapper memeTagRelationMapper;
+    private final MemeCatalogPort memeCatalogPort;
 
-    public AiBusinessContextAssembler(MemeMapper memeMapper,
-                                      MemeTagRelationMapper memeTagRelationMapper) {
-        this.memeMapper = memeMapper;
-        this.memeTagRelationMapper = memeTagRelationMapper;
+    public AiBusinessContextAssembler(MemeCatalogPort memeCatalogPort) {
+        this.memeCatalogPort = memeCatalogPort;
     }
 
     public AssembledContext assemble(String query) {
@@ -40,41 +32,29 @@ public class AiBusinessContextAssembler {
             return AssembledContext.empty();// 空查询直接返回空上下文
         }
         // 过长问句截断后再做 LIKE，避免无效匹配
-        String searchKey = keyword.length() > 64 ? keyword.substring(0, 64) : keyword;
-
-        IPage<Meme> page = memeMapper.searchByKeyword(
-                new Page<>(1, DEFAULT_HINT_LIMIT, false),
-                searchKey,
-                "1",
-                null,
-                null);
-        List<Meme> records = page != null && page.getRecords() != null ? page.getRecords() : List.of();
+        List<MemeCatalogPort.MemeCard> records =
+                memeCatalogPort.searchPublishedByKeyword(keyword, DEFAULT_HINT_LIMIT);
         if (records.isEmpty()) {
             return AssembledContext.empty();
         }
 
-        List<Integer> memeIds = new ArrayList<>();
-        for (Meme meme : records) {
-            if (meme != null && meme.getId() != null) {
-                memeIds.add(meme.getId());
-            }
-        }
-        // 一次查询所有梗图的标签
-        Map<Integer, List<String>> tagMap = loadTagNames(memeIds);
+        List<Long> memeIds = records.stream().map(MemeCatalogPort.MemeCard::id).toList();
+        Map<Long, List<MemeCatalogPort.MemeTagSummary>> tagsByMeme = memeCatalogPort.findTagsByMemeIds(memeIds);
 
         List<String> hintIds = new ArrayList<>();
         List<Map<String, Object>> snippets = new ArrayList<>();
-        for (Meme meme : records) {
-            if (meme == null || meme.getId() == null) {
+        for (MemeCatalogPort.MemeCard meme : records) {
+            if (meme == null || meme.id() == null) {
                 continue;
             }
-            String id = String.valueOf(meme.getId());
+            String id = String.valueOf(meme.id());
             hintIds.add(id);
             Map<String, Object> snippet = new LinkedHashMap<>();
             snippet.put("meme_id", id);
-            snippet.put("title", meme.getName() == null ? "" : meme.getName());
-            snippet.put("introduction", truncate(meme.getIntroduction(), INTRO_SNIPPET_MAX));
-            snippet.put("tags", tagMap.getOrDefault(meme.getId(), List.of()));
+            snippet.put("title", meme.name() == null ? "" : meme.name());
+            snippet.put("introduction", truncate(meme.introduction(), INTRO_SNIPPET_MAX));
+            snippet.put("tags", tagsByMeme.getOrDefault(meme.id(), List.of()).stream()
+                    .map(MemeCatalogPort.MemeTagSummary::name).toList());
             snippets.add(snippet);
         }
 
@@ -82,26 +62,6 @@ public class AiBusinessContextAssembler {
         extra.put("snippets", snippets);
         extra.put("source", "mysql_keyword");
         return new AssembledContext(hintIds, extra);
-    }
-
-    private Map<Integer, List<String>> loadTagNames(List<Integer> memeIds) {
-        if (memeIds.isEmpty()) {
-            return Map.of();
-        }
-        // 一次查询所有梗图的标签
-        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
-        // 按 memeId 分组
-        Map<Integer, List<String>> map = new HashMap<>();
-        if (rows == null) {
-            return map;
-        }
-        for (MemeTagBindDTO row : rows) {
-            if (row == null || row.getMemeId() == null || !StringUtils.hasText(row.getName())) {
-                continue;
-            }
-            map.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(row.getName().trim());
-        }
-        return map;
     }
 
     private static String truncate(String text, int max) {

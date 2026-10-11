@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", validation_alias=AliasChoices("APP_HOST", "app_host"))
     app_port: int = Field(default=8000, validation_alias=AliasChoices("APP_PORT", "app_port"))
     log_level: str = Field(default="INFO", validation_alias=AliasChoices("LOG_LEVEL", "log_level"))
+    # 中文注释：Uvicorn 收到关停信号后等待在途 HTTP/SSE 请求完成的秒数，超时后取消请求。
+    uvicorn_graceful_shutdown_timeout_seconds: int = Field(
+        default=5,
+        ge=0,
+        le=120,
+        validation_alias=AliasChoices(
+            "UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS",
+            "uvicorn_graceful_shutdown_timeout_seconds",
+        ),
+    )
 
     internal_api_key: str = Field(
         default="",
@@ -47,12 +57,29 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("VECTOR_DATABASE_URL", "vector_database_url"),
     )
+    # 管理员知识 embedding 检查点保留天数；只清理未完成的临时向量，正式索引不受影响。
+    knowledge_embedding_checkpoint_ttl_days: int = Field(
+        default=7,
+        ge=1,
+        le=365,
+        validation_alias=AliasChoices(
+            "KNOWLEDGE_EMBEDDING_CHECKPOINT_TTL_DAYS",
+            "knowledge_embedding_checkpoint_ttl_days",
+        ),
+    )
     # HNSW vector 索引的维度上限；pgvector 的 vector HNSW 索引最多支持 2000 维。
     vector_embedding_dim: int = Field(
         default=1536,
         ge=1,
         le=2000,
         validation_alias=AliasChoices("VECTOR_EMBEDDING_DIM", "vector_embedding_dim"),
+    )
+    # 梗向量检索的最小 cosine 相似度，需由 app/eval/golden_queries.json 离线校准。
+    vector_min_similarity: float = Field(
+        default=0.6322177756757377,
+        ge=-1.0,
+        le=1.0,
+        validation_alias=AliasChoices("VECTOR_MIN_SIMILARITY", "vector_min_similarity"),
     )
     # 每个 MemeAgent worker 的 PostgreSQL 连接池最小连接数。
     vector_pool_min_size: int = Field(
@@ -186,14 +213,61 @@ class Settings(BaseSettings):
             "retrieval_max_retries",
         ),
     )
-    # 实时联网工具单次超时（秒）
-    live_web_timeout_seconds: float = Field(
-        default=25,
+    # 中文注释：会话上下文检索词改写的最长时间；超时后直接使用原问题，不重试。
+    retrieval_query_rewrite_timeout_seconds: float = Field(
+        default=5,
         gt=0,
-        le=300,
+        le=30,
         validation_alias=AliasChoices(
-            "LIVE_WEB_TIMEOUT_SECONDS",
-            "live_web_timeout_seconds",
+            "RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS",
+            "retrieval_query_rewrite_timeout_seconds",
+        ),
+    )
+    # 管理员知识独立余弦相似度门槛；须用人工标注问题集校准，未配置时只放行标题、标签或正文短语命中。
+    admin_knowledge_min_similarity: float | None = Field(
+        default=None,
+        ge=-1.0,
+        le=1.0,
+        validation_alias=AliasChoices(
+            "ADMIN_KNOWLEDGE_MIN_SIMILARITY",
+            "admin_knowledge_min_similarity",
+        ),
+    )
+    # 管理员知识正文切块目标长度（字符）；修改后需增加文档 revision 并重新入库。
+    knowledge_chunk_size: int = Field(
+        default=1000,
+        ge=256,
+        le=8000,
+        validation_alias=AliasChoices("KNOWLEDGE_CHUNK_SIZE", "knowledge_chunk_size"),
+    )
+    # 管理员知识相邻切块的重叠长度（字符）；用于减少段落边界信息损失。
+    knowledge_chunk_overlap: int = Field(
+        default=160,
+        ge=0,
+        le=2000,
+        validation_alias=AliasChoices(
+            "KNOWLEDGE_CHUNK_OVERLAP",
+            "knowledge_chunk_overlap",
+        ),
+    )
+    # 中文注释：单份管理员知识正文允许进入入库 API 的最大字符数；与 Java 上传配置保持一致。
+    knowledge_max_content_chars: int = Field(
+        default=1_000_000,
+        ge=1_000,
+        le=1_000_000,
+        validation_alias=AliasChoices(
+            "KNOWLEDGE_MAX_CONTENT_CHARS",
+            "knowledge_max_content_chars",
+        ),
+    )
+    # 中文注释：单文档同时调用 embedding 服务并保存检查点的批次数，限制供应商和数据库并发。
+    knowledge_embedding_batch_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+        validation_alias=AliasChoices(
+            "KNOWLEDGE_EMBEDDING_BATCH_CONCURRENCY",
+            "knowledge_embedding_batch_concurrency",
         ),
     )
     # Python 搜索 Agent 整条请求总时限（秒）
@@ -211,7 +285,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MAX_OUTPUT_TOKENS", "max_output_tokens"),
     )
 
-    # Firecrawl（实时热梗采集 / Agent 联网补强）
+    # Firecrawl（仅供后台热梗采集，不接入用户问答 Agent）
     firecrawl_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("FIRECRAWL_API_KEY", "firecrawl_api_key"),
@@ -219,6 +293,16 @@ class Settings(BaseSettings):
     firecrawl_enabled: bool = Field(
         default=True,
         validation_alias=AliasChoices("FIRECRAWL_ENABLED", "firecrawl_enabled"),
+    )
+    # 单次热梗采集的总时限（秒），覆盖发现来源和候选详情抓取。
+    firecrawl_crawl_total_timeout_seconds: float = Field(
+        default=150,
+        gt=0,
+        le=175,
+        validation_alias=AliasChoices(
+            "FIRECRAWL_CRAWL_TOTAL_TIMEOUT_SECONDS",
+            "firecrawl_crawl_total_timeout_seconds",
+        ),
     )
     firecrawl_default_queries: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
@@ -280,6 +364,8 @@ class Settings(BaseSettings):
         """确保连接池最小连接数不超过最大连接数。"""
         if self.vector_pool_min_size > self.vector_pool_max_size:
             raise ValueError("VECTOR_POOL_MIN_SIZE must be <= VECTOR_POOL_MAX_SIZE")
+        if self.knowledge_chunk_overlap >= self.knowledge_chunk_size:
+            raise ValueError("KNOWLEDGE_CHUNK_OVERLAP must be < KNOWLEDGE_CHUNK_SIZE")
         return self
 
     @field_validator("firecrawl_default_queries", "firecrawl_bilibili_extra_urls", mode="before")

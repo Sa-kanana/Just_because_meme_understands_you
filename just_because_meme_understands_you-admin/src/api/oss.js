@@ -5,7 +5,10 @@ export function getOssPolicy(fileType = '') {
   const query = new URLSearchParams()
   if (fileType) query.set('fileType', String(fileType))
   const qs = query.toString()
-  return request(`/uploads/policies${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) => {
+  return request(`/uploads/policies${qs ? `?${qs}` : ''}`, {
+    method: 'GET',
+    apiSurface: 'user', // OSS 凭证接口注册在用户端 /v1 路由下。
+  }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) return res.data
     throw new Error((res && (res.message || res.msg)) || '获取上传凭证失败')
   })

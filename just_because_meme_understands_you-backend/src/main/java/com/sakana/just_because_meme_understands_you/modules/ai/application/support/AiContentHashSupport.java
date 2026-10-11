@@ -36,7 +36,7 @@ public final class AiContentHashSupport {
         return sha256Hex(raw.toString());
     }
 
-    /** 管理员知识库幂等哈希：title + category + content + tags。 */
+    /** 管理员知识库旧版哈希：title + category + content + tags。 */
     public static String knowledgeHash(String title, String category, String content, List<String> tags) {
         StringBuilder raw = new StringBuilder();
         raw.append(normalize(title)).append('\n');
@@ -54,6 +54,35 @@ public final class AiContentHashSupport {
         normalizedTags.sort(Comparator.naturalOrder());
         raw.append(String.join(",", normalizedTags));
         return sha256Hex(raw.toString());
+    }
+
+    /**
+     * 管理员知识去重指纹：只对提取后的正文计算 SHA-256，忽略元数据。
+     * 规范化与数据库回填保持一致：移除 BOM、统一换行符，并保留正文其他空白。
+     */
+    public static String knowledgeBodySha256(String content) {
+        String normalized = normalizeKnowledgeBody(content).replaceAll("(?U)\\s+", " ").trim();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(normalized.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前 Java 环境不支持 SHA-256", e);
+        }
+    }
+
+    /** 与管理员知识去重使用同一规则规范化正文。 */
+    public static String normalizeKnowledgeBody(String content) {
+        if (content == null) {
+            return "";
+        }
+        return content.replace("\uFEFF", "")
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
     }
 
     private static String normalize(String value) {

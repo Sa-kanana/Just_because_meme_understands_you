@@ -5,10 +5,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.api.user.dto.MemeEditRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeTagService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeDeleteService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemePublishService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeEditRevisionService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCreateResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeEditRevisionVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDeleteResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemePurgeResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeRestoreResponseVO;
@@ -19,8 +22,10 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.List;
 import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
@@ -36,6 +41,9 @@ public class MemeController {
 
     @Resource
     private MemePublishService memePublishService;
+
+    @Resource
+    private MemeEditRevisionService memeEditRevisionService;
 
     @Resource
     private MemeDeleteService memeDeleteService;
@@ -62,6 +70,19 @@ public class MemeController {
                                                  HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
         return Result.success(memePublishService.publish(userId, request));
+    }
+
+    /**
+     * 中文注释：提交本人已发布或主动下架梗的修改稿，等待独立审核。
+     * PUT /v1/memes/{memeId}
+     */
+    @PutMapping("/memes/{memeId}")
+    public Result<MemeEditRevisionVO> updateOwnMeme(@PathVariable("memeId") String memeId,
+                                                    @Valid @RequestBody MemeEditRequestDTO body,
+                                                    HttpServletRequest servletRequest) {
+        Long userId = AuthContext.requireCurrentUserId(servletRequest);
+        return Result.success(memeEditRevisionService.submitEdit(
+                userId, RequestIdParser.parseLongId(memeId, "memeId"), body));
     }
 
     /**

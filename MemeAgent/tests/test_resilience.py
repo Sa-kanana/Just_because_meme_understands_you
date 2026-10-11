@@ -27,9 +27,15 @@ def test_resilience_settings_defaults():
     assert settings.llm_max_retries == 2
     assert settings.retrieval_timeout_seconds == 12
     assert settings.retrieval_max_retries == 1
-    assert settings.live_web_timeout_seconds == 25
     assert settings.agent_total_timeout_seconds == 120
     assert settings.llm_stream_usage is False
+    assert settings.knowledge_chunk_size == 1000
+    assert settings.knowledge_chunk_overlap == 160
+
+
+def test_knowledge_chunk_settings_reject_overlap_not_smaller_than_chunk_size():
+    with pytest.raises(ValueError, match="KNOWLEDGE_CHUNK_OVERLAP"):
+        _settings(KNOWLEDGE_CHUNK_SIZE=400, KNOWLEDGE_CHUNK_OVERLAP=400)
 
 
 def test_resilience_settings_can_be_overridden_from_environment(monkeypatch):
@@ -121,7 +127,7 @@ async def test_run_with_retry_retries_transient_status_errors_with_bounded_backo
     assert delays == [0.5, 1.0]
 
 
-async def test_run_with_retry_logs_stage_latency_and_attempt_metrics(monkeypatch, caplog):
+async def test_run_with_retry_does_not_log_stage_metrics(monkeypatch, caplog):
     resilience = _resilience()
     attempts = 0
     caplog.set_level("INFO")
@@ -145,13 +151,9 @@ async def test_run_with_retry_logs_stage_latency_and_attempt_metrics(monkeypatch
         stage="meme_retrieval",
         request_id="request-metrics",
     ) == "ok"
+    assert attempts == 2
 
-    metrics = next(record.getMessage() for record in caplog.records if "upstream_call_metrics" in record.getMessage())
-    assert "stage=meme_retrieval" in metrics
-    assert "outcome=success" in metrics
-    assert "attempts=2" in metrics
-    assert "retry_count=1" in metrics
-    assert "duration_ms=" in metrics
+    assert all("upstream_call_metrics" not in record.getMessage() for record in caplog.records)
 
 
 async def test_run_with_retry_does_not_retry_non_transient_errors(monkeypatch):

@@ -5,7 +5,7 @@
         <img src="/icon.svg" alt="" />
         <h1>只因“梗”懂你 · 管理端</h1>
       </div>
-      <p class="sub">仅 ROLE_ADMIN 可登录</p>
+      <p class="sub">使用已授予 ADMIN 或 SUPER_ADMIN 角色的用户账号登录</p>
       <a-form :model="form" layout="vertical" @submit-success="onSubmit">
         <a-form-item field="email" label="邮箱" :rules="[{ required: true, message: '请输入邮箱' }]">
           <a-input v-model="form.email" placeholder="admin@example.com" allow-clear />
@@ -74,7 +74,10 @@ async function onSubmit() {
       captchaId: form.captchaId,
       captchaCode: form.captchaCode,
     })
-    if (!data.user || String(data.user.role || '') !== 'ROLE_ADMIN') {
+    const roles = Array.isArray(data.user && data.user.roles)
+      ? data.user.roles
+      : [String((data.user && data.user.role) || '').replace(/^ROLE_/, '')]
+    if (!data.user || !roles.some((role) => ['ADMIN', 'SUPER_ADMIN'].includes(String(role).replace(/^ROLE_/, '')))) {
       toastError('当前账号不是管理员')
       await loadCaptcha()
       return
@@ -101,57 +104,75 @@ onMounted(() => {
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
   display: flex;
+  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(22, 93, 255, 0.12), transparent 40%),
-    radial-gradient(circle at 80% 0%, rgba(14, 180, 126, 0.12), transparent 35%),
-    linear-gradient(160deg, #f7f8fa, #eef2f8);
+  padding: 24px;
+  background: #f6f7f9;
 }
+
 .login-card {
   width: 400px;
   padding: 32px;
-  background: #fff;
+  border: 1px solid #e9edf2;
   border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(29, 33, 41, 0.08);
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(37, 52, 75, 0.045);
 }
+
 .login-card h1 {
   margin: 0 0 8px;
   font-size: 22px;
   color: #1d2129;
 }
+
 .login-brand {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
 }
+
 .login-brand img {
   width: 38px;
   height: 38px;
   flex: 0 0 auto;
 }
+
 .login-brand h1 {
   margin: 0;
   font-size: 20px;
   letter-spacing: -0.025em;
 }
+
 .sub {
   margin: 0 0 24px;
   color: #86909c;
   font-size: 13px;
 }
+
 .captcha-row {
   display: flex;
   gap: 8px;
   width: 100%;
 }
+
 .captcha-img {
-  height: 32px;
-  border-radius: 4px;
+  height: 36px;
+  border: 1px solid #e5e9ef;
+  border-radius: 7px;
   cursor: pointer;
-  border: 1px solid #e5e6eb;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    width: min(400px, 100%);
+    padding: 26px 22px;
+  }
+
+  .login-brand h1 {
+    font-size: 18px;
+  }
 }
 </style>

@@ -11,10 +11,12 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 /** 管理员举报队列与处理。 */
 @RestController
-@RequestMapping("/v1/admin/reports")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@RequestMapping("/admin/v1/reports")
 public class AdminReportController {
     @Resource private MemeReportService service;
 

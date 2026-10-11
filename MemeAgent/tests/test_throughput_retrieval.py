@@ -78,6 +78,11 @@ async def test_vector_schema_creates_hnsw_indexes_for_both_search_tables(monkeyp
         async def execute(self, statement, *_args):
             self.statements.append(statement)
 
+        async def fetch(self, statement, *_args):
+            if "information_schema.columns" in statement:
+                return [{"column_name": "content_sha256"}]
+            raise AssertionError(f"Unexpected query: {statement}")
+
         async def fetchval(self, statement, *_args):
             if "format_type" in statement:
                 return "vector(2)"
@@ -112,10 +117,19 @@ async def test_vector_schema_creates_hnsw_indexes_for_both_search_tables(monkeyp
     statements = "\n".join(connection.statements).lower()
     assert "idx_meme_vector_chunk_embedding_hnsw" in statements
     assert "idx_knowledge_vector_chunk_embedding_hnsw" in statements
+    assert "pg_trgm" in statements
+    assert "idx_knowledge_vector_chunk_content_trgm" in statements
+    assert "gin (lower(content) gin_trgm_ops)" in statements
     assert "create index concurrently if not exists" in statements
     assert "using hnsw (embedding vector_cosine_ops)" in statements
     assert "comment on column meme_vector_chunk.embedding" in statements
     assert "comment on column knowledge_vector_chunk.embedding" in statements
+    checkpoint_index = next(
+        statement
+        for statement in connection.statements
+        if "idx_knowledge_embedding_checkpoint_created_at" in statement
+    )
+    assert "create index concurrently if not exists" in checkpoint_index.lower()
 
 
 @pytest.mark.asyncio
@@ -142,6 +156,32 @@ async def test_vector_pool_uses_configured_per_worker_limits(monkeypatch):
     assert captured["min_size"] == 2
     assert captured["max_size"] == 12
     assert captured["command_timeout"] == 45
+
+
+@pytest.mark.asyncio
+async def test_vector_pool_limits_stale_transactions_and_tags_database_sessions(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(db, "_pool", None)
+
+    async def fake_create_pool(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(db.asyncpg, "create_pool", fake_create_pool)
+    settings = Settings(
+        _env_file=None,
+        INTERNAL_API_KEY="test",
+        VECTOR_DATABASE_URL="postgresql://user:password@localhost/db",
+    )
+
+    await db.create_pool(settings)
+
+    assert captured["server_settings"] == {
+        "application_name": "memeagent",
+        "transaction_timeout": "120s",
+        "idle_in_transaction_session_timeout": "60s",
+        "lock_timeout": "10s",
+    }
 
 
 def test_hnsw_vector_dimension_rejects_unsupported_dimensions():

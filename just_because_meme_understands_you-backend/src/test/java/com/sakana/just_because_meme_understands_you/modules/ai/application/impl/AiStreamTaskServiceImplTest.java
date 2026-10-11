@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -82,7 +83,7 @@ class AiStreamTaskServiceImplTest {
                     long expiry = invocation.getArgument(4);
                     String taskId = invocation.getArgument(2);
                     return new AiStreamTaskRedisStore.Reservation(true, snapshot(
-                            taskId, AiStreamTaskStatus.RUNNING, now, expiry, 0L));
+                            taskId, AiStreamTaskStatus.GENERATING, now, expiry, 0L));
                 });
         lenient().when(store.appendEvent(anyString(), anyString(), anyString()))
                 .thenAnswer(invocation -> eventIds.incrementAndGet());
@@ -148,7 +149,7 @@ class AiStreamTaskServiceImplTest {
     void eventReaderTimesOutAfterConfiguredIdleWindow() {
         properties.getAi().setStreamIdleTimeoutMs(20L);
         long now = System.currentTimeMillis();
-        AiStreamTaskSnapshot task = snapshot("task-idle", AiStreamTaskStatus.RUNNING,
+        AiStreamTaskSnapshot task = snapshot("task-idle", AiStreamTaskStatus.GENERATING,
                 now, now + 600_000L, 0L);
         when(store.find(task.taskId())).thenReturn(Optional.of(task));
         when(store.readEvents(task.taskId(), 0L, 64)).thenReturn(List.of());
@@ -164,12 +165,20 @@ class AiStreamTaskServiceImplTest {
         AtomicBoolean sourceCancelled = new AtomicBoolean();
         AiStreamTaskSnapshot task = submitWithSource(source, sourceCancelled);
         when(store.find(task.taskId())).thenReturn(Optional.of(task));
+        when(store.readGeneratedAnswer(task.taskId())).thenReturn("已经生成的部分内容");
+        doAnswer(invocation -> {
+            assertTrue(sourceCancelled.get());
+            return null;
+        }).when(searchService).persistStoppedAnswer(SESSION_ID, REQUEST_ID, "已经生成的部分内容");
 
-        AiStreamTaskSnapshot cancelled = service.cancel(USER_ID, task.taskId());
+        AiStreamTaskSnapshot stopped = service.cancel(USER_ID, task.taskId());
 
-        assertEquals(AiStreamTaskStatus.CANCELLED, cancelled.status());
+        assertEquals("STOPPED", stopped.status().name());
         assertTrue(sourceCancelled.get());
-        verify(store).transition(task.taskId(), AiStreamTaskStatus.CANCELLED);
+        verify(searchService).persistStoppedAnswer(SESSION_ID, REQUEST_ID, "已经生成的部分内容");
+        verify(store).appendTerminalEvent(
+                task.taskId(), AiStreamTaskStatus.STOPPED, "error",
+                "{\"code\":\"task_stopped\",\"message\":\"已停止生成\"}");
         verify(cancelTopic).publish(task.taskId());
     }
 
@@ -182,7 +191,25 @@ class AiStreamTaskServiceImplTest {
         expiryScheduler.advanceTimeBy(Duration.ofSeconds(600));
 
         assertTrue(sourceCancelled.get());
-        verify(store).transition(task.taskId(), AiStreamTaskStatus.EXPIRED);
+        verify(store).appendTerminalEvent(
+                task.taskId(), AiStreamTaskStatus.EXPIRED, "error",
+                "{\"code\":\"task_expired\",\"message\":\"搜索任务已过期\"}");
+    }
+
+    @Test
+    void ttlStillDisposesWorkerWhenRedisTerminalWriteFails() {
+        AtomicReference<FluxSink<ServerSentEvent<String>>> source = new AtomicReference<>();
+        AtomicBoolean sourceCancelled = new AtomicBoolean();
+        AiStreamTaskSnapshot task = submitWithSource(source, sourceCancelled);
+        when(store.appendTerminalEvent(
+                task.taskId(), AiStreamTaskStatus.EXPIRED, "error",
+                "{\"code\":\"task_expired\",\"message\":\"搜索任务已过期\"}"))
+                .thenThrow(new IllegalStateException("Redis unavailable"));
+
+        assertDoesNotThrow(() -> expiryScheduler.advanceTimeBy(Duration.ofSeconds(600)));
+
+        assertTrue(sourceCancelled.get());
+        verify(cancelTopic).publish(task.taskId());
     }
 
     @Test
@@ -218,14 +245,18 @@ class AiStreamTaskServiceImplTest {
     void firstTerminalTransitionWinsWhenCancelRacesWithDone() {
         AtomicReference<FluxSink<ServerSentEvent<String>>> source = new AtomicReference<>();
         AtomicBoolean sourceCancelled = new AtomicBoolean();
-        AtomicReference<AiStreamTaskStatus> terminal = new AtomicReference<>(AiStreamTaskStatus.RUNNING);
+        AtomicReference<AiStreamTaskStatus> terminal = new AtomicReference<>(AiStreamTaskStatus.GENERATING);
         AiStreamTaskSnapshot task = submitWithSource(source, sourceCancelled);
-        when(store.transition(task.taskId(), AiStreamTaskStatus.CANCELLED)).thenAnswer(invocation ->
-                terminal.compareAndSet(AiStreamTaskStatus.RUNNING, AiStreamTaskStatus.CANCELLED));
+        when(store.appendTerminalEvent(
+                task.taskId(), AiStreamTaskStatus.STOPPED, "error",
+                "{\"code\":\"task_stopped\",\"message\":\"已停止生成\"}")).thenAnswer(invocation ->
+                terminal.compareAndSet(AiStreamTaskStatus.GENERATING, AiStreamTaskStatus.STOPPED)
+                        ? eventIds.incrementAndGet()
+                        : 0L);
         lenient().when(store.appendTerminalEvent(
                 task.taskId(), AiStreamTaskStatus.COMPLETED, "done", "{}"))
                 .thenAnswer(invocation -> terminal.compareAndSet(
-                        AiStreamTaskStatus.RUNNING, AiStreamTaskStatus.COMPLETED)
+                        AiStreamTaskStatus.GENERATING, AiStreamTaskStatus.COMPLETED)
                         ? eventIds.incrementAndGet()
                         : 0L);
         when(store.find(task.taskId())).thenReturn(Optional.of(task));
@@ -234,7 +265,7 @@ class AiStreamTaskServiceImplTest {
         source.get().next(event("done", "{}"));
         source.get().complete();
 
-        assertEquals(AiStreamTaskStatus.CANCELLED, terminal.get());
+        assertEquals("STOPPED", terminal.get().name());
         verify(store, never()).appendTerminalEvent(
                 task.taskId(), AiStreamTaskStatus.COMPLETED, "done", "{}");
     }

@@ -34,6 +34,8 @@ public final class NotificationConstants {
     public static final String TYPE_FOLLOW = "follow";
     public static final String TYPE_COMMENT_LIKE = "comment_like";
     public static final String TYPE_SYSTEM = "system";
+    /** 修改稿审核结果通知类型。 */
+    public static final String TYPE_REVIEW = "review";
 
     /** 互动类消息类型 */
     public static final Set<String> INTERACT_TYPES = Set.of(
@@ -49,7 +51,7 @@ public final class NotificationConstants {
     public static final Set<String> SYSTEM_TYPES = Set.of(
             "system",
             "audit",
-            "review",
+            TYPE_REVIEW,
             "announcement"
     );
 

@@ -1,22 +1,26 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentWebClientConfig;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentCrawlRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentCrawlResponseDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentKnowledgeIngestRequestDTO;
+import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentKnowledgeIngestErrorDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentStreamRequestDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
 
 /**
  * 内网调用 MemeAgent FastAPI。
@@ -33,11 +37,14 @@ public class MemeAgentClient {
 
     private final WebClient memeAgentWebClient;
     private final MemeAgentProperties properties;
+    private final ObjectMapper objectMapper;
 
     public MemeAgentClient(@Qualifier(MemeAgentWebClientConfig.MEME_AGENT_WEB_CLIENT) WebClient memeAgentWebClient,
-                           MemeAgentProperties properties) {
+                           MemeAgentProperties properties,
+                           ObjectMapper objectMapper) {
         this.memeAgentWebClient = memeAgentWebClient;
         this.properties = properties;
+        this.objectMapper = objectMapper;
     }
 
     private String resolveWriteApiKey() {
@@ -101,9 +108,65 @@ public class MemeAgentClient {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> response.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        // 中文注释：只解析白名单字段并构造安全异常，不将上游原始响应写入用户错误或日志。
+                        .map(this::toSafeKnowledgeIngestException))
                 .toBodilessEntity()
                 .then()
                 .doOnError(e -> log.error("MemeAgent knowledge ingest failed", e));
+    }
+
+    private RuntimeException toSafeKnowledgeIngestException(String responseBody) {
+        try {
+            MemeAgentKnowledgeIngestErrorDTO response = objectMapper.readValue(
+                    responseBody, MemeAgentKnowledgeIngestErrorDTO.class);
+            MemeAgentKnowledgeIngestErrorDTO.Detail detail = response.getDetail();
+            if (detail == null || !"KNOWLEDGE_EMBEDDING_FAILED".equals(detail.getCode())
+                    || detail.getCompletedChunks() == null || detail.getTotalChunks() == null
+                    || detail.getCompletedChunks() < 0 || detail.getTotalChunks() < 0
+                    || detail.getCompletedChunks() > detail.getTotalChunks()) {
+                return new IllegalStateException("知识向量处理失败，服务端错误详情无效");
+            }
+
+            String stage = knowledgeFailureStage(detail.getStage());
+            String message = safeMessage(detail.getMessage());
+            String progress = detail.getTotalChunks() == 0
+                    ? ""
+                    : "已保存 " + detail.getCompletedChunks() + "/" + detail.getTotalChunks() + " 个片段。";
+            return new IllegalStateException(progress + "知识向量索引处理失败（" + stage
+                    + "）。" + (message.isBlank() ? "" : " " + message));
+        } catch (Exception ignored) {
+            // 中文注释：解析失败时不传播响应正文，避免错误页或 index_error 暴露上游原始内容。
+            return new IllegalStateException("知识向量处理失败，服务端错误详情无法解析");
+        }
+    }
+
+    private static String knowledgeFailureStage(String stage) {
+        if (stage == null) {
+            return "向量处理";
+        }
+        return switch (stage) {
+            case "embedding" -> "向量生成";
+            case "validation" -> "向量校验";
+            case "checkpoint_load" -> "读取进度";
+            case "checkpoint_persist" -> "保存进度";
+            case "checkpoint_validation" -> "检查点校验";
+            case "publish" -> "发布向量";
+            default -> "向量处理";
+        };
+    }
+
+    private static String safeMessage(String message) {
+        if (!StringUtils.hasText(message)) {
+            return "";
+        }
+        StringBuilder safe = new StringBuilder();
+        for (int index = 0; index < message.length() && safe.length() < 240; index++) {
+            char value = message.charAt(index);
+            safe.append(Character.isISOControl(value) ? ' ' : value);
+        }
+        return safe.toString().trim();
     }
 
     /**

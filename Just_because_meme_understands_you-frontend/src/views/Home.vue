@@ -5,14 +5,7 @@
       @publish="goPublish"
     />
 
-    <!-- 快捷入口 -->
-    <HomeQuickActions
-      v-if="quickActions.length"
-      :actions="quickActions"
-      @action="handleQuickAction"
-    />
-
-    <!-- 热门标签 -->
+    <!-- 热门标签紧跟首页轮播，保持进入首页后容易发现 -->
     <HomeHotTags
       v-if="hotTags.length"
       :tags="hotTags"
@@ -55,9 +48,8 @@
             </svg>
           </div>
           <div class="feed-offline-state__copy">
-            <span class="feed-offline-state__status"><span aria-hidden="true"></span>后端服务暂不可用</span>
-            <h3>暂时连接不上梗图服务器</h3>
-            <p>请确认后端服务已启动。服务恢复后，点击下方按钮重新加载首页内容。</p>
+            <h3>服务器暂未连接</h3>
+            <p>请稍后重试，或确认服务已启动。</p>
           </div>
           <vs-button
             color="primary"
@@ -65,9 +57,8 @@
             :disabled="bootstrapLoading"
             @click="loadBootstrap"
           >
-            {{ bootstrapLoading ? '正在重试…' : '重试加载' }}
+            {{ bootstrapLoading ? '正在重试…' : '重新连接' }}
           </vs-button>
-          <span class="feed-offline-state__hint">本地开发时，请先启动后端项目</span>
         </div>
 
         <div
@@ -78,7 +69,7 @@
         >
           <div class="meme-grid">
             <MemeCard
-              v-for="item in memeList"
+              v-for="(item, index) in memeList"
               :key="item.id"
               class="meme-grid__item"
               :to="memeDetailFromFeed(item.id)"
@@ -90,6 +81,8 @@
               :release-time="item.releaseTime"
               :update-time="item.updateTime"
               :author="item.author"
+              stats-placement="body"
+              :lazy="index >= 3"
             />
           </div>
 
@@ -147,6 +140,14 @@
         <HomeHotMemeRail :memes="hotMemes" />
       </aside>
     </div>
+
+    <!-- 快捷入口放在梗列表之后，进入首页时优先展示梗内容 -->
+    <HomeQuickActions
+      v-if="quickActions.length"
+      :actions="quickActions"
+      @action="handleQuickAction"
+    />
+
   </div>
 </template>
 
@@ -605,7 +606,7 @@ export default {
 
 .home-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(290px, 350px);
+  grid-template-columns: minmax(0, 2.8fr) minmax(320px, 1fr);
   align-items: start;
   gap: 18px;
 }
@@ -625,8 +626,29 @@ export default {
   padding: 20px 22px 24px;
   border: 1px solid var(--meme-border);
   border-radius: var(--meme-radius-lg);
-  background: var(--meme-bg-card);
-  box-shadow: 0 4px 18px rgba(27, 69, 125, 0.035);
+  background: linear-gradient(
+    145deg,
+    var(--meme-bg-card) 0%,
+    color-mix(in srgb, var(--meme-bg-card) 97%, var(--meme-primary-soft)) 100%
+  );
+  box-shadow: var(--meme-shadow-soft);
+}
+
+.home-content :deep(.meme-card) {
+  border-radius: 16px;
+  box-shadow: 0 7px 20px rgba(27, 69, 125, 0.055);
+}
+
+.home-content :deep(.meme-card__cover) {
+  aspect-ratio: 1.72 / 1;
+}
+
+.home-content :deep(.meme-card__title) {
+  color: var(--meme-text);
+}
+
+.home-content :deep(.meme-card--link:hover) {
+  box-shadow: var(--meme-shadow-card);
 }
 
 .tag-follow-error {
@@ -681,7 +703,7 @@ export default {
 }
 
 .meme-grid__item {
-  flex: 0 0 calc((100% - 28px) / 3);
+  flex: 0 0 calc((100% - 42px) / 4);
   min-width: 0;
 }
 
@@ -702,7 +724,6 @@ export default {
 
 .feed-offline-state {
   position: relative;
-  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -711,27 +732,7 @@ export default {
   width: min(100%, 680px);
   margin: 14px auto 18px;
   padding: 30px 28px 25px;
-  overflow: hidden;
-  border: 1px solid var(--meme-border);
-  border-radius: var(--meme-radius-xl);
-  background:
-    radial-gradient(circle at 100% 0%, var(--meme-primary-soft), transparent 36%),
-    linear-gradient(145deg, var(--meme-warning-soft), var(--meme-bg-card) 43%, var(--meme-bg-muted));
-  box-shadow: var(--meme-shadow-soft);
   text-align: center;
-}
-
-.feed-offline-state::after {
-  position: absolute;
-  z-index: -1;
-  right: -54px;
-  bottom: -94px;
-  width: 200px;
-  height: 200px;
-  border: 1px solid var(--meme-border-accent);
-  border-radius: 50%;
-  content: '';
-  pointer-events: none;
 }
 
 .feed-offline-state__icon {
@@ -739,11 +740,8 @@ export default {
   width: 58px;
   height: 58px;
   place-items: center;
-  border: 1px solid rgba(217, 119, 6, 0.15);
-  border-radius: 19px;
-  background: var(--meme-bg-card);
+  border: 0;
   color: var(--meme-warning);
-  box-shadow: 0 8px 20px rgba(27, 69, 125, 0.08);
 }
 
 .feed-offline-state__icon svg {
@@ -903,13 +901,13 @@ export default {
   }
 
   .meme-grid__item {
-    flex-basis: calc((100% - 14px) / 2);
+    flex-basis: calc((100% - 28px) / 3);
   }
 }
 
 @media (max-width: 860px) {
   .meme-grid__item {
-    flex-basis: calc((100% - 28px) / 3);
+    flex-basis: calc((100% - 14px) / 2);
   }
 }
 

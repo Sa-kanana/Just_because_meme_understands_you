@@ -14,6 +14,8 @@ public class AiChatMessageVO {
 
     private String role;
 
+    private String status;
+
     private String content;
 
     private String requestId;

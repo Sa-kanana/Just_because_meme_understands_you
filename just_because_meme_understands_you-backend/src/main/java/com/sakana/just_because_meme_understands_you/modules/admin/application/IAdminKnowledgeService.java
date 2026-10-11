@@ -23,7 +23,9 @@ public interface IAdminKnowledgeService {
 
     AdminKnowledgeVO update(Long id, AdminKnowledgeSaveRequestDTO request);
 
-    void delete(Long id);
+    AdminKnowledgeVO delete(Long id);
 
     AdminKnowledgeVO reindex(Long id);
+
+    AdminKnowledgeVO taskStatus(Long id, Long taskId);
 }

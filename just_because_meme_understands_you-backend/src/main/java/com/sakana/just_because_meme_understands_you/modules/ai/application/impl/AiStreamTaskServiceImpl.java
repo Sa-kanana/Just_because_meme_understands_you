@@ -46,6 +46,10 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
     private static final String CANCEL_TOPIC_NAME = "meme:ai:stream:cancel";
     private static final Duration EVENT_POLL_INTERVAL = Duration.ofMillis(250L);
     private static final int EVENT_BATCH_SIZE = 64;
+    /** 用户停止生成时随终态 SSE 发送的安全错误码与结果文案。 */
+    private static final String STOPPED_EVENT_DATA = "{\"code\":\"task_stopped\",\"message\":\"已停止生成\"}";
+    /** 任务过期时随终态 SSE 发送的安全错误码与结果文案。 */
+    private static final String EXPIRED_EVENT_DATA = "{\"code\":\"task_expired\",\"message\":\"搜索任务已过期\"}";
     private static final String GENERIC_ERROR_DATA = "{\"code\":\"upstream_error\","
             + "\"message\":\"AI 搜索服务暂时不可用，请稍后重试。\"}";
 
@@ -143,21 +147,36 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
     @Override
     public AiStreamTaskSnapshot cancel(Long userId, String taskId) {
         AiStreamTaskSnapshot task = requireOwnedTask(userId, taskId);
-        if (task.status() != AiStreamTaskStatus.RUNNING) {
+        if (task.status() == AiStreamTaskStatus.STOPPED) {
+            stopLocalWorker(taskId);
+            publishCancellation(taskId);
+            persistStoppedAnswer(task);
             return task;
         }
-        if (!store.transition(taskId, AiStreamTaskStatus.CANCELLED)) {
-            return store.find(taskId).orElse(task);
+        if (task.status() != AiStreamTaskStatus.GENERATING) {
+            return task;
+        }
+        long terminalEventId = store.appendTerminalEvent(
+                taskId, AiStreamTaskStatus.STOPPED, "error", STOPPED_EVENT_DATA);
+        if (terminalEventId <= 0L) {
+            AiStreamTaskSnapshot currentTask = store.find(taskId).orElse(task);
+            if (currentTask.status() == AiStreamTaskStatus.STOPPED) {
+                stopLocalWorker(taskId);
+                publishCancellation(taskId);
+                persistStoppedAnswer(currentTask);
+            }
+            return currentTask;
         }
         stopLocalWorker(taskId);
         publishCancellation(taskId);
-        return withStatus(task, AiStreamTaskStatus.CANCELLED);
+        persistStoppedAnswer(task);
+        return withStatus(task, AiStreamTaskStatus.STOPPED);
     }
 
     @Override
     public void cancelBySession(Long userId, Long sessionId) {
         store.findCurrent(userId)
-                .filter(task -> task.status() == AiStreamTaskStatus.RUNNING)
+                .filter(task -> task.status() == AiStreamTaskStatus.GENERATING)
                 .filter(task -> Objects.equals(task.sessionId(), sessionId))
                 .ifPresent(task -> cancel(userId, task.taskId()));
     }
@@ -241,8 +260,16 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
     }
 
     private void expireTask(String taskId) {
-        if (store.transition(taskId, AiStreamTaskStatus.EXPIRED)) {
-            log.info("AI stream task expired taskId={}", taskId);
+        try {
+            long terminalEventId = store.appendTerminalEvent(
+                    taskId, AiStreamTaskStatus.EXPIRED, "error", EXPIRED_EVENT_DATA);
+            if (terminalEventId > 0L) {
+                log.info("AI stream task expired taskId={}", taskId);
+            }
+        } catch (RuntimeException exception) {
+            log.warn("AI stream task expiry could not be recorded taskId={} errorType={}",
+                    taskId, exception.getClass().getSimpleName());
+        } finally {
             stopLocalWorker(taskId);
             publishCancellation(taskId);
         }
@@ -254,6 +281,16 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
         } catch (RuntimeException exception) {
             log.warn("AI stream cancellation notification failed taskId={} errorType={}",
                     taskId, exception.getClass().getSimpleName());
+        }
+    }
+
+    private void persistStoppedAnswer(AiStreamTaskSnapshot task) {
+        if (task.sessionId() == null) {
+            return;
+        }
+        String content = store.readGeneratedAnswer(task.taskId());
+        if (StringUtils.hasText(content)) {
+            searchService.persistStoppedAnswer(task.sessionId(), task.requestId(), content);
         }
     }
 
@@ -270,7 +307,8 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
         if (!Objects.equals(task.userId(), userId)) {
             throw new BizException(Result.CODE_NOT_FOUND, "AI 搜索任务不存在或已过期");
         }
-        if (task.status() == AiStreamTaskStatus.RUNNING && task.expiresAtMillis() <= System.currentTimeMillis()) {
+        if (task.status() == AiStreamTaskStatus.GENERATING
+                && task.expiresAtMillis() <= System.currentTimeMillis()) {
             expireTask(taskId);
             return withStatus(task, AiStreamTaskStatus.EXPIRED);
         }
@@ -300,13 +338,13 @@ public class AiStreamTaskServiceImpl implements IAiStreamTaskService {
         if (snapshot.isEmpty()) {
             return new EventBatch(List.of(), true);
         }
-        boolean expired = snapshot.get().status() == AiStreamTaskStatus.RUNNING
+        boolean expired = snapshot.get().status() == AiStreamTaskStatus.GENERATING
                 && snapshot.get().expiresAtMillis() <= System.currentTimeMillis();
         if (expired) {
             expireTask(taskId);
         }
         List<AiStreamTaskEvent> events = store.readEvents(taskId, cursor, EVENT_BATCH_SIZE);
-        boolean terminal = expired || snapshot.get().status() != AiStreamTaskStatus.RUNNING;
+        boolean terminal = expired || snapshot.get().status() != AiStreamTaskStatus.GENERATING;
         boolean drained = events.size() < EVENT_BATCH_SIZE;
         return new EventBatch(events, terminal && drained);
     }

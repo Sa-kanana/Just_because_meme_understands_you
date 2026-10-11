@@ -5,6 +5,7 @@ import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTrendItemVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTrendResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTrendTopicVO;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.MemeTrendRepository;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -21,9 +22,11 @@ public class MemeTrendService {
 
     private static final int TOP_LIMIT = 20;
     private final MemeTrendRepository repository;
+    private final OssUrlHelper ossUrlHelper;
 
-    public MemeTrendService(MemeTrendRepository repository) {
+    public MemeTrendService(MemeTrendRepository repository, OssUrlHelper ossUrlHelper) {
         this.repository = repository;
+        this.ossUrlHelper = ossUrlHelper;
     }
 
     public MemeTrendResponseVO getTrends(int requestedDays) {
@@ -31,7 +34,7 @@ public class MemeTrendService {
         LocalDate endDate = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         LocalDate startDate = endDate.minusDays(days - 1L);
         List<MemeTrendItemVO> topMemes = repository.topMemes(startDate, endDate, TOP_LIMIT).stream()
-                .map(row -> new MemeTrendItemVO(row.memeId(), row.name(), row.image(), row.views(),
+                .map(row -> new MemeTrendItemVO(row.memeId(), row.name(), ossUrlHelper.toPublicUrl(row.image()), row.views(),
                         row.likes(), row.comments(), row.score(), splitTags(row.tags())))
                 .toList();
         List<MemeTrendRepository.DailyRow> recordedDays = repository.dailyTotals(startDate, endDate);

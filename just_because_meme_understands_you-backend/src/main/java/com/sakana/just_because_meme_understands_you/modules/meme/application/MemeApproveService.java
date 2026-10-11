@@ -7,7 +7,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.M
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTagRelation;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiIngestService;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeIndexEventPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import jakarta.annotation.Resource;
@@ -39,7 +39,7 @@ public class MemeApproveService {
     private MemePublishAsyncHandler memePublishAsyncHandler;
 
     @Resource
-    private IAiIngestService aiIngestService;
+    private MemeIndexEventPort memeIndexEventPort;
 
     @Resource
     private IMemeService memeService;
@@ -57,7 +57,7 @@ public class MemeApproveService {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在");
         }
         if (Objects.equals(meme.getStatus(), MemeVisibilitySupport.STATUS_NORMAL)) {
-            scheduleAfterCommit(() -> safeSync(memeId));
+            memeIndexEventPort.requestUpsert(memeId);
             return;
         }
         if (!MemeVisibilitySupport.isReviewQueue(meme.getStatus())) {
@@ -70,6 +70,7 @@ public class MemeApproveService {
         meme.setAppealRejectCount(0);
         meme.setOfflineReason(null);
         memeMapper.updateById(meme);
+        memeIndexEventPort.requestUpsert(memeId);
 
         Long userId = meme.getUserId();
         List<Integer> tagIds = loadTagIdsByMemeId(memeId);
@@ -91,14 +92,13 @@ public class MemeApproveService {
             } catch (Exception e) {
                 log.warn("审核通过后标签计数失败 memeId={}", memeId, e);
             }
-            safeSync(memeId);
         });
     }
 
     private List<Integer> loadTagIdsByMemeId(Long memeId) {
         List<MemeTagRelation> relations = memeTagRelationMapper.selectList(
                 new LambdaQueryWrapper<MemeTagRelation>()
-                        .eq(MemeTagRelation::getMemeId, memeId.intValue())
+                        .eq(MemeTagRelation::getMemeId, memeId)
         );
         if (relations == null || relations.isEmpty()) {
             return List.of();
@@ -110,14 +110,6 @@ public class MemeApproveService {
             }
         }
         return tagIds;
-    }
-
-    private void safeSync(Long memeId) {
-        try {
-            aiIngestService.syncMeme(memeId);
-        } catch (Exception e) {
-            log.warn("审核通过后灌库失败 memeId={}", memeId, e);
-        }
     }
 
     private void scheduleAfterCommit(Runnable task) {

@@ -52,4 +52,5 @@ if __name__ == "__main__":
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.is_dev,
+        timeout_graceful_shutdown=settings.uvicorn_graceful_shutdown_timeout_seconds,
     )

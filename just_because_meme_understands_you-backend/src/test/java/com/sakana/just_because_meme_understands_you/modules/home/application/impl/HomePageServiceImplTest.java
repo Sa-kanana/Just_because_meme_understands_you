@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.api.user.vo.HomeBootstrapVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
-import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,11 +22,11 @@ class HomePageServiceImplTest {
     void bootstrapExposesFeedTotalForPagination() {
         IMemeService memeService = mock(IMemeService.class);
         HomeHotTagSupport homeHotTagSupport = mock(HomeHotTagSupport.class);
-        MemeAgentProperties memeAgentProperties = mock(MemeAgentProperties.class);
+        MemeCatalogPort memeCatalogPort = mock(MemeCatalogPort.class);
         HomePageServiceImpl service = new HomePageServiceImpl();
         ReflectionTestUtils.setField(service, "memeService", memeService);
         ReflectionTestUtils.setField(service, "homeHotTagSupport", homeHotTagSupport);
-        ReflectionTestUtils.setField(service, "memeAgentProperties", memeAgentProperties);
+        ReflectionTestUtils.setField(service, "memeCatalogPort", memeCatalogPort);
 
         PageVO<MemeListItemVO> feedPage = new PageVO<>();
         feedPage.setList(List.of());
@@ -38,6 +38,8 @@ class HomePageServiceImplTest {
         when(homeHotTagSupport.listHotTags(10)).thenReturn(List.of());
         when(memeService.listHotMemes(6)).thenReturn(List.of());
         when(memeService.listLiveMemes(0L, 48, 8)).thenReturn(List.of());
+        when(memeCatalogPort.crawlSettings())
+                .thenReturn(new MemeCatalogPort.CrawlSettings(true, true, 5, 0L, 8, 48));
         when(memeService.pageMemeFeed(1, 12, "hot", null)).thenReturn(feedPage);
 
         HomeBootstrapVO bootstrap = service.bootstrap(6, 10, "hot", 12);

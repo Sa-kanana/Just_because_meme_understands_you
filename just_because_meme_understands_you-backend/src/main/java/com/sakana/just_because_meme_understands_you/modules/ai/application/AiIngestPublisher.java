@@ -3,9 +3,9 @@ package com.sakana.just_because_meme_understands_you.modules.ai.application;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Mono;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -24,14 +24,13 @@ public class AiIngestPublisher {
         this.memeAgentClient = memeAgentClient;
     }
 
-    @Async
-    public void publishPublishedMeme(String memeId,
-                                     String title,
-                                     String introduction,
-                                     List<String> tags,
-                                     String contentHash) {
+    public Mono<Void> publishPublishedMeme(String memeId,
+                                           String title,
+                                           String introduction,
+                                           List<String> tags,
+                                           String contentHash) {
         if (!memeAgentClient.isConfigured() || !StringUtils.hasText(memeId)) {
-            return;
+            return Mono.empty();
         }
         MemeAgentIngestRequestDTO.IngestDocument doc = MemeAgentIngestRequestDTO.IngestDocument.builder()
                 .memeId(memeId)
@@ -45,16 +44,14 @@ public class AiIngestPublisher {
         MemeAgentIngestRequestDTO request = MemeAgentIngestRequestDTO.builder()
                 .documents(List.of(doc))
                 .build();
-        memeAgentClient.ingestAsync(request)
-                .doOnSuccess(v -> log.info("AI ingest queued memeId={}", memeId))
-                .doOnError(e -> log.warn("AI ingest failed memeId={}", memeId, e))
-                .subscribe();
+        return memeAgentClient.ingestAsync(request)
+                .doOnSuccess(v -> log.info("AI ingest completed memeId={}", memeId))
+                .doOnError(e -> log.warn("AI ingest failed memeId={}", memeId, e));
     }
 
-    @Async
-    public void publishDeletedMeme(String memeId) {
+    public Mono<Void> publishDeletedMeme(String memeId) {
         if (!memeAgentClient.isConfigured() || !StringUtils.hasText(memeId)) {
-            return;
+            return Mono.empty();
         }
         MemeAgentIngestRequestDTO.IngestDocument doc = MemeAgentIngestRequestDTO.IngestDocument.builder()
                 .memeId(memeId)
@@ -66,9 +63,8 @@ public class AiIngestPublisher {
         MemeAgentIngestRequestDTO request = MemeAgentIngestRequestDTO.builder()
                 .documents(List.of(doc))
                 .build();
-        memeAgentClient.ingestAsync(request)
-                .doOnSuccess(v -> log.info("AI ingest delete queued memeId={}", memeId))
-                .doOnError(e -> log.warn("AI ingest delete failed memeId={}", memeId, e))
-                .subscribe();
+        return memeAgentClient.ingestAsync(request)
+                .doOnSuccess(v -> log.info("AI ingest delete completed memeId={}", memeId))
+                .doOnError(e -> log.warn("AI ingest delete failed memeId={}", memeId, e));
     }
 }

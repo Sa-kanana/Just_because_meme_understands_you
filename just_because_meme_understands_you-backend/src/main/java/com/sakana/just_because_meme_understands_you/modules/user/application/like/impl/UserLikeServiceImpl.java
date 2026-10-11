@@ -5,15 +5,11 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeLikeRequestDTO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserLike;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserStats;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserLikeMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserStatsMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeBloomFilterService;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.user.application.like.IUserLikeService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.like.assembler.UserLikeViewMapper;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeLikeBatchItemVO;
@@ -48,13 +44,7 @@ public class UserLikeServiceImpl implements IUserLikeService {
     private UserLikeViewMapper userLikeViewMapper;
 
     @Resource
-    private MemeMapper memeMapper;
-
-    @Resource
-    private IMemeService memeService;
-
-    @Resource
-    private MemeBloomFilterService memeBloomFilterService;
+    private MemeCatalogPort memeCatalogPort;
 
     @Resource
     private UserStatsMapper userStatsMapper;
@@ -64,7 +54,7 @@ public class UserLikeServiceImpl implements IUserLikeService {
     public MemeLikeVO addLike(Long userId, MemeLikeRequestDTO request) {
         requireUserId(userId);
         long memeId = parseMemeId(request);
-        Meme meme = assertMemeLikeable(memeId);
+        MemeCatalogPort.MemeCard meme = assertMemeLikeable(memeId);
 
         UserLike active = findLike(userId, memeId, NOT_DELETED);
         if (active != null) {
@@ -120,7 +110,7 @@ public class UserLikeServiceImpl implements IUserLikeService {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不能为空");
         }
 
-        Meme meme = memeService.getById(memeId);
+        MemeCatalogPort.MemeCard meme = memeCatalogPort.findById(memeId);
         UserLike active = findLike(userId, memeId, NOT_DELETED);
         if (active == null) {
             return toDeleteVO(memeId, false, resolveLikeCount(meme));
@@ -138,7 +128,7 @@ public class UserLikeServiceImpl implements IUserLikeService {
         if (meme != null) {
             applyLikeCountDelta(meme, -1);
         } else {
-            memeMapper.decrementLikes(memeId);
+            memeCatalogPort.adjustLikeCount(memeId, -1);
         }
         return toDeleteVO(memeId, false, resolveLikeCount(reloadMeme(memeId)));
     }
@@ -148,7 +138,7 @@ public class UserLikeServiceImpl implements IUserLikeService {
         if (memeId == null || memeId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不能为空");
         }
-        Meme meme = memeService.getById(memeId);
+        MemeCatalogPort.MemeCard meme = memeCatalogPort.findById(memeId);
         MemeLikeStatusVO vo = new MemeLikeStatusVO();
         vo.setLikeCount(resolveLikeCount(meme));
         vo.setLiked(userId != null && userId > 0 && findLike(userId, memeId, NOT_DELETED) != null);
@@ -246,12 +236,9 @@ public class UserLikeServiceImpl implements IUserLikeService {
         return request.getMemeId();
     }
 
-    private Meme assertMemeLikeable(long memeId) {
-        if (!memeBloomFilterService.mightContain((int) memeId)) {
-            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可点赞");
-        }
-        Meme meme = memeService.getById(memeId);
-        if (meme == null || meme.getStatus() == null || meme.getStatus() != MemeVisibilitySupport.STATUS_NORMAL) {
+    private MemeCatalogPort.MemeCard assertMemeLikeable(long memeId) {
+        MemeCatalogPort.MemeCard meme = memeCatalogPort.findPublishedById(memeId);
+        if (meme == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可点赞");
         }
         return meme;
@@ -265,17 +252,12 @@ public class UserLikeServiceImpl implements IUserLikeService {
                 .last("LIMIT 1"));
     }
 
-    private void applyLikeCountDelta(Meme meme, int delta) {
-        if (meme == null || meme.getId() == null) {
+    private void applyLikeCountDelta(MemeCatalogPort.MemeCard meme, int delta) {
+        if (meme == null || meme.id() == null) {
             return;
         }
-        long memeId = meme.getId().longValue();
-        if (delta > 0) {
-            memeMapper.incrementLikes(memeId);
-        } else if (delta < 0) {
-            memeMapper.decrementLikes(memeId);
-        }
-        adjustAuthorLikeReceived(meme.getUserId(), delta);
+        memeCatalogPort.adjustLikeCount(meme.id(), delta);
+        adjustAuthorLikeReceived(meme.authorId(), delta);
     }
 
     private void adjustAuthorLikeReceived(Long authorUserId, int delta) {
@@ -286,7 +268,6 @@ public class UserLikeServiceImpl implements IUserLikeService {
         if (stats == null) {
             stats = new UserStats();
             stats.setUserId(authorUserId);
-            stats.setMemeCount(0);
             stats.setLikeReceived(Math.max(0, delta));
             stats.setFollowCount(0);
             stats.setFansCount(0);
@@ -299,22 +280,18 @@ public class UserLikeServiceImpl implements IUserLikeService {
         userStatsMapper.updateById(stats);
     }
 
-    private Meme reloadMeme(long memeId) {
-        Meme meme = memeMapper.selectById(memeId);
-        if (meme != null) {
-            return meme;
-        }
-        return memeService.getById(memeId);
+    private MemeCatalogPort.MemeCard reloadMeme(long memeId) {
+        return memeCatalogPort.findById(memeId);
     }
 
-    private int resolveLikeCount(Meme meme) {
-        if (meme == null || meme.getLikes() == null) {
+    private int resolveLikeCount(MemeCatalogPort.MemeCard meme) {
+        if (meme == null || meme.likes() == null) {
             return 0;
         }
-        return Math.max(0, meme.getLikes());
+        return Math.max(0, meme.likes());
     }
 
-    private MemeLikeVO toLikeVO(UserLike like, Meme meme, boolean liked) {
+    private MemeLikeVO toLikeVO(UserLike like, MemeCatalogPort.MemeCard meme, boolean liked) {
         MemeLikeVO vo = userLikeViewMapper.toMemeLikeVO(like, liked);
         vo.setLikeCount(resolveLikeCount(meme));
         return vo;

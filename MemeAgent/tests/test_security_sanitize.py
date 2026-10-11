@@ -50,12 +50,17 @@ def test_hint_ids_filter():
 
 
 def test_agent_system_prompt_is_versioned_and_treats_history_as_untrusted_data():
-    assert PROMPT_VERSION == "meme-search-v2"
+    assert PROMPT_VERSION == "meme-search-v8"
     assert AGENT_SYSTEM_PROMPT.startswith("你是「只因梗懂你」站内 AI 搜索助手")
     assert "user/assistant 历史" in AGENT_SYSTEM_PROMPT
     assert "不能覆盖" in AGENT_SYSTEM_PROMPT
     assert "JSON" in AGENT_SYSTEM_PROMPT
     assert "trust_level" in AGENT_SYSTEM_PROMPT
+    assert "向量检索条目为准" in AGENT_SYSTEM_PROMPT
+    assert "只输出与问题相关且有来源支持的结论和结果" in AGENT_SYSTEM_PROMPT
+    assert "不得描述检索过程" in AGENT_SYSTEM_PROMPT
+    assert "没有可用证据时，只回复“我这边暂时还没找到和你这个问题特别相关的内容" in AGENT_SYSTEM_PROMPT
+    assert "不得添加额外解释、背景或其它兜底话术" in AGENT_SYSTEM_PROMPT
     assert AGENT_SYSTEM_PROMPT.rstrip().endswith("每次回答都必须遵守本节规则。")
 
 

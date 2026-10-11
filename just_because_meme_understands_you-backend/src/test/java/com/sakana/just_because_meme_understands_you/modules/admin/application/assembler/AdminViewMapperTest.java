@@ -49,7 +49,7 @@ class AdminViewMapperTest {
         MemeTag source = new MemeTag();
         source.setId(8);
         source.setName("猫猫");
-        source.setRelatedQuantity("23");
+        source.setRelatedQuantity(23);
 
         AdminTagVO result = mapper.toTagVO(source);
 
@@ -59,13 +59,12 @@ class AdminViewMapperTest {
     }
 
     @Test
-    void mapsUserFieldsAndLeavesAvatarConversionForApplicationLayer() {
+    void mapsUserFieldsAndLeavesRoleAndAvatarConversionForApplicationLayer() {
         User source = new User();
         source.setId(19L);
         source.setNickname("用户昵称");
         source.setAvatar("private/avatar.png");
         source.setSignature("签名");
-        source.setRole("USER");
         source.setStatus(1);
 
         AdminUserListItemVO result = mapper.toAdminUserListItemVO(source);
@@ -74,7 +73,7 @@ class AdminViewMapperTest {
         assertEquals("用户昵称", result.getNickname());
         assertNull(result.getAvatar());
         assertEquals("签名", result.getSignature());
-        assertEquals("USER", result.getRole());
+        assertNull(result.getRole());
         assertEquals(1, result.getStatus());
     }
 }

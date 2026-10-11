@@ -2,8 +2,15 @@
   <section class="home-hero" aria-label="首页推荐">
     <div class="home-hero__shell">
       <div class="home-hero__copy">
+        <svg class="home-hero__decoration-dots" viewBox="0 0 88 64" aria-hidden="true">
+          <g fill="currentColor">
+            <circle cx="6" cy="6" r="3" /><circle cx="28" cy="6" r="3" /><circle cx="50" cy="6" r="3" /><circle cx="72" cy="6" r="3" />
+            <circle cx="6" cy="28" r="3" /><circle cx="28" cy="28" r="3" /><circle cx="50" cy="28" r="3" /><circle cx="72" cy="28" r="3" />
+            <circle cx="6" cy="50" r="3" /><circle cx="28" cy="50" r="3" /><circle cx="50" cy="50" r="3" /><circle cx="72" cy="50" r="3" />
+          </g>
+        </svg>
         <h1 class="home-hero__title">
-          只因<span class="home-hero__title-accent">“梗”</span>懂你
+          只因<span class="home-hero__title-accent">“梗”<svg class="home-hero__title-underline" viewBox="0 0 96 18" aria-hidden="true"><path d="M2 14C23 13 33 4 52 4c11 0 8 9 17 9 8 0 15-6 25-8" /></svg></span>懂你
         </h1>
         <p class="home-hero__tagline">万物皆可梗，只有我懂你。</p>
         <p class="home-hero__lead">
@@ -19,6 +26,13 @@
             探索热梗
           </vs-button>
         </div>
+        <svg class="home-hero__star" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 0c2.4 8.3 4.7 10.6 16 16-11.3 5.4-13.6 7.7-16 16C13.6 23.7 11.3 21.4 0 16 11.3 10.6 13.6 8.3 16 0Z" />
+        </svg>
+        <svg class="home-hero__bottom-art" viewBox="0 0 420 88" aria-hidden="true">
+          <text x="4" y="65">Meme</text>
+          <path d="M10 78C78 51 108 31 154 33c28 1 27 18 3 32-23 13-9 18 26 3 56-24 120-48 215-56" />
+        </svg>
       </div>
 
       <div class="home-hero__media" @mouseenter="pauseRotate" @mouseleave="resumeRotate">
@@ -64,11 +78,14 @@
               :disabled="!isClickable(item)"
               @click="handleSlideClick(item)"
             >
+              <span class="home-hero__backdrop" aria-hidden="true">
+                <ui-image :src="item.img_url" alt="" fit="cover" />
+              </span>
               <ui-image
                 v-if="!slideErrors[index]"
                 :src="item.img_url"
                 :alt="item.title || '推荐图'"
-                fit="cover"
+                fit="contain"
                 class="home-hero__image"
                 @error="onSlideError(index)"
               />
@@ -220,7 +237,8 @@ export default {
 
 <style scoped>
 .home-hero {
-  margin-bottom: 14px;
+  width: 100%;
+  margin: 0 auto 14px;
   overflow: hidden;
 }
 
@@ -228,11 +246,16 @@ export default {
   display: grid;
   grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
   gap: 0;
-  min-height: 226px;
-  border-radius: 20px;
-  border: 1px solid var(--meme-border);
-  background: var(--meme-bg-card);
-  box-shadow: var(--meme-shadow-soft);
+  height: clamp(300px, 23vw, 390px);
+  min-height: 0;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--meme-border) 82%, var(--meme-primary-soft));
+  background: linear-gradient(
+    135deg,
+    var(--meme-bg-card) 0%,
+    color-mix(in srgb, var(--meme-bg-card) 94%, var(--meme-primary-soft)) 100%
+  );
+  box-shadow: 0 14px 34px rgba(27, 69, 125, 0.075);
   overflow: hidden;
 }
 
@@ -246,11 +269,34 @@ export default {
   overflow: hidden;
 }
 
+.home-hero__copy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 10% 92%, transparent 0 48px, var(--meme-border-accent) 49px 50px, transparent 51px);
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.home-hero__decoration-dots {
+  position: absolute;
+  z-index: 1;
+  top: 22px;
+  right: 26px;
+  width: 72px;
+  height: 54px;
+  color: var(--meme-border-accent);
+  pointer-events: none;
+}
+
 .home-hero__copy::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: var(--meme-hero-fade);
+  background:
+    radial-gradient(ellipse at 6% 92%, color-mix(in srgb, var(--meme-primary-soft) 86%, transparent), transparent 48%),
+    radial-gradient(ellipse at 88% 12%, color-mix(in srgb, var(--meme-primary-soft) 72%, transparent), transparent 36%),
+    linear-gradient(125deg, transparent 12%, color-mix(in srgb, var(--meme-bg-card) 36%, transparent) 62%, transparent 100%);
   pointer-events: none;
 }
 
@@ -258,25 +304,88 @@ export default {
   position: relative;
   z-index: 1;
   margin: 0 0 10px;
-  font-size: clamp(34px, 3.3vw, 46px);
-  font-weight: 800;
-  line-height: 1.12;
-  letter-spacing: -0.03em;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-size: clamp(40px, 4vw, 64px);
+  font-weight: 900;
+  line-height: 1.06;
+  letter-spacing: -0.045em;
   color: var(--meme-text);
 }
 
 .home-hero__title-accent {
-  background: linear-gradient(120deg, var(--meme-primary-dark) 0%, var(--meme-primary) 45%, #52c7b8 100%);
+  position: relative;
+  display: inline-block;
+  margin: 0 0.08em;
+  font-weight: 900;
+  background: linear-gradient(120deg, var(--meme-primary-dark) 0%, var(--meme-primary) 58%, #35b7f2 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.home-hero__title-underline {
+  position: absolute;
+  left: 37%;
+  bottom: -0.02em;
+  width: 68%;
+  height: 0.25em;
+  overflow: visible;
+  fill: none;
+  stroke: #8c69ed;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.home-hero__star {
+  position: absolute;
+  z-index: 1;
+  top: 45%;
+  right: 15%;
+  width: 25px;
+  height: 25px;
+  color: var(--meme-primary);
+  fill: currentColor;
+  filter: drop-shadow(0 3px 5px var(--meme-focus-ring));
+  pointer-events: none;
+}
+
+.home-hero__bottom-art {
+  position: absolute;
+  z-index: 0;
+  left: 20px;
+  bottom: -1px;
+  width: min(420px, 88%);
+  height: 76px;
+  overflow: visible;
+  color: #74a8ff;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.home-hero__bottom-art text {
+  fill: currentColor;
+  font-family: 'Segoe Script', 'Bradley Hand', 'Comic Sans MS', cursive;
+  font-size: 50px;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.home-hero__bottom-art path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .home-hero__tagline {
   position: relative;
   z-index: 1;
   margin: 0 0 18px;
-  font-size: clamp(16px, 1.4vw, 18px);
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-size: clamp(17px, 1.45vw, 21px);
   font-weight: 500;
   line-height: 1.5;
   color: var(--meme-text-secondary);
@@ -299,9 +408,10 @@ export default {
   height: 42px !important;
   margin: 0;
   padding: 0 18px !important;
-  font-size: 14px !important;
+  font-size: clamp(16px, 1.15vw, 19px) !important;
   font-weight: 700 !important;
   border-radius: 12px !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease !important;
 }
 
 .home-hero__cta :deep(.vs-button__content) {
@@ -317,23 +427,41 @@ export default {
 }
 
 .home-hero__cta--primary.vs-button {
-  box-shadow: 0 8px 18px var(--meme-focus-ring) !important;
+  color: #fff !important;
+  background: linear-gradient(130deg, var(--meme-primary) 0%, var(--meme-primary-dark) 100%) !important;
+  box-shadow: 0 9px 20px var(--meme-focus-ring) !important;
 }
 
 .home-hero__cta--ghost.vs-button {
-  border: 1px solid var(--meme-border-accent) !important;
+  border: 1.5px solid var(--meme-primary) !important;
   color: var(--meme-primary) !important;
   background: var(--meme-bg-card) !important;
+  box-shadow: 0 3px 9px rgba(27, 69, 125, 0.035) !important;
 }
 
-.home-hero__cta--ghost.vs-button:hover {
+.home-hero__cta--primary.vs-button:hover:not(:disabled),
+.home-hero__cta--ghost.vs-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.home-hero__cta--primary.vs-button:hover:not(:disabled) {
+  box-shadow: 0 13px 26px var(--meme-focus-ring) !important;
+}
+
+.home-hero__cta--ghost.vs-button:hover:not(:disabled) {
   background: var(--meme-primary-soft) !important;
+  box-shadow: 0 8px 18px rgba(27, 69, 125, 0.09) !important;
+}
+
+.home-hero__cta--primary.vs-button:active:not(:disabled),
+.home-hero__cta--ghost.vs-button:active:not(:disabled) {
+  transform: translateY(-0.5px);
 }
 
 .home-hero__media {
   position: relative;
-  min-height: 0;
   height: 100%;
+  aspect-ratio: auto;
   background: var(--meme-bg-cover);
   overflow: hidden;
 }
@@ -353,6 +481,7 @@ export default {
 }
 
 .home-hero__slide-btn {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -364,12 +493,36 @@ export default {
   text-align: left;
 }
 
+.home-hero__backdrop {
+  position: absolute;
+  inset: -12px;
+  display: block;
+  overflow: hidden;
+  filter: blur(14px);
+  opacity: 0.5;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.home-hero__backdrop :deep(.ui-image),
+.home-hero__backdrop :deep(.ui-image img) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-hero__backdrop :deep(.ui-image img) {
+  object-fit: cover;
+}
+
 .home-hero__slide-btn.is-clickable {
   cursor: pointer;
 }
 
 .home-hero__image,
 .home-hero__slide-btn :deep(.ui-image) {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: block;
@@ -378,7 +531,7 @@ export default {
 .home-hero__slide-btn :deep(.ui-image img) {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .home-hero__caption {
@@ -483,7 +636,6 @@ export default {
   gap: 10px;
   width: 100%;
   height: 100%;
-  min-height: 226px;
   color: var(--meme-text-muted);
   font-size: 14px;
   background: var(--meme-bg-cover);
@@ -596,33 +748,73 @@ export default {
 }
 
 @media (max-width: 992px) {
+  .home-hero {
+    width: 100%;
+  }
+
   .home-hero__shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+    height: clamp(280px, 34vw, 340px);
     min-height: 0;
     max-height: none;
   }
 
   .home-hero__copy {
-    padding: 30px;
-  }
-
-  .home-hero__copy::after {
-    display: none;
+    padding: 22px clamp(16px, 2.2vw, 26px);
   }
 
   .home-hero__title {
-    font-size: 34px;
+    font-size: clamp(30px, 4.7vw, 46px);
   }
 
   .home-hero__tagline {
     font-size: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
   }
 
-  .home-hero__media,
-  .home-hero__state {
-    min-height: 210px;
-    max-height: 240px;
+  .home-hero__media {
+    height: 100%;
+    aspect-ratio: auto;
+  }
+
+  .home-hero__actions {
+    gap: 6px;
+  }
+
+  .home-hero__cta.vs-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 8px !important;
+    font-size: clamp(13px, 1.5vw, 16px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-hero__shell {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .home-hero__media {
+    height: auto;
+    aspect-ratio: 2.2 / 1;
+  }
+
+  .home-hero__title-underline {
+    bottom: -0.04em;
+    stroke-width: 2.4;
+  }
+
+  .home-hero__star {
+    top: auto;
+    right: 9%;
+    bottom: 18px;
+    width: 19px;
+    height: 19px;
+  }
+
+  .home-hero__bottom-art {
+    display: none;
   }
 }
 
@@ -642,17 +834,6 @@ export default {
   .home-hero__cta.vs-button {
     flex: 1;
     min-width: 0;
-  }
-
-  .home-hero__media,
-  .home-hero__state {
-    min-height: 162px;
-    max-height: 190px;
-  }
-
-  .home-hero__state--error {
-    min-height: 162px;
-    max-height: none;
   }
 
   .home-hero__offline-mark {

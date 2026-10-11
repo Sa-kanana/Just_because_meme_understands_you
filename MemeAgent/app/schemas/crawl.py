@@ -18,6 +18,11 @@ class CrawlHotMemesRequest(BaseModel):
         default=True,
         description="是否附带页面正文摘要（Firecrawl scrape_options）",
     )
+    excluded_bilibili_video_ids: list[str] = Field(
+        default_factory=list,
+        max_length=10000,
+        description="Java 已入库的 B 站视频 BVID；采集时跳过，避免重复抓取",
+    )
 
 
 class CrawlMemeCandidate(BaseModel):

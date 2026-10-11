@@ -17,9 +17,11 @@ export default {
   components: { AppBreadcrumb },
   computed: {
     items() {
+      const breadcrumbStore = useBreadcrumbStore()
       return resolveRouteBreadcrumbs(this.$route, {
         authStore: useAuthStore(),
-        patch: useBreadcrumbStore().patch,
+        patch: breadcrumbStore.patch,
+        trail: breadcrumbStore.trail,
       })
     },
   },

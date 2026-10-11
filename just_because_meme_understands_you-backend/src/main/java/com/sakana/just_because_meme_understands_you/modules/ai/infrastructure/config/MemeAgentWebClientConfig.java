@@ -31,7 +31,7 @@ public class MemeAgentWebClientConfig {
             ConnectionProvider memeAgentConnectionProvider) {
         //创建 Reactor Netty 的 HttpClient
         HttpClient httpClient = HttpClient.create(memeAgentConnectionProvider)
-                // 响应超时：默认 10 分钟（600000ms
+                // 响应读取超时由配置项控制，默认 20 分钟（1200000ms）。
                 .responseTimeout(Duration.ofMillis(properties.getAgent().getResponseTimeoutMs()))
                 // 连接超时：默认 2 秒
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS,

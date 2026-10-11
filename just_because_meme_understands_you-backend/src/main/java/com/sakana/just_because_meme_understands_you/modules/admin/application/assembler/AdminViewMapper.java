@@ -40,6 +40,7 @@ public interface AdminViewMapper {
      * @return 管理端知识文档视图
      */
     @Mapping(target = "tags", ignore = true)
+    @Mapping(target = "duplicate", ignore = true)
     AdminKnowledgeVO toAdminKnowledgeVO(AdminKnowledge source);
 
     /**
@@ -65,6 +66,7 @@ public interface AdminViewMapper {
      * @return 管理端用户列表项
      */
     @Mapping(target = "avatar", ignore = true)
+    @Mapping(target = "role", ignore = true)
     AdminUserListItemVO toAdminUserListItemVO(User source);
 
     /**
@@ -87,6 +89,8 @@ public interface AdminViewMapper {
     @Mapping(target = "image", ignore = true)
     @Mapping(target = "statusDesc", ignore = true)
     @Mapping(target = "authorNickname", ignore = true)
+    @Mapping(target = "tags", ignore = true)
+    @Mapping(target = "resources", ignore = true)
     AdminMemeDetailVO toAdminMemeDetailVO(Meme source);
 
     /**

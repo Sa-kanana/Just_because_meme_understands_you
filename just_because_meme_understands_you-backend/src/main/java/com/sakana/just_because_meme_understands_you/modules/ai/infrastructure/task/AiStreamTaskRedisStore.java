@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.task;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.modules.ai.domain.AiStreamTaskEvent;
 import com.sakana.just_because_meme_understands_you.modules.ai.domain.AiStreamTaskSnapshot;
@@ -36,7 +37,8 @@ public class AiStreamTaskRedisStore {
             local currentTask = redis.call('GET', KEYS[1])
             if currentTask then
                 local currentMetaKey = ARGV[7] .. currentTask .. ':meta'
-                if redis.call('HGET', currentMetaKey, 'status') == 'RUNNING' then
+                local currentStatus = redis.call('HGET', currentMetaKey, 'status')
+                if currentStatus == 'GENERATING' or currentStatus == 'RUNNING' then
                     return {'CONFLICT', currentTask}
                 end
             end
@@ -45,7 +47,7 @@ public class AiStreamTaskRedisStore {
                 'userId', ARGV[2],
                 'sessionId', '',
                 'requestId', ARGV[3],
-                'status', 'RUNNING',
+                'status', 'GENERATING',
                 'createdAtMillis', ARGV[4],
                 'expiresAtMillis', ARGV[5],
                 'lastEventId', '0')
@@ -60,7 +62,8 @@ public class AiStreamTaskRedisStore {
             if ttl <= 0 then
                 return -1
             end
-            if redis.call('HGET', KEYS[1], 'status') ~= 'RUNNING' then
+            local status = redis.call('HGET', KEYS[1], 'status')
+            if status ~= 'GENERATING' and status ~= 'RUNNING' then
                 return 0
             end
             local eventId = redis.call('HINCRBY', KEYS[1], 'lastEventId', 1)
@@ -75,7 +78,8 @@ public class AiStreamTaskRedisStore {
             if ttl <= 0 then
                 return -1
             end
-            if redis.call('HGET', KEYS[1], 'status') ~= 'RUNNING' then
+            local status = redis.call('HGET', KEYS[1], 'status')
+            if status ~= 'GENERATING' and status ~= 'RUNNING' then
                 return 0
             end
             local eventId = redis.call('HINCRBY', KEYS[1], 'lastEventId', 1)
@@ -87,7 +91,8 @@ public class AiStreamTaskRedisStore {
             """, Long.class);
 
     private static final DefaultRedisScript<Long> TRANSITION_SCRIPT = new DefaultRedisScript<>("""
-            if redis.call('HGET', KEYS[1], 'status') ~= 'RUNNING' then
+            local status = redis.call('HGET', KEYS[1], 'status')
+            if status ~= 'GENERATING' and status ~= 'RUNNING' then
                 return 0
             end
             redis.call('HSET', KEYS[1], 'status', ARGV[1])
@@ -148,7 +153,7 @@ public class AiStreamTaskRedisStore {
                     userId,
                     null,
                     requestId,
-                    AiStreamTaskStatus.RUNNING,
+                    AiStreamTaskStatus.GENERATING,
                     nowMillis,
                     expiresAtMillis,
                     0L));
@@ -187,7 +192,7 @@ public class AiStreamTaskRedisStore {
                 Long.valueOf(userId),
                 parseNullableLong(field(fields, "sessionId")),
                 requestId,
-                AiStreamTaskStatus.valueOf(status),
+                AiStreamTaskStatus.fromStoredValue(status),
                 Long.parseLong(createdAt),
                 Long.parseLong(expiresAt),
                 parseLongOrDefault(field(fields, "lastEventId"), 0L)));
@@ -217,7 +222,7 @@ public class AiStreamTaskRedisStore {
     /** 原子写入终态事件并结束任务，避免 done 与取消竞态产生矛盾结果。 */
     public long appendTerminalEvent(
             String taskId, AiStreamTaskStatus terminalStatus, String event, String data) {
-        if (terminalStatus == null || terminalStatus == AiStreamTaskStatus.RUNNING) {
+        if (terminalStatus == null || terminalStatus.isGenerating()) {
             throw new IllegalArgumentException("只能追加 AI 任务终态事件");
         }
         Long eventId = redisTemplate.execute(
@@ -263,9 +268,36 @@ public class AiStreamTaskRedisStore {
         return List.copyOf(events);
     }
 
-    /** 仅允许 RUNNING 状态转为首个终态；迟到的状态更新不会覆盖结果。 */
+    /** 从 Redis 中完整的 token 事件恢复已经生成的回答正文。 */
+    public String readGeneratedAnswer(String taskId) {
+        StringBuilder answer = new StringBuilder();
+        long cursor = 0L;
+        int batchSize = 128;
+        List<AiStreamTaskEvent> batch;
+        do {
+            batch = readEvents(taskId, cursor, batchSize);
+            for (AiStreamTaskEvent event : batch) {
+                cursor = Math.max(cursor, event.id());
+                if (!"token".equals(event.event()) || !StringUtils.hasText(event.data())) {
+                    continue;
+                }
+                try {
+                    JsonNode token = objectMapper.readTree(event.data());
+                    JsonNode text = token.get("text");
+                    if (text != null && !text.isNull()) {
+                        answer.append(text.asText());
+                    }
+                } catch (JsonProcessingException exception) {
+                    throw new IllegalStateException("Redis 中的 AI token 事件格式无效", exception);
+                }
+            }
+        } while (batch.size() == batchSize);
+        return answer.toString();
+    }
+
+    /** 仅允许 GENERATING 状态转为首个终态；兼容旧 RUNNING 值，迟到更新不会覆盖结果。 */
     public boolean transition(String taskId, AiStreamTaskStatus terminalStatus) {
-        if (terminalStatus == null || terminalStatus == AiStreamTaskStatus.RUNNING) {
+        if (terminalStatus == null || terminalStatus.isGenerating()) {
             throw new IllegalArgumentException("只能转换到 AI 任务终态");
         }
         Long changed = redisTemplate.execute(

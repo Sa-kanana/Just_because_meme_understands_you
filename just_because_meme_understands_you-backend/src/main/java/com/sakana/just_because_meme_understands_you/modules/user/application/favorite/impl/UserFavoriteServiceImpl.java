@@ -8,11 +8,9 @@ import com.sakana.just_because_meme_understands_you.common.transaction.AfterComm
 import com.sakana.just_because_meme_understands_you.api.user.dto.FavoriteMoveDTO;
 import com.sakana.just_because_meme_understands_you.api.user.dto.FavoriteReorderDTO;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeFavoriteRequestDTO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserFavorite;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserFavoriteMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeBloomFilterService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.assembler.UserFavoriteViewMapper;
@@ -47,10 +45,7 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
     private UserFavoriteViewMapper userFavoriteViewMapper;
 
     @Resource
-    private IMemeService memeService;
-
-    @Resource
-    private MemeBloomFilterService memeBloomFilterService;
+    private MemeCatalogPort memeCatalogPort;
 
     @Resource
     private AfterCommitExecutor afterCommitExecutor;
@@ -280,11 +275,7 @@ public class UserFavoriteServiceImpl implements IUserFavoriteService {
     }
 
     private void assertMemeCollectible(long memeId) {
-        if (!memeBloomFilterService.mightContain((int) memeId)) {
-            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可收藏");
-        }
-        Meme meme = memeService.getById(memeId);
-        if (meme == null || meme.getStatus() == null || meme.getStatus() != 1) {
+        if (!memeCatalogPort.isPublished(memeId)) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可收藏");
         }
     }

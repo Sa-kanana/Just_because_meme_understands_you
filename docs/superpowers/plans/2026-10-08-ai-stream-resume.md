@@ -204,7 +204,7 @@ Keep parsing transport concerns out of the Pinia store. Report the latest event 
 
 - [ ] **Step 4: Run the focused parser test and frontend lint**
 
-Run: `node --test tests/aiStreamSse.test.mjs tests/aiStreamLifecycle.test.mjs` and `npm run lint -- --no-fix`
+Run: `node --test tests/aiStreamSse.test.mjs tests/aiStreamLifecycle.test.mjs` and `npm run lint -- --no-fix --ext .js,.vue,.mjs`
 Expected: parser tests pass and ESLint reports no new errors.
 
 ### Task 6: Restore task state in Pinia and make stop explicit
@@ -223,39 +223,52 @@ Expected: parser tests pass and ESLint reports no new errors.
 - Reconnect fetch after transport errors using capped exponential delays (250 ms, 500 ms, 1 s, 2 s, 4 s) while the task is `RUNNING` and unexpired. Do not reconnect on `AbortError`, terminal status, authentication failure, or explicit stop.
 - A different request submitted while the user task is running shows an actionable wait/stop message instead of silently cancelling the existing task.
 
-- [ ] **Step 1: Implement Pinia recovery and explicit cancellation**
+- [x] **Step 1: Implement Pinia recovery and explicit cancellation**
 
 Make route destruction abort only the browser reader. Reconstruct a fresh page from server task metadata and replayed events; never append tokens twice when `eventId <= lastEventId`.
 
-- [ ] **Step 2: Lint and build the frontend**
+- [x] **Step 2: Lint and build the frontend**
 
 Run: `npm run lint -- --no-fix` and `npm run build`
 Expected: lint and production build succeed.
 
 - [ ] **Step 3: Inspect the AI search behavior**
 
-Manually verify submit, navigate away/back, stop, refresh during generation, and restore a completed task using the running local Java/Redis/MemeAgent services.
+Manually verify submit, navigate away/back, stop, refresh during generation, and restore a completed task using the running local Java/Redis/MemeAgent services. Pending: the local AI page redirects to `/login`; no authenticated browser session is available, so these UI flows have not been manually exercised.
 
 ### Task 7: Run integrated lifecycle verification and document the result
 
 **Files:**
-- Modify only if needed: `docs/superpowers/specs/2026-10-07-ai-stream-resume-design.md`
-- No Python source changes are expected.
+- Modify: `MemeAgent/app/agents/prompt_files/search_system_zh.md`
+- Modify: `MemeAgent/app/agents/prompts.py`
+- Modify: `MemeAgent/app/agents/search_agent.py`
+- Modify: `just_because_meme_understands_you-backend/src/main/java/com/sakana/just_because_meme_understands_you/modules/ai/application/impl/AiSearchServiceImpl.java`
+- Test: `MemeAgent/tests/test_security_sanitize.py`
+- Test: `MemeAgent/tests/test_meme_agent.py`
+- Test: `just_because_meme_understands_you-backend/src/test/java/com/sakana/just_because_meme_understands_you/modules/ai/application/impl/AiSearchServiceImplTest.java`
+- Modify: `docs/superpowers/specs/2026-10-07-ai-stream-resume-design.md`
 
-- [ ] **Step 1: Run focused backend regression tests**
+**User steering:** The user added that user-facing output must contain only results, without retrieval/process narration, and supplied an example of an answer that exposed retrieval status. When no usable evidence is available, answer exactly `不知道。` and do not add unsupported filler. Update the managed system prompt, increment the Python prompt and Java cache pipeline versions together, and retain execution details only as structured server diagnostics. Existing logs may retain stage, status, elapsed time, hit count, retry count, fallback type, and error type; do not log raw user questions, retrieved text, or model reasoning.
 
-Run from backend: `mvn -Dtest=AiSearchServiceImplTest,AiStreamTaskRedisStoreTest,AiStreamTaskServiceImplTest,AiSearchControllerTest,AiChatSessionServiceImplTest,RestfulApiRouteContractTest test`
+- [x] **Step 1: Run focused backend regression tests**
+
+Run from backend: `mvn -f pom-task-test.xml '-Dtest=AiSearchServiceImplTest,AiStreamTaskRedisStoreTest,AiStreamTaskServiceImplTest,AiSearchControllerTest,AiChatSessionServiceImplTest,RestfulApiRouteContractTest' test`
 Expected: PASS with Redis script, task lifecycle, authorization, session, and existing stream tests green.
 
-- [ ] **Step 2: Run focused frontend checks**
+- [x] **Step 2: Verify result-only answer policy and prompt versioning**
 
-Run from frontend: `node --test tests/aiStreamSse.test.mjs tests/aiStreamLifecycle.test.mjs`; then `npm run lint -- --no-fix` and `npm run build`.
+Run from `MemeAgent`: `conda run -n memeagent python -m pytest tests/test_security_sanitize.py tests/test_meme_agent.py -q`. Also run the Java AI service test and confirm its cache pipeline version matches `meme-search-v4`.
+Expected: the managed prompt and deterministic fallback forbid retrieval/process narration, prompt injection boundaries remain, and Python/Java cache versions match.
+
+- [x] **Step 3: Run focused frontend checks**
+
+Run from frontend: `node --test tests/aiChatStore.test.cjs tests/aiStreamSse.test.mjs tests/aiStreamLifecycle.test.mjs`; then `npm run lint -- --no-fix --ext .js,.vue,.mjs` and `npm run build`.
 Expected: tests, lint, and production build pass.
 
-- [ ] **Step 3: Verify browser-independent scenarios against local services**
+- [ ] **Step 4: Verify authenticated browser lifecycle scenarios against local services**
 
-Submit one query and verify: switching away leaves Python generation active; reconnecting with the last event ID resumes without duplicated tokens; F5 discovers the task; closing/reopening after completion shows the saved answer; Stop disposes the upstream stream; a test TTL override expires and removes task keys; a second tab cannot start a different task for the same user.
+Submit one query and verify: switching away leaves Python generation active; reconnecting with the last event ID resumes without duplicated tokens; F5 discovers the task; closing/reopening after completion shows the saved answer; Stop disposes the upstream stream; a test TTL override expires and removes task keys; a second tab cannot start a different task for the same user. Pending for the same authentication limitation recorded in Task 6; automated API, Redis lifecycle, and frontend parser/store tests passed.
 
-- [ ] **Step 4: Review final diff for unrelated changes**
+- [x] **Step 5: Review final diff for unrelated changes**
 
 Run `git diff --check` and inspect only files changed for this feature; confirm prior uncommitted work remains present and no unrelated file is staged or committed.

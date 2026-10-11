@@ -1,9 +1,9 @@
 package com.sakana.just_because_meme_understands_you.api.admin.controller;
 
 import com.sakana.just_because_meme_understands_you.common.response.Result;
-import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AiOpsStatusVO;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +11,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.Map;
 import com.sakana.just_because_meme_understands_you.api.admin.support.AdminAuthSupport;
@@ -19,7 +20,8 @@ import com.sakana.just_because_meme_understands_you.api.admin.support.AdminAuthS
  * AI 运维状态（管理员）。
  */
 @RestController
-@RequestMapping("/v1/admin/ai/operations")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@RequestMapping("/admin/v1/ai/operations")
 public class AiOpsController {
 
     @Resource
@@ -28,24 +30,27 @@ public class AiOpsController {
     @Resource
     private MemeAgentProperties memeAgentProperties;
 
+    @Resource
+    private MemeCatalogPort memeCatalogPort;
+
     /**
      * 运维面板：Agent 健康与开关配置。
-     * GET /v1/admin/ai/operations
+     * GET /admin/v1/ai/operations
      */
     @GetMapping
     public Result<AiOpsStatusVO> status(HttpServletRequest request) {
         requireOpsAdmin(request);
 
         MemeAgentProperties.Agent agent = memeAgentProperties.getAgent();
-        MemeAgentProperties.Crawl crawl = memeAgentProperties.getCrawl();
+        MemeCatalogPort.CrawlSettings crawl = memeCatalogPort.crawlSettings();
         MemeAgentProperties.Ai ai = memeAgentProperties.getAi();
 
         AiOpsStatusVO vo = new AiOpsStatusVO();
         vo.setAgentConfigured(memeAgentClient.isConfigured());
         vo.setAgentBaseUrl(agent != null ? agent.getBaseUrl() : null);
-        vo.setCrawlEnabled(crawl != null && crawl.isEnabled());
-        vo.setCrawlScheduleEnabled(crawl != null && crawl.isScheduleEnabled());
-        vo.setCrawlDefaultLimit(crawl != null ? Math.max(1, crawl.getLimit()) : 5);
+        vo.setCrawlEnabled(crawl.enabled());
+        vo.setCrawlScheduleEnabled(crawl.scheduleEnabled());
+        vo.setCrawlDefaultLimit(Math.max(1, crawl.limit()));
         vo.setBackfillEnabled(ai == null || ai.isBackfillEnabled());
 
         if (vo.isAgentConfigured()) {
@@ -76,11 +81,6 @@ public class AiOpsController {
     }
 
     private void requireOpsAdmin(HttpServletRequest request) {
-        MemeAgentProperties.Ops ops = memeAgentProperties.getOps();
-        if (ops != null && !ops.isRequireAdmin()) {
-            AuthContext.requireCurrentUserId(request);
-            return;
-        }
-        AdminAuthSupport.requireAdmin(request, ops == null ? null : ops.getAdminUserIds());
+        AdminAuthSupport.requireAdmin(request);
     }
 }

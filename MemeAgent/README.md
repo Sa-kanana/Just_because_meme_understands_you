@@ -40,7 +40,7 @@ psql "postgresql://memeagent:memeagent@127.0.0.1:5433/memeagent_vector" \
 ```bash
 conda activate memeagent
 # 方式一（推荐）
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 5
 # 方式二
 python -m app.main
 ```
@@ -97,6 +97,6 @@ app/
   retrieval/    # pgvector
   schemas/      # Pydantic 契约
   eval/         # LangSmith 评估
-scripts/        # SQL 初始化
+scripts/        # SQL 初始化、运维与诊断脚本（详见 scripts/README.md）
 tests/
 ```

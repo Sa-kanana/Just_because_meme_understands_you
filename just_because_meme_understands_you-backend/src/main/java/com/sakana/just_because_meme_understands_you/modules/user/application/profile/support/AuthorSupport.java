@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.modules.user.application.profile.support;
 
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.AuthorVO;
@@ -75,10 +76,10 @@ public class AuthorSupport {
             }
             return vo;
         }
-        vo.setNickname(StringUtils.hasText(user.getNickname()) ? user.getNickname().trim() : FALLBACK_NICKNAME);
-        vo.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
+        vo.setNickname(UserDisplayPolicy.displayName(user, FALLBACK_NICKNAME));
+        vo.setAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(user)));
         if (includeSignature) {
-            vo.setSignature(user.getSignature() == null ? "" : user.getSignature().trim());
+            vo.setSignature(UserDisplayPolicy.displaySignature(user));
         }
         return vo;
     }

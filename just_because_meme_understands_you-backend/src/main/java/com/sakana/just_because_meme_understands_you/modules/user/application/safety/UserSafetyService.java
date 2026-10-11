@@ -5,6 +5,7 @@ import com.sakana.just_because_meme_understands_you.api.user.vo.UserSuppressionS
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserSuppression;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserSuppressionMapper;
@@ -115,8 +116,8 @@ public class UserSafetyService {
         item.setTargetUserId(other.getId());
         item.setType(relation.getType());
         item.setDirection(direction);
-        item.setNickname(other.getNickname());
-        item.setAvatar(other.getAvatar());
+        item.setNickname(UserDisplayPolicy.displayName(other, "匿名用户"));
+        item.setAvatar(UserDisplayPolicy.displayAvatar(other));
         item.setCreatedAt(relation.getCreatedAt());
         items.add(item);
     }

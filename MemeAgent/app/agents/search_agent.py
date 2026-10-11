@@ -14,17 +14,23 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 from app.agents.meme_agent import build_meme_search_agent
-from app.agents.prompts import PROMPT_VERSION, build_user_payload
+from app.agents.prompts import AGENT_SYSTEM_PROMPT, PROMPT_VERSION, build_user_payload
+from app.agents.query_intent import greeting_reply
+from app.agents.retrieval_query_rewrite import (
+    rewrite_retrieval_query,
+    should_attempt_contextual_rewrite,
+)
 from app.agents.tools import (
-    build_business_candidate_chunks,
+    admin_knowledge_chunks_to_tool_payload,
     build_search_admin_knowledge_tool,
-    build_search_live_web_tool,
     build_search_meme_tool,
+    chunks_to_tool_payload,
     parse_tool_payload,
+    retrieve_admin_knowledge_chunks,
     retrieve_meme_chunks,
 )
-from app.core.resilience import UpstreamRetriesExhausted
 from app.core.settings import Settings, apply_langsmith_env, get_settings
+from app.retrieval.knowledge_repository import RetrievedKnowledgeChunk
 from app.retrieval.repository import RetrievedChunk
 from app.schemas.stream import (
     StreamCiteEvent,
@@ -36,13 +42,16 @@ from app.schemas.stream import (
 )
 from app.security.sanitize import (
     looks_like_prompt_injection,
-    sanitize_business_extra,
     sanitize_chat_messages,
-    sanitize_hint_meme_ids,
     sanitize_user_text,
 )
 
 logger = logging.getLogger(__name__)
+
+_NO_RETRIEVAL_RESULT_REPLY = (
+    "我这边暂时还没找到和你这个问题特别相关的内容，你可以换个说法，"
+    "或者再补充一点信息，我再帮你找找。"
+)
 
 
 def _build_llm(settings: Settings, max_tokens: int) -> ChatOpenAI | None:
@@ -68,13 +77,6 @@ def _format_sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _snippets_from_context(extra: dict[str, Any]) -> list[dict]:
-    raw = extra.get("snippets") if isinstance(extra, dict) else None
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
-
-
 def _history_messages(request: StreamRequest) -> list:
     history = []
     for msg in sanitize_chat_messages(request.messages):
@@ -85,14 +87,13 @@ def _history_messages(request: StreamRequest) -> list:
     return history
 
 
-def _fallback_answer(query: str, retrieved: list[RetrievedChunk]) -> str:
+def _fallback_answer(retrieved: list[RetrievedChunk]) -> str:
     if not retrieved:
-        return f"暂未检索到与「{query}」相关的梗。请尝试换关键词，或到首页浏览热门内容。"
-    lines = [f"找到 {len(retrieved)} 条相关梗："]
+        return _NO_RETRIEVAL_RESULT_REPLY
+    lines = []
     for chunk in retrieved[:5]:
         title = (chunk.title or chunk.content.splitlines()[0][:40]).strip()
         lines.append(f"- {title}")
-    lines.append("可点击下方「相关梗」查看详情。")
     return "\n".join(lines)
 
 
@@ -100,8 +101,12 @@ def _fallback_answer(query: str, retrieved: list[RetrievedChunk]) -> str:
 class _StreamState:
     # 当前请求可用的站内梗候选。
     retrieved: list[RetrievedChunk]
+    # 当前请求预检索到的运营知识库片段。
+    knowledge_retrieved: list[RetrievedKnowledgeChunk] = field(default_factory=list)
     # 首次检索状态：pending、success 或 degraded。
     retrieval_status: str = "pending"
+    # 运营知识库首次检索状态：pending、success 或 degraded。
+    knowledge_retrieval_status: str = "pending"
     # 已进入用户可见 token 流的字符数，用于决定错误后的降级方式。
     visible_chars: int = 0
     # 是否已发出 meta 事件，避免重复发送。
@@ -110,21 +115,21 @@ class _StreamState:
     emitted_citations: set[str] = field(default_factory=set)
     # 模型供应商返回的实际 token 用量。
     usage: dict[str, int] = field(default_factory=dict)
-    # 站内检索及其重试、退避的总耗时（毫秒）；未执行时为 None。
-    retrieval_duration_ms: int | None = None
-    # Agent 模型流执行耗时（毫秒）；未启动模型时为 None。
-    agent_duration_ms: int | None = None
 
 
-def _fallback_text(
-    query: str,
-    state: _StreamState,
-) -> str:
+def _fallback_text(state: _StreamState) -> str:
     if state.retrieved:
-        return _fallback_answer(query, state.retrieved)
-    if state.retrieval_status == "success":
-        return _fallback_answer(query, [])
-    return "暂时无法连接梗库，当前无法确认是否存在相关内容。请稍后重试。"
+        return _fallback_answer(state.retrieved)
+    if state.knowledge_retrieved:
+        titles = [
+            (chunk.title or chunk.section_path or "").strip()
+            for chunk in state.knowledge_retrieved[:5]
+        ]
+        return (
+            "\n".join(f"- {title}" for title in titles if title)
+            or _NO_RETRIEVAL_RESULT_REPLY
+        )
+    return _fallback_answer([])
 
 
 def _retrieval_events(request: StreamRequest, state: _StreamState) -> list[str]:
@@ -156,13 +161,15 @@ def _retrieval_events(request: StreamRequest, state: _StreamState) -> list[str]:
 
 
 def _fallback_events(
-    query: str,
     state: _StreamState,
     finish_reason: str,
 ) -> list[str]:
-    if state.retrieval_status == "degraded":
+    if (
+        state.retrieval_status == "degraded"
+        or state.knowledge_retrieval_status == "degraded"
+    ):
         finish_reason = "fallback_retrieval_unavailable"
-    answer = _fallback_text(query, state)
+    answer = _fallback_text(state)
     events = []
     for piece in _chunk_text(answer, 24):
         state.visible_chars += len(piece)
@@ -207,29 +214,14 @@ def _chunk_text(text: str, size: int) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 
-def _decode_sse_event(event: str) -> tuple[str, dict[str, Any]]:
-    """解析本服务发出的单条 SSE，用于只记录低基数遥测字段。"""
-    event_name = "message"
-    payload: dict[str, Any] = {}
-    for line in event.splitlines():
-        if line.startswith("event: "):
-            event_name = line[7:].strip()
-        elif line.startswith("data: "):
-            try:
-                decoded = json.loads(line[6:])
-                if isinstance(decoded, dict):
-                    payload = decoded
-            except json.JSONDecodeError:
-                pass
-    return event_name, payload
-
-
 async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
-    started_at = time.monotonic()
-    first_token_at: float | None = None
-    streamed_chars = 0
-    outcome = "incomplete"
-    finish_reason = "unknown"
+    """逐条转发 AI 搜索生成的 SSE 事件。"""
+    async for event in _stream_ai_search(request):
+        yield event
+
+
+async def _stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
+    request_started_at = time.monotonic()
     settings = get_settings()
     apply_langsmith_env(settings)
     max_tokens = min(request.max_tokens, settings.max_output_tokens)
@@ -240,37 +232,57 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             "prompt_injection_suspected request_id=%s",
             request.request_id,
         )
-    extra = sanitize_business_extra(request.context.extra or {})
-    snippets = _snippets_from_context(extra)
-    hint_ids = sanitize_hint_meme_ids(list(request.context.hint_meme_ids or []))
-    state = _StreamState(retrieved=build_business_candidate_chunks(snippets))
+    state = _StreamState(retrieved=[])
+    history_messages = _history_messages(request)
+    outcome = "incomplete"
+    logger.info(
+        "rag_request_started request_id=%s prompt_version=%s query_chars=%s history_messages=%s",
+        request.request_id,
+        PROMPT_VERSION,
+        len(safe_query),
+        len(history_messages),
+    )
 
     try:
+        greeting = greeting_reply(safe_query)
+        if greeting is not None:
+            logger.info("greeting_short_circuit request_id=%s", request.request_id)
+            logger.info(
+                "rag_stage_skipped request_id=%s stage=retrieval reason=greeting",
+                request.request_id,
+            )
+            for event in _retrieval_events(request, state):
+                yield event
+            for piece in _chunk_text(greeting, 24):
+                state.visible_chars += len(piece)
+                yield _format_sse("token", StreamTokenEvent(text=piece).model_dump())
+            yield _format_sse(
+                "done",
+                StreamDoneEvent(
+                    finish_reason="greeting_no_retrieval",
+                    usage={"completion": state.visible_chars},
+                ).model_dump(),
+            )
+            outcome = "completed"
+            return
+
         async with asyncio.timeout(settings.agent_total_timeout_seconds):
             async for event in _stream_ai_search_body(
                 request,
                 settings,
                 max_tokens,
                 safe_query,
-                snippets,
-                hint_ids,
                 state,
+                history_messages,
             ):
-                event_name, payload = _decode_sse_event(event)
-                if event_name == "token":
-                    if first_token_at is None:
-                        first_token_at = time.monotonic()
-                    streamed_chars += len(str(payload.get("text") or ""))
-                elif event_name == "done":
-                    finish_reason = str(payload.get("finish_reason") or "unknown")
-                    outcome = "fallback" if finish_reason.startswith("fallback") else "done"
-                elif event_name == "error":
-                    outcome = "error_after_token" if first_token_at is not None else "error_before_token"
                 yield event
+        outcome = "completed"
     except asyncio.CancelledError:
         outcome = "cancelled"
+        logger.warning("rag_request_cancelled request_id=%s", request.request_id)
         raise
     except TimeoutError:
+        outcome = "timeout_after_partial_answer" if state.visible_chars else "fallback_timeout"
         logger.warning("agent_total_timeout request_id=%s", request.request_id)
         if state.visible_chars:
             yield _format_sse(
@@ -283,9 +295,10 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             return
         for event in _retrieval_events(request, state):
             yield event
-        for event in _fallback_events(safe_query, state, "fallback_total_timeout"):
+        for event in _fallback_events(state, "fallback_total_timeout"):
             yield event
     except Exception as error:
+        outcome = "error_after_partial_answer" if state.visible_chars else "fallback_error"
         logger.error(
             "stream failed request_id=%s error_type=%s",
             request.request_id,
@@ -302,30 +315,21 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
             return
         for event in _retrieval_events(request, state):
             yield event
-        for event in _fallback_events(safe_query, state, "fallback_agent_error"):
+        for event in _fallback_events(state, "fallback_agent_error"):
             yield event
     finally:
-        if outcome == "incomplete":
-            outcome = "cancelled"
-        total_ms = int((time.monotonic() - started_at) * 1000)
-        ttft_ms = (
-            int((first_token_at - started_at) * 1000)
-            if first_token_at is not None
-            else -1
-        )
         logger.info(
-            "ai_stream_metrics request_id=%s prompt_version=%s outcome=%s finish_reason=%s "
-            "retrieval_status=%s retrieval_ms=%s agent_ms=%s ttft_ms=%s total_ms=%s token_chars=%s",
+            "rag_request_finished request_id=%s outcome=%s retrieval_status=%s retrieved=%s "
+            "admin_retrieval_status=%s admin_retrieved=%s "
+            "answer_chars=%s duration_ms=%s",
             request.request_id,
-            PROMPT_VERSION,
             outcome,
-            finish_reason,
             state.retrieval_status,
-            state.retrieval_duration_ms if state.retrieval_duration_ms is not None else -1,
-            state.agent_duration_ms if state.agent_duration_ms is not None else -1,
-            ttft_ms,
-            total_ms,
-            streamed_chars,
+            len(state.retrieved),
+            state.knowledge_retrieval_status,
+            len(state.knowledge_retrieved),
+            state.visible_chars,
+            int((time.monotonic() - request_started_at) * 1000),
         )
 
 
@@ -334,88 +338,277 @@ async def _stream_ai_search_body(
     settings: Settings,
     max_tokens: int,
     safe_query: str,
-    snippets: list[dict],
-    hint_ids: list[str],
     state: _StreamState,
+    history_messages: list,
 ) -> AsyncIterator[str]:
-    retrieval_started_at = time.monotonic()
-    try:
-        state.retrieved = await retrieve_meme_chunks(
-            query=safe_query,
-            hint_meme_ids=hint_ids,
-            mysql_snippets=snippets,
-            top_k=settings.retrieval_top_k,
+    retrieval_query = safe_query
+    rewrite_attempted = False
+    if history_messages and should_attempt_contextual_rewrite(safe_query):
+        rewrite_attempted = True
+        rewritten_query = await rewrite_retrieval_query(
+            safe_query,
+            history_messages,
+            settings,
             request_id=request.request_id,
         )
-        state.retrieval_status = "success"
-    except UpstreamRetriesExhausted as error:
+        if rewritten_query:
+            retrieval_query = rewritten_query
+            logger.info(
+                "retrieval_query_rewrite_applied request_id=%s reason=context_reference "
+                "query_chars=%s history_messages=%s",
+                request.request_id,
+                len(retrieval_query),
+                min(4, len(history_messages)),
+            )
+
+    meme_retrieval_started_at = time.monotonic()
+    logger.info(
+        "rag_stage_started request_id=%s stage=meme_retrieval top_k=%s",
+        request.request_id,
+        settings.retrieval_top_k,
+    )
+    admin_retrieval_started_at = time.monotonic()
+    logger.info(
+        "rag_stage_started request_id=%s stage=admin_retrieval top_k=%s",
+        request.request_id,
+        settings.retrieval_top_k,
+    )
+    meme_result, admin_result = await asyncio.gather(
+        retrieve_meme_chunks(
+            query=retrieval_query,
+            top_k=settings.retrieval_top_k,
+            request_id=request.request_id,
+        ),
+        retrieve_admin_knowledge_chunks(
+            query=retrieval_query,
+            top_k=settings.retrieval_top_k,
+            request_id=request.request_id,
+        ),
+        return_exceptions=True,
+    )
+    if isinstance(meme_result, BaseException):
+        if isinstance(meme_result, asyncio.CancelledError):
+            raise meme_result
+        if not isinstance(meme_result, Exception):
+            raise meme_result
         state.retrieval_status = "degraded"
         logger.warning(
-            "meme_retrieval_degraded request_id=%s attempts=%s error_type=%s",
+            "rag_stage_completed request_id=%s stage=meme_retrieval status=degraded hits=0 "
+            "error_type=%s duration_ms=%s",
             request.request_id,
-            error.attempts,
-            type(error.__cause__).__name__ if error.__cause__ else "unknown",
+            type(meme_result).__name__,
+            int((time.monotonic() - meme_retrieval_started_at) * 1000),
         )
-    finally:
-        state.retrieval_duration_ms = int((time.monotonic() - retrieval_started_at) * 1000)
+    else:
+        state.retrieved = meme_result
+        state.retrieval_status = "success"
+        # 中文注释：仅记录前五个候选 ID 和相关度分数，不输出标题或检索正文。
+        candidate_summary = ",".join(
+            f"{chunk.meme_id}:{chunk.score:.4f}" for chunk in state.retrieved[:5]
+        ) or "-"
+        logger.info(
+            "rag_stage_completed request_id=%s stage=meme_retrieval status=success hits=%s "
+            "candidates=%s duration_ms=%s",
+            request.request_id,
+            len(state.retrieved),
+            candidate_summary,
+            int((time.monotonic() - meme_retrieval_started_at) * 1000),
+        )
+    if isinstance(admin_result, BaseException):
+        if isinstance(admin_result, asyncio.CancelledError):
+            raise admin_result
+        if not isinstance(admin_result, Exception):
+            raise admin_result
+        state.knowledge_retrieval_status = "degraded"
+        logger.warning(
+            "rag_stage_completed request_id=%s stage=admin_retrieval status=degraded hits=0 "
+            "attempts=%s error_type=%s duration_ms=%s",
+            request.request_id,
+            getattr(admin_result, "attempts", 0),
+            type(admin_result.__cause__).__name__ if admin_result.__cause__ else type(admin_result).__name__,
+            int((time.monotonic() - admin_retrieval_started_at) * 1000),
+        )
+    else:
+        state.knowledge_retrieved = admin_result
+        state.knowledge_retrieval_status = "success"
+
+    if (
+        history_messages
+        and not rewrite_attempted
+        and state.retrieval_status == "success"
+        and state.knowledge_retrieval_status == "success"
+        and not state.retrieved
+        and not state.knowledge_retrieved
+    ):
+        rewrite_attempted = True
+        rewritten_query = await rewrite_retrieval_query(
+            safe_query,
+            history_messages,
+            settings,
+            request_id=request.request_id,
+        )
+        if rewritten_query:
+            retrieval_query = rewritten_query
+            logger.info(
+                "retrieval_query_rewrite_applied request_id=%s reason=empty_initial_retrieval "
+                "query_chars=%s history_messages=%s",
+                request.request_id,
+                len(retrieval_query),
+                min(4, len(history_messages)),
+            )
+            meme_retry_started_at = time.monotonic()
+            admin_retry_started_at = time.monotonic()
+            logger.info(
+                "rag_stage_started request_id=%s stage=meme_retrieval_context_retry top_k=%s",
+                request.request_id,
+                settings.retrieval_top_k,
+            )
+            logger.info(
+                "rag_stage_started request_id=%s stage=admin_retrieval_context_retry top_k=%s",
+                request.request_id,
+                settings.retrieval_top_k,
+            )
+            meme_retry_result, admin_retry_result = await asyncio.gather(
+                retrieve_meme_chunks(
+                    query=retrieval_query,
+                    top_k=settings.retrieval_top_k,
+                    request_id=request.request_id,
+                ),
+                retrieve_admin_knowledge_chunks(
+                    query=retrieval_query,
+                    top_k=settings.retrieval_top_k,
+                    request_id=request.request_id,
+                ),
+                return_exceptions=True,
+            )
+            if isinstance(meme_retry_result, BaseException):
+                if isinstance(meme_retry_result, asyncio.CancelledError):
+                    raise meme_retry_result
+                if not isinstance(meme_retry_result, Exception):
+                    raise meme_retry_result
+                state.retrieval_status = "degraded"
+                logger.warning(
+                    "rag_stage_completed request_id=%s stage=meme_retrieval_context_retry "
+                    "status=degraded hits=0 error_type=%s duration_ms=%s",
+                    request.request_id,
+                    type(meme_retry_result).__name__,
+                    int((time.monotonic() - meme_retry_started_at) * 1000),
+                )
+            else:
+                state.retrieved = meme_retry_result
+                state.retrieval_status = "success"
+                logger.info(
+                    "rag_stage_completed request_id=%s stage=meme_retrieval_context_retry "
+                    "status=success hits=%s duration_ms=%s",
+                    request.request_id,
+                    len(state.retrieved),
+                    int((time.monotonic() - meme_retry_started_at) * 1000),
+                )
+            if isinstance(admin_retry_result, BaseException):
+                if isinstance(admin_retry_result, asyncio.CancelledError):
+                    raise admin_retry_result
+                if not isinstance(admin_retry_result, Exception):
+                    raise admin_retry_result
+                state.knowledge_retrieval_status = "degraded"
+                logger.warning(
+                    "rag_stage_completed request_id=%s stage=admin_retrieval_context_retry "
+                    "status=degraded hits=0 error_type=%s duration_ms=%s",
+                    request.request_id,
+                    type(admin_retry_result).__name__,
+                    int((time.monotonic() - admin_retry_started_at) * 1000),
+                )
+            else:
+                state.knowledge_retrieved = admin_retry_result
+                state.knowledge_retrieval_status = "success"
+                logger.info(
+                    "rag_stage_completed request_id=%s stage=admin_retrieval_context_retry "
+                    "status=success hits=%s duration_ms=%s",
+                    request.request_id,
+                    len(state.knowledge_retrieved),
+                    int((time.monotonic() - admin_retry_started_at) * 1000),
+                )
 
     for event in _retrieval_events(request, state):
         yield event
 
     llm = _build_llm(settings, max_tokens)
     if llm is None:
-        for event in _fallback_events(safe_query, state, "fallback_no_model"):
+        logger.info(
+            "rag_generation_skipped request_id=%s reason=model_not_configured "
+            "meme_retrieved=%s admin_retrieved=%s",
+            request.request_id,
+            len(state.retrieved),
+            len(state.knowledge_retrieved),
+        )
+        for event in _fallback_events(state, "fallback_no_model"):
             yield event
         return
 
     tool = build_search_meme_tool(
-        default_hint_ids=hint_ids,
-        default_snippets=snippets,
         default_top_k=settings.retrieval_top_k,
-        initial_query=safe_query,
+        initial_query=retrieval_query,
+        initial_query_aliases=[safe_query],
         initial_chunks=state.retrieved,
         retrieval_unavailable=state.retrieval_status == "degraded",
         request_id=request.request_id,
     )
-    live_tool = build_search_live_web_tool(request_id=request.request_id)
     knowledge_tool = build_search_admin_knowledge_tool(
         default_top_k=settings.retrieval_top_k,
         request_id=request.request_id,
+        initial_query=retrieval_query,
+        initial_query_aliases=[safe_query],
+        initial_chunks=state.knowledge_retrieved,
+        retrieval_unavailable=state.knowledge_retrieval_status == "degraded",
     )
     executor = build_meme_search_agent(
-        llm, [tool, knowledge_tool, live_tool], max_iterations=4
+        llm, [tool, knowledge_tool], max_iterations=4
     )
-    # 暂存每次模型调用的文本，等结束事件确认没有工具调用后再向用户发送。
-    pending_model_text: dict[str, list[str]] = {}
+    # 跟踪尚未结束的模型调用，并屏蔽携带工具控制字段的调用。
+    active_model_runs: set[str] = set()
     tool_call_runs: set[str] = set()
-
-    def flush_model_run(run_id: str, output: Any = None) -> list[str]:
-        pieces = pending_model_text.pop(run_id, [])
-        has_tool_call = run_id in tool_call_runs or _contains_tool_call_data(output)
-        tool_call_runs.discard(run_id)
-        if has_tool_call:
-            return []
-        events: list[str] = []
-        for piece in pieces:
-            state.visible_chars += len(piece)
-            events.append(_format_sse("token", StreamTokenEvent(text=piece).model_dump()))
-        return events
 
     agent_input = build_user_payload(
         safe_query,
         {
             "locale": sanitize_user_text(request.context.locale or "zh-CN", max_len=32),
-            "hint_meme_ids": hint_ids,
-            "snippets": snippets,
+            "retrieval_context": {
+                "sources": [
+                    json.loads(
+                        chunks_to_tool_payload(
+                            state.retrieved,
+                            unavailable=state.retrieval_status == "degraded",
+                        )
+                    ),
+                    json.loads(
+                        admin_knowledge_chunks_to_tool_payload(
+                            state.knowledge_retrieved,
+                            unavailable=state.knowledge_retrieval_status == "degraded",
+                        )
+                    ),
+                ]
+            },
         },
     )
 
-    agent_started_at = time.monotonic()
+    generation_started_at = time.monotonic()
+    # 保存 LangChain 子调用的起始时刻，用于输出阶段耗时而不记录工具输入或输出。
+    active_tool_started_at: dict[str, tuple[str, float]] = {}
+    active_model_started_at: dict[str, float] = {}
+    # 中文注释：累计本轮 Agent 发起的模型调用次数，便于定位多轮工具编排。
+    model_call_count = 0
+    # 中文注释：累计本轮 Agent 发起的工具调用次数，不记录工具参数。
+    tool_call_count = 0
+    logger.info(
+        "rag_stage_started request_id=%s stage=agent_generation model=%s max_tokens=%s",
+        request.request_id,
+        settings.openai_chat_model,
+        max_tokens,
+    )
     try:
         async for event in executor.astream_events(
             {
                 "input": agent_input,
-                "chat_history": _history_messages(request),
+                "chat_history": history_messages,
             },
             version="v2",
             config={
@@ -428,7 +621,28 @@ async def _stream_ai_search_body(
             },
         ):
             kind = event.get("event")
-            if kind == "on_tool_end":
+            if kind == "on_tool_start":
+                run_id = str(event.get("run_id") or "__untracked__")
+                tool_name = str(event.get("name") or "unknown")
+                active_tool_started_at[run_id] = (tool_name, time.monotonic())
+                tool_call_count += 1
+                logger.info(
+                    "rag_tool_started request_id=%s tool=%s",
+                    request.request_id,
+                    tool_name,
+                )
+            elif kind == "on_tool_end":
+                run_id = str(event.get("run_id") or "__untracked__")
+                tool_name, tool_started_at = active_tool_started_at.pop(
+                    run_id,
+                    (str(event.get("name") or "unknown"), time.monotonic()),
+                )
+                logger.info(
+                    "rag_tool_completed request_id=%s tool=%s duration_ms=%s",
+                    request.request_id,
+                    tool_name,
+                    int((time.monotonic() - tool_started_at) * 1000),
+                )
                 output = event.get("data", {}).get("output")
                 raw = output if isinstance(output, str) else getattr(output, "content", "")
                 for chunk in parse_tool_payload(str(raw or "")):
@@ -443,30 +657,71 @@ async def _stream_ai_search_body(
                             title=chunk.title,
                         ).model_dump(),
                     )
+            elif kind == "on_tool_error":
+                run_id = str(event.get("run_id") or "__untracked__")
+                tool_name, tool_started_at = active_tool_started_at.pop(
+                    run_id,
+                    (str(event.get("name") or "unknown"), time.monotonic()),
+                )
+                error = event.get("data", {}).get("error")
+                logger.warning(
+                    "rag_tool_failed request_id=%s tool=%s error_type=%s duration_ms=%s",
+                    request.request_id,
+                    tool_name,
+                    type(error).__name__ if error is not None else "unknown",
+                    int((time.monotonic() - tool_started_at) * 1000),
+                )
+            elif kind == "on_chat_model_start":
+                run_id = str(event.get("run_id") or "__untracked__")
+                active_model_started_at[run_id] = time.monotonic()
+                model_call_count += 1
+                logger.info(
+                    "rag_model_call_started request_id=%s call=%s model=%s",
+                    request.request_id,
+                    model_call_count,
+                    settings.openai_chat_model,
+                )
             elif kind == "on_chat_model_end":
                 run_id = str(event.get("run_id") or "__untracked__")
-                output = event.get("data", {}).get("output")
-                for token_event in flush_model_run(run_id, output):
-                    yield token_event
+                model_started_at = active_model_started_at.pop(run_id, None)
+                if model_started_at is not None:
+                    logger.info(
+                        "rag_model_call_completed request_id=%s call=%s duration_ms=%s",
+                        request.request_id,
+                        model_call_count,
+                        int((time.monotonic() - model_started_at) * 1000),
+                    )
+                active_model_runs.discard(run_id)
+                tool_call_runs.discard(run_id)
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk")
                 state.usage.update(_extract_usage(chunk))
                 run_id = str(event.get("run_id") or "__untracked__")
+                active_model_runs.add(run_id)
                 if _contains_tool_call_data(chunk):
                     tool_call_runs.add(run_id)
-                    pending_model_text.pop(run_id, None)
                     continue
                 text = _extract_stream_text(chunk)
                 if text and run_id not in tool_call_runs:
-                    pending_model_text.setdefault(run_id, []).append(text)
-        # 缺少模型结束确认时丢弃缓冲文本，并进入统一降级路径，避免泄漏工具控制内容。
-        if pending_model_text or tool_call_runs:
-            pending_model_text.clear()
-            tool_call_runs.clear()
+                    state.visible_chars += len(text)
+                    yield _format_sse("token", StreamTokenEvent(text=text).model_dump())
+        # 缺少模型结束事件时保留已经流出的部分回答，并由统一错误事件收尾。
+        if active_model_runs or tool_call_runs:
             raise RuntimeError("Chat model completion event missing")
     except asyncio.CancelledError:
+        logger.warning(
+            "rag_stage_cancelled request_id=%s stage=agent_generation duration_ms=%s",
+            request.request_id,
+            int((time.monotonic() - generation_started_at) * 1000),
+        )
         raise
     except Exception as error:
+        logger.error(
+            "rag_stage_failed request_id=%s stage=agent_generation error_type=%s duration_ms=%s",
+            request.request_id,
+            type(error).__name__,
+            int((time.monotonic() - generation_started_at) * 1000),
+        )
         logger.error(
             "LangChain agent failed request_id=%s error_type=%s",
             request.request_id,
@@ -481,12 +736,18 @@ async def _stream_ai_search_body(
                 ).model_dump(),
             )
             return
-        for event in _fallback_events(safe_query, state, "fallback_llm_error"):
+        for event in _fallback_events(state, "fallback_llm_error"):
             yield event
         return
-    finally:
-        state.agent_duration_ms = int((time.monotonic() - agent_started_at) * 1000)
-
+    logger.info(
+        "rag_stage_completed request_id=%s stage=agent_generation status=success duration_ms=%s "
+        "model_calls=%s tool_calls=%s answer_chars=%s",
+        request.request_id,
+        int((time.monotonic() - generation_started_at) * 1000),
+        model_call_count,
+        tool_call_count,
+        state.visible_chars,
+    )
     yield _format_sse(
         "done",
         StreamDoneEvent(

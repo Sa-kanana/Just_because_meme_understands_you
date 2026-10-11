@@ -13,9 +13,11 @@ import com.sakana.just_because_meme_understands_you.modules.admin.application.as
 import com.sakana.just_because_meme_understands_you.modules.home.application.IHomeImageService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminHomeImageVO;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -28,6 +30,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
 
     @Resource
@@ -44,6 +47,9 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
 
     @Resource
     private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private MemeCatalogPort memeCatalogPort;
 
     @Override
     public PageVO<AdminHomeImageVO> page(Integer page, Integer size, Integer status) {
@@ -104,6 +110,9 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         HomeImage entity = requireEntity(id);
+        if (!isImageReferencedElsewhere(entity)) {
+            ossObjectPromoteService.deleteHomeImage(entity.getImgUrl());
+        }
         homeImageMapper.deleteById(entity.getId());
         homeImageService.evictCarouselCache();
     }
@@ -181,6 +190,27 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
         AdminHomeImageVO vo = adminViewMapper.toAdminHomeImageVO(entity);
         vo.setImgUrl(ossUrlHelper.toPublicUrl(entity.getImgUrl()));
         return vo;
+    }
+
+    private boolean isImageReferencedElsewhere(HomeImage entity) {
+        String objectKey = ossUrlHelper.normalizeForStorage(entity.getImgUrl());
+        if (!StringUtils.hasText(objectKey) || !objectKey.startsWith("home/")) {
+            return false;
+        }
+        LambdaQueryWrapper<HomeImage> otherCarouselReferences = new LambdaQueryWrapper<HomeImage>()
+                .ne(HomeImage::getId, entity.getId())
+                .and(wrapper -> wrapper.eq(HomeImage::getImgUrl, objectKey)
+                        .or().eq(HomeImage::getImgUrl, entity.getImgUrl()));
+        Long carouselReferenceCount = homeImageMapper.selectCount(otherCarouselReferences);
+        if (carouselReferenceCount != null && carouselReferenceCount > 0) {
+            log.info("轮播图删除后仍有其他轮播图引用图片，保留 OSS 对象 key={}", objectKey);
+            return true;
+        }
+        if (memeCatalogPort.isImageAssetReferenced(objectKey)) {
+            log.info("轮播图删除后仍有梗图内容引用图片，保留 OSS 对象 key={}", objectKey);
+            return true;
+        }
+        return false;
     }
 
     private static String trimToNull(String value) {

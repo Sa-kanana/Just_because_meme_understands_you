@@ -19,10 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class FlywayMigrationIntegrationTest {
 
     @Test
-    void recordsSixMigrationsAndDoesNotRerunThem() throws Exception {
+    void recordsAllAvailableMigrationsAndDoesNotRerunThem() throws Exception {
         String jdbcUrl = System.getenv("MIGRATION_TEST_MYSQL_URL");
         Assumptions.assumeTrue(jdbcUrl != null && !jdbcUrl.isBlank(),
                 "此集成测试只在专用 MySQL 测试库中运行");
+
+        int successfulSqlMigrationsBefore = countSuccessfulSqlMigrations(jdbcUrl);
 
         Flyway flyway = Flyway.configure()
                 .dataSource(
@@ -37,17 +39,30 @@ class FlywayMigrationIntegrationTest {
         MigrateResult firstRun = flyway.migrate();
         MigrateResult secondRun = flyway.migrate();
 
-        assertEquals(6, firstRun.migrationsExecuted);
         assertEquals(0, secondRun.migrationsExecuted);
+        int successfulSqlMigrationsAfter = countSuccessfulSqlMigrations(jdbcUrl);
+        assertEquals(firstRun.migrationsExecuted,
+                successfulSqlMigrationsAfter - successfulSqlMigrationsBefore);
+    }
+
+    private int countSuccessfulSqlMigrations(String jdbcUrl) throws Exception {
         try (Connection connection = DriverManager.getConnection(
                 jdbcUrl,
                 System.getenv().getOrDefault("MIGRATION_TEST_MYSQL_USERNAME", "root"),
                 System.getenv().getOrDefault("MIGRATION_TEST_MYSQL_PASSWORD", ""));
-             Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(
-                     "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND type = 'SQL'")) {
-            result.next();
-            assertEquals(6, result.getInt(1));
+             Statement statement = connection.createStatement()) {
+            try (ResultSet historyTable = statement.executeQuery(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'flyway_schema_history'")) {
+                historyTable.next();
+                if (historyTable.getInt(1) == 0) {
+                    return 0;
+                }
+            }
+            try (ResultSet result = statement.executeQuery(
+                    "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND type = 'SQL'")) {
+                result.next();
+                return result.getInt(1);
+            }
         }
     }
 }

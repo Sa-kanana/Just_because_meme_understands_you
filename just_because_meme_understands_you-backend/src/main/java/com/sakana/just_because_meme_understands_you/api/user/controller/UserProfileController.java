@@ -44,10 +44,11 @@ public class UserProfileController {
                                                  HttpServletRequest request,
                                                  @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
                                                  @RequestParam(value = "size", required = false, defaultValue = "10") Integer size,
-                                                 @RequestParam(value = "status", required = false) Integer status) {
+                                                 @RequestParam(value = "status", required = false) Integer status,
+                                                 @RequestParam(value = "sort", required = false, defaultValue = "latest") String sort) {
         Long targetUserId = RequestIdParser.parseLong(userId, "userId");
         Long currentUserId = AuthContext.currentUserId(request);
-        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size, status));
+        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size, status, sort));
     }
 
     @GetMapping("/{userId}/favorites")

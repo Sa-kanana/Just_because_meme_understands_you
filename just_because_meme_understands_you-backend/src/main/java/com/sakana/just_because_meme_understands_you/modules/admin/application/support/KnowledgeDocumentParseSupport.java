@@ -2,6 +2,8 @@ package com.sakana.just_because_meme_understands_you.modules.admin.application.s
 
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -19,20 +21,32 @@ import java.util.Set;
  */
 public final class KnowledgeDocumentParseSupport {
 
-    public static final long MAX_FILE_BYTES = 15L * 1024 * 1024;
-    public static final int MAX_CONTENT_CHARS = 200_000;
+    public static final long MAX_FILE_BYTES = 25L * 1024 * 1024;
+    public static final int MAX_CONTENT_CHARS = 1_000_000;
 
+    private static final Logger logger = LoggerFactory.getLogger(KnowledgeDocumentParseSupport.class);
     private static final Set<String> ALLOWED_EXT = Set.of("md", "markdown", "pdf");
 
     private KnowledgeDocumentParseSupport() {
     }
 
     public static ParsedKnowledgeDocument parse(MultipartFile file) {
+        KnowledgeUploadProperties defaults = new KnowledgeUploadProperties();
+        return parse(file, defaults);
+    }
+
+    public static ParsedKnowledgeDocument parse(
+            MultipartFile file,
+            KnowledgeUploadProperties properties) {
+        long startedAt = System.nanoTime();
         if (file == null || file.isEmpty()) {
             throw new BizException(Result.CODE_BAD_REQUEST, "请上传文件");
         }
-        if (file.getSize() > MAX_FILE_BYTES) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "文件不能超过 15MB");
+        long fileBytes = file.getSize();
+        long maxFileBytes = properties.getMaxFileSize().toBytes();
+        if (fileBytes > maxFileBytes) {
+            throw new BizException(Result.CODE_BAD_REQUEST,
+                    "文件超过允许大小 " + maxFileBytes + " 字节");
         }
         String originalName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim();
         String ext = extensionOf(originalName);
@@ -50,10 +64,17 @@ public final class KnowledgeDocumentParseSupport {
             if (!StringUtils.hasText(content)) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "未能从文件中提取到有效文本");
             }
-            if (content.length() > MAX_CONTENT_CHARS) {
-                content = content.substring(0, MAX_CONTENT_CHARS);
+            if (content.length() > properties.getMaxContentChars()) {
+                throw new BizException(Result.CODE_BAD_REQUEST,
+                        "提取正文超过 " + properties.getMaxContentChars()
+                                + " 个字符，请拆分文件后重新上传");
             }
             String title = titleFromFilename(originalName);
+            logger.info("Knowledge file parsed ext={} bytes={} chars={} elapsed_ms={}",
+                    ext,
+                    fileBytes,
+                    content.length(),
+                    (System.nanoTime() - startedAt) / 1_000_000L);
             return new ParsedKnowledgeDocument(title, content, originalName, ext);
         } catch (BizException e) {
             throw e;
@@ -77,10 +98,21 @@ public final class KnowledgeDocumentParseSupport {
             if (document.isEncrypted()) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "不支持加密 PDF");
             }
+            StringBuilder pages = new StringBuilder();
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
-            String text = stripper.getText(document);
-            return text == null ? "" : text.trim();
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                String pageText = stripper.getText(document);
+                if (page > 1) {
+                    pages.append('\f');
+                }
+                if (pageText != null) {
+                    pages.append(pageText.trim());
+                }
+            }
+            return pages.toString().trim();
         }
     }
 

@@ -16,7 +16,6 @@ import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiSe
 import com.sakana.just_because_meme_understands_you.modules.ai.application.AiSearchPreparation;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiAnswerCache;
-import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiBusinessContextAssembler;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiRateLimiter;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.TokenBudgetTrimmer;
 import lombok.extern.slf4j.Slf4j;
@@ -25,14 +24,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
@@ -41,7 +38,8 @@ import com.sakana.just_because_meme_understands_you.common.validation.RequestIdP
 public class AiSearchServiceImpl implements IAiSearchService {
 
     // 提示词或模型策略变化时同步升级，避免复用旧流水线生成的答案。
-    private static final String AI_ANSWER_CACHE_PIPELINE_VERSION = "meme-search-v2";
+    private static final String AI_ANSWER_CACHE_PIPELINE_VERSION = "meme-search-v5-vector-retrieval";
+    private static final String COMPLETED_MESSAGE_STATUS = "COMPLETED";
 
     private final MemeAgentClient memeAgentClient;
     private final MemeAgentProperties properties;
@@ -50,7 +48,6 @@ public class AiSearchServiceImpl implements IAiSearchService {
     private final TokenBudgetTrimmer tokenBudgetTrimmer;
     private final AiAnswerCache aiAnswerCache;
     private final AiRateLimiter aiRateLimiter;
-    private final AiBusinessContextAssembler businessContextAssembler;
     private final ObjectMapper objectMapper;
 
     public AiSearchServiceImpl(MemeAgentClient memeAgentClient,
@@ -60,7 +57,6 @@ public class AiSearchServiceImpl implements IAiSearchService {
                                TokenBudgetTrimmer tokenBudgetTrimmer,
                                AiAnswerCache aiAnswerCache,
                                AiRateLimiter aiRateLimiter,
-                               AiBusinessContextAssembler businessContextAssembler,
                                ObjectMapper objectMapper) {
         this.memeAgentClient = memeAgentClient;
         this.properties = properties;
@@ -69,14 +65,12 @@ public class AiSearchServiceImpl implements IAiSearchService {
         this.tokenBudgetTrimmer = tokenBudgetTrimmer;
         this.aiAnswerCache = aiAnswerCache;
         this.aiRateLimiter = aiRateLimiter;
-        this.businessContextAssembler = businessContextAssembler;
         this.objectMapper = objectMapper;
     }
 
 
     @Override
     public AiSearchPreparation prepareSearch(Long userId, AiSearchStreamRequestDTO request) {
-        long streamStartedAtNanos = System.nanoTime();
         if (!memeAgentClient.isConfigured()) {
             throw new BizException(Result.CODE_ERROR, "AI 搜索服务未配置");
         }
@@ -117,55 +111,20 @@ public class AiSearchServiceImpl implements IAiSearchService {
         if (cached.isPresent()) {
             String answer = cached.get();
             //返回拼接好的缓存答案流
-            AtomicLong firstTokenAtNanos = new AtomicLong();
-            AtomicBoolean doneReceived = new AtomicBoolean(false);
-            AtomicBoolean errorReceived = new AtomicBoolean(false);
-            AtomicReference<String> finishReason = new AtomicReference<>("cache");
             Flux<ServerSentEvent<String>> cachedEvents = Mono.fromRunnable(() -> {
-                        saveMessage(sessionId, "assistant", answer, requestId);
+                        saveAssistantMessage(sessionId, requestId, answer, "COMPLETED");
                         touchSession(sessionId);
                     })
                     // MyBatis/JDBC 写入使用有界弹性线程池，避免阻塞响应式或 Servlet 请求线程。
                     .subscribeOn(Schedulers.boundedElastic())
-                    .thenMany(Flux.concat(sessionEvent, replayCachedAnswer(requestId, answer)))
-                    .doOnNext(event -> {
-                        observeCompletionEvent(event, doneReceived, errorReceived, finishReason);
-                        observeFirstToken(event, firstTokenAtNanos);
-                    })
-                    .doOnComplete(() -> logAiStreamMetrics(
-                            requestId,
-                            streamStartedAtNanos,
-                            firstTokenAtNanos,
-                            true,
-                            doneReceived,
-                            errorReceived,
-                            finishReason,
-                            SignalType.ON_COMPLETE))
-                    .doOnError(error -> logAiStreamMetrics(
-                            requestId,
-                            streamStartedAtNanos,
-                            firstTokenAtNanos,
-                            true,
-                            doneReceived,
-                            errorReceived,
-                            finishReason,
-                            SignalType.ON_ERROR))
-                    .doOnCancel(() -> logAiStreamMetrics(
-                            requestId,
-                            streamStartedAtNanos,
-                            firstTokenAtNanos,
-                            true,
-                            doneReceived,
-                            errorReceived,
-                            finishReason,
-                            SignalType.CANCEL));
+                    .thenMany(Flux.concat(sessionEvent, replayCachedAnswer(requestId, answer)));
             return new AiSearchPreparation(sessionId, requestId, cachedEvents);
         }
         //如果缓存未命中
         StringBuilder assistantBuffer = new StringBuilder();
         AtomicBoolean doneReceived = new AtomicBoolean(false);
         AtomicBoolean errorReceived = new AtomicBoolean(false);
-        AtomicLong firstTokenAtNanos = new AtomicLong();
+        AtomicBoolean vectorEvidenceReceived = new AtomicBoolean(false);
         AtomicReference<String> finishReason = new AtomicReference<>("");
         long idleTimeoutMs = Math.max(1L, properties.getAi().getStreamIdleTimeoutMs());
 
@@ -175,7 +134,9 @@ public class AiSearchServiceImpl implements IAiSearchService {
                                 event, doneReceived, errorReceived, finishReason))
                         .map(this::sanitizeErrorEvent)
                         .doOnNext(event -> {
-                            observeFirstToken(event, firstTokenAtNanos);
+                            if (event != null && "cite".equals(event.event())) {
+                                vectorEvidenceReceived.set(true);
+                            }
                             if (!doneReceived.get() && !errorReceived.get()) {
                                 accumulateAssistant(event, assistantBuffer);
                             }
@@ -196,8 +157,9 @@ public class AiSearchServiceImpl implements IAiSearchService {
                             if (doneReceived.get()
                                     && !errorReceived.get()
                                     && StringUtils.hasText(answer)) {
-                                saveMessage(sessionId, "assistant", answer, requestId);
-                                if (!finishReason.get().startsWith("fallback")) {
+                                saveAssistantMessage(sessionId, requestId, answer, "COMPLETED");
+                                if (!finishReason.get().startsWith("fallback")
+                                        && vectorEvidenceReceived.get()) {
                                     aiAnswerCache.put(userId, query, contextFingerprint, answer);
                                 }
                             }
@@ -205,76 +167,8 @@ public class AiSearchServiceImpl implements IAiSearchService {
                         })
                         // 流完成后的 MySQL/Redis 操作不占用 Reactor Netty 事件循环。
                         .subscribeOn(Schedulers.boundedElastic())
-                        .thenMany(Flux.<ServerSentEvent<String>>empty()))
-                .doOnComplete(() -> logAiStreamMetrics(
-                                requestId,
-                                streamStartedAtNanos,
-                                firstTokenAtNanos,
-                                false,
-                                doneReceived,
-                                errorReceived,
-                                finishReason,
-                                SignalType.ON_COMPLETE))
-                .doOnError(error -> logAiStreamMetrics(
-                        requestId,
-                        streamStartedAtNanos,
-                        firstTokenAtNanos,
-                        false,
-                        doneReceived,
-                        errorReceived,
-                        finishReason,
-                        SignalType.ON_ERROR))
-                .doOnCancel(() -> logAiStreamMetrics(
-                        requestId,
-                        streamStartedAtNanos,
-                        firstTokenAtNanos,
-                        false,
-                        doneReceived,
-                                errorReceived,
-                                finishReason,
-                                SignalType.CANCEL));
+                        .thenMany(Flux.<ServerSentEvent<String>>empty()));
         return new AiSearchPreparation(sessionId, requestId, events);
-    }
-
-    private void observeFirstToken(ServerSentEvent<String> event, AtomicLong firstTokenAtNanos) {
-        if (event != null && "token".equals(event.event())) {
-            firstTokenAtNanos.compareAndSet(0L, System.nanoTime());
-        }
-    }
-
-    private void logAiStreamMetrics(String requestId,
-                                   long streamStartedAtNanos,
-                                   AtomicLong firstTokenAtNanos,
-                                   boolean cacheHit,
-                                   AtomicBoolean doneReceived,
-                                   AtomicBoolean errorReceived,
-                                   AtomicReference<String> finishReason,
-                                   SignalType signalType) {
-        String outcome;
-        if (errorReceived.get()) {
-            outcome = firstTokenAtNanos.get() > 0 ? "error_after_token" : "error_before_token";
-        } else if (doneReceived.get()) {
-            outcome = "done";
-        } else if (signalType == SignalType.CANCEL) {
-            outcome = "cancelled";
-        } else if (signalType == SignalType.ON_COMPLETE) {
-            outcome = "incomplete";
-        } else {
-            outcome = "error_before_token";
-        }
-        long ttftMs = firstTokenAtNanos.get() > 0
-                ? (firstTokenAtNanos.get() - streamStartedAtNanos) / 1_000_000L
-                : -1L;
-        long totalMs = (System.nanoTime() - streamStartedAtNanos) / 1_000_000L;
-        log.info(
-                "ai_stream_metrics request_id={} outcome={} cache_hit={} finish_reason={} "
-                        + "ttft_ms={} total_ms={}",
-                requestId,
-                outcome,
-                cacheHit,
-                finishReason.get(),
-                ttftMs,
-                totalMs);
     }
 
 
@@ -417,8 +311,6 @@ public class AiSearchServiceImpl implements IAiSearchService {
                     .content(msg.getContent().trim())
                     .build());
         }
-        //组装相关知识
-        AiBusinessContextAssembler.AssembledContext assembled = businessContextAssembler.assemble(query);
         //构造DTO
         return MemeAgentStreamRequestDTO.builder()
                 .requestId(requestId)
@@ -428,8 +320,9 @@ public class AiSearchServiceImpl implements IAiSearchService {
                 .context(MemeAgentStreamRequestDTO.BusinessContext.builder()
                         .userId(String.valueOf(userId))
                         .locale("zh-CN")
-                        .hintMemeIds(assembled.hintMemeIds())
-                        .extra(assembled.extra())
+                        // 梗候选与相关度只由 MemeAgent 向量检索确定。
+                        .hintMemeIds(List.of())
+                        .extra(Map.of())
                         .build())
                 .maxTokens(Math.min(
                         Math.max(64, properties.getAi().getMaxOutputTokens()),
@@ -486,9 +379,17 @@ public class AiSearchServiceImpl implements IAiSearchService {
      * @return
      */
     private List<AiChatMessage> loadHistory(Long sessionId) {
-        return messageMapper.selectList(new LambdaQueryWrapper<AiChatMessage>()
+        List<AiChatMessage> messages = messageMapper.selectList(new LambdaQueryWrapper<AiChatMessage>()
                 .eq(AiChatMessage::getSessionId, sessionId)
                 .orderByAsc(AiChatMessage::getCreateTime));
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        // 停止或失败的回答继续保留在会话历史供前端展示，但不作为模型上下文。
+        return messages.stream()
+                .filter(Objects::nonNull)
+                .filter(message -> COMPLETED_MESSAGE_STATUS.equalsIgnoreCase(message.getStatus()))
+                .toList();
     }
 
     /**
@@ -502,6 +403,43 @@ public class AiSearchServiceImpl implements IAiSearchService {
         AiChatMessage message = new AiChatMessage();
         message.setSessionId(sessionId);
         message.setRole(role);
+        message.setStatus("COMPLETED");
+        message.setContent(content);
+        message.setRequestId(requestId);
+        message.setTokenEstimate(tokenBudgetTrimmer.estimateTokens(content));
+        message.setCreateTime(LocalDateTime.now());
+        messageMapper.insert(message);
+    }
+
+    @Override
+    public void persistStoppedAnswer(Long sessionId, String requestId, String content) {
+        if (sessionId == null || !StringUtils.hasText(requestId) || !StringUtils.hasText(content)) {
+            return;
+        }
+        saveAssistantMessage(sessionId, requestId, content, "STOPPED");
+        touchSession(sessionId);
+    }
+
+    private void saveAssistantMessage(Long sessionId, String requestId, String content, String status) {
+        List<AiChatMessage> existingMessages = messageMapper.selectList(new LambdaQueryWrapper<AiChatMessage>()
+                .eq(AiChatMessage::getSessionId, sessionId)
+                .eq(AiChatMessage::getRole, "assistant")
+                .eq(AiChatMessage::getRequestId, requestId)
+                .orderByDesc(AiChatMessage::getCreateTime)
+                .last("LIMIT 1"));
+        if (existingMessages != null && !existingMessages.isEmpty()) {
+            AiChatMessage existingMessage = existingMessages.get(0);
+            existingMessage.setContent(content);
+            existingMessage.setStatus(status);
+            existingMessage.setTokenEstimate(tokenBudgetTrimmer.estimateTokens(content));
+            messageMapper.updateById(existingMessage);
+            return;
+        }
+
+        AiChatMessage message = new AiChatMessage();
+        message.setSessionId(sessionId);
+        message.setRole("assistant");
+        message.setStatus(status);
         message.setContent(content);
         message.setRequestId(requestId);
         message.setTokenEstimate(tokenBudgetTrimmer.estimateTokens(content));

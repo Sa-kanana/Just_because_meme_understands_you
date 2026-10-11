@@ -11,16 +11,20 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
 @RestController
-@RequestMapping("/v1/admin/users")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@RequestMapping("/admin/v1/users")
 public class AdminUserController {
 
     @Resource
@@ -33,9 +37,10 @@ public class AdminUserController {
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "status", required = false) Integer status,
             @RequestParam(value = "role", required = false) String role,
+            @RequestParam(value = "deleted", required = false, defaultValue = "false") boolean deleted,
             HttpServletRequest request) {
-        AdminAuthSupport.requireAdmin(request);
-        return Result.success(adminUserService.page(page, size, keyword, status, role));
+        Long operatorId = AdminAuthSupport.requireAdmin(request);
+        return Result.success(adminUserService.page(operatorId, page, size, keyword, status, role, deleted));
     }
 
     @PatchMapping("/{id}")
@@ -52,5 +57,23 @@ public class AdminUserController {
             return Result.success(adminUserService.updateStatus(operatorId, targetId, body.getStatus()));
         }
         return Result.success(adminUserService.updateRole(operatorId, targetId, body.getRole()));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<AdminUserListItemVO> deleteUser(
+            @PathVariable("id") String id,
+            HttpServletRequest request) {
+        Long operatorId = AdminAuthSupport.requireAdmin(request);
+        Long targetId = RequestIdParser.parseLongId(id, "userId");
+        return Result.success(adminUserService.delete(operatorId, targetId));
+    }
+
+    @PostMapping("/{id}/restore")
+    public Result<AdminUserListItemVO> restoreUser(
+            @PathVariable("id") String id,
+            HttpServletRequest request) {
+        Long operatorId = AdminAuthSupport.requireAdmin(request);
+        Long targetId = RequestIdParser.parseLongId(id, "userId");
+        return Result.success(adminUserService.restore(operatorId, targetId));
     }
 }

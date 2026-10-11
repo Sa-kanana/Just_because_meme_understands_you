@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import httpx
 import openai
+
 
 logger = logging.getLogger(__name__)
 _sleep = asyncio.sleep
@@ -58,19 +58,9 @@ async def run_with_retry(
     if max_retries < 0:
         raise ValueError("max_retries cannot be negative")
 
-    started_at = time.monotonic()
     for attempt in range(1, max_retries + 2):
         try:
             result = await asyncio.wait_for(operation(), timeout=timeout_seconds)
-            logger.info(
-                "upstream_call_metrics stage=%s outcome=success attempts=%s retry_count=%s "
-                "duration_ms=%s request_id=%s",
-                stage,
-                attempt,
-                attempt - 1,
-                int((time.monotonic() - started_at) * 1000),
-                request_id,
-            )
             return result
         except asyncio.CancelledError:
             raise
@@ -82,15 +72,6 @@ async def run_with_retry(
                     attempt,
                     request_id,
                     type(error).__name__,
-                )
-                logger.info(
-                    "upstream_call_metrics stage=%s outcome=failed attempts=%s retry_count=%s "
-                    "duration_ms=%s request_id=%s",
-                    stage,
-                    attempt,
-                    attempt - 1,
-                    int((time.monotonic() - started_at) * 1000),
-                    request_id,
                 )
                 raise UpstreamRetriesExhausted(stage, attempt) from error
 

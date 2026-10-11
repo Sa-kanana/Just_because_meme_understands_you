@@ -2,7 +2,7 @@ package com.sakana.just_because_meme_understands_you.modules.home.application.im
 
 import com.sakana.just_because_meme_understands_you.modules.home.application.IHomePageService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
-import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.api.user.vo.HomeBootstrapVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.HomeFeedVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.HomeHotTagVO;
@@ -34,7 +34,7 @@ public class HomePageServiceImpl implements IHomePageService {
     private HomeHotTagSupport homeHotTagSupport;
 
     @Resource
-    private MemeAgentProperties memeAgentProperties;
+    private MemeCatalogPort memeCatalogPort;
 
     @Override
     public HomeBootstrapVO bootstrap(int hotLimit, int tagLimit, String feedSort, int feedSize) {
@@ -48,10 +48,10 @@ public class HomePageServiceImpl implements IHomePageService {
         vo.setHotTags(homeHotTagSupport.listHotTags(safeTagLimit));
         vo.setHotMemes(memeService.listHotMemes(safeHotLimit));
 
-        MemeAgentProperties.Crawl crawl = memeAgentProperties.getCrawl();
-        int liveLimit = crawl != null ? Math.max(1, Math.min(crawl.getLiveLimit(), 16)) : 8;
-        int liveHours = crawl != null ? Math.max(1, crawl.getLiveHours()) : 48;
-        long publisherId = crawl != null ? crawl.getPublisherUserId() : 0L;
+        MemeCatalogPort.CrawlSettings crawlSettings = memeCatalogPort.crawlSettings();
+        int liveLimit = Math.max(1, Math.min(crawlSettings.liveLimit(), 16));
+        int liveHours = Math.max(1, crawlSettings.liveHours());
+        long publisherId = crawlSettings.publisherUserId();
         vo.setLiveMemes(memeService.listLiveMemes(publisherId, liveHours, liveLimit));
 
         PageVO<MemeListItemVO> feedPage = memeService.pageMemeFeed(1, safeFeedSize, safeSort, null);

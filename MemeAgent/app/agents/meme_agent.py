@@ -13,7 +13,6 @@ AGENT_TOOL_ALLOWLIST = frozenset(
     {
         "search_meme_knowledge",
         "search_admin_knowledge",
-        "search_live_meme_web",
     }
 )
 

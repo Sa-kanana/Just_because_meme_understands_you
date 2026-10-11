@@ -649,6 +649,45 @@ export function publishMeme(payload = {}) {
 }
 
 /**
+ * 提交本人已发布梗的修改稿，等待管理员审核
+ * PUT /memes/{memeId}
+ * @param {number|string} memeId - 被修改梗的 ID
+ * @param {Object} payload - 只包含可编辑正文、标签和资源
+ * @returns {Promise<{ revisionId:number, memeId:number, status:string, createdAt:string }>}
+ */
+export function submitMemeEdit(memeId, payload = {}) {
+  const id = memeId != null ? String(memeId).trim() : ''
+  if (!/^\d+$/.test(id) || Number(id) <= 0) {
+    return Promise.reject(new Error('缺少有效的梗 id'))
+  }
+  const resources = Array.isArray(payload.resources)
+    ? payload.resources
+        .map((item, index) => ({
+          type: String(item?.type || 'link').trim() || 'link',
+          url: String(item?.url || '').trim(),
+          title: String(item?.title || '').trim(),
+          sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index,
+        }))
+        .filter((item) => item.url && item.title)
+    : []
+  const body = {
+    name: String(payload.name || '').trim(),
+    introduction: String(payload.introduction || '').trim(),
+    image: String(payload.image || '').trim(),
+    tagIds: Array.isArray(payload.tagIds) ? payload.tagIds : [],
+    resourceUrls: Array.isArray(payload.resourceUrls) ? payload.resourceUrls : [],
+    resources,
+  }
+  return request(`/memes/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  }).then((res) => {
+    if (res && Number(res.code) === 1 && res.data) return res.data
+    throw new Error((res && (res.message || res.msg)) || '提交修改失败')
+  })
+}
+
+/**
  * 删除自己发布的梗
  * DELETE /memes/{memeId}
  * @param {number|string} memeId

@@ -37,5 +37,12 @@ public class MemeAgentKnowledgeIngestRequestDTO {
 
         @JsonProperty("content_hash")
         private String contentHash;
+
+        /** 中文注释：标准化正文的 SHA-256 去重指纹。 */
+        @JsonProperty("content_sha256")
+        private String contentSha256;
+
+        /** 中文注释：单调递增的向量任务版本，用于拒绝过期事件。 */
+        private Long revision;
     }
 }

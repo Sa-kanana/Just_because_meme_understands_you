@@ -13,6 +13,7 @@ import com.sakana.just_because_meme_understands_you.modules.auth.application.ICa
 import com.sakana.just_because_meme_understands_you.modules.auth.application.UserSessionRevoker;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
+import com.sakana.just_because_meme_understands_you.modules.user.application.UserRoleService;
 import com.sakana.just_because_meme_understands_you.common.util.DigestUtil;
 import com.sakana.just_because_meme_understands_you.common.util.EmailValidatorUtil;
 import com.sakana.just_because_meme_understands_you.modules.auth.application.support.PasswordPolicy;
@@ -38,6 +39,7 @@ import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -82,6 +84,9 @@ public class AuthServiceImpl implements IAuthService {
     @Resource
     private ICaptchaService captchaService;
 
+    @Resource
+    private UserRoleService userRoleService;
+
     /** 发件人邮箱地址，必须与授权用户一致，避免 QQ SMTP 501 报错 */
     @Value("${spring.mail.username}")
     private String mailFrom;
@@ -97,6 +102,16 @@ public class AuthServiceImpl implements IAuthService {
     @Transactional
     @Override
     public AuthTokenBundleVO login(LoginRequestDTO request) {
+        return authenticate(request, false);
+    }
+
+    @Transactional
+    @Override
+    public AuthTokenBundleVO loginAdmin(LoginRequestDTO request) {
+        return authenticate(request, true);
+    }
+
+    private AuthTokenBundleVO authenticate(LoginRequestDTO request, boolean adminLogin) {
         captchaService.verifyAndConsume(request.getCaptchaId(), request.getCaptchaCode());
 
         String email = request.getEmail();
@@ -118,18 +133,32 @@ public class AuthServiceImpl implements IAuthService {
         }
         // 确保为正常用户
         ensureUserActive(user);
+        List<String> roleCodes = loadRoleCodes(user);
+        if (adminLogin && roleCodes.stream().noneMatch(role ->
+                UserRoleService.ADMIN.equals(role) || UserRoleService.SUPER_ADMIN.equals(role))) {
+            throw new BizException(Result.CODE_FORBIDDEN, "该账号没有管理端权限");
+        }
 
         String userId = String.valueOf(user.getId());
         // 生成访问令牌
-        String accessToken = generateAccessToken(user, loginType);
+        String accessToken = generateAccessToken(user, loginType, roleCodes);
         String refreshToken = generateRefreshToken(userId, loginType);
         storeRefreshToken(refreshToken, userId);
         // 构建令牌包
-        return buildTokenBundle(accessToken, refreshToken, user);
+        return buildTokenBundle(accessToken, refreshToken, user, roleCodes);
     }
 
     @Override
     public AuthTokenBundleVO renewLogin(String refreshToken) {
+        return renewLogin(refreshToken, false);
+    }
+
+    @Override
+    public AuthTokenBundleVO renewAdminLogin(String refreshToken) {
+        return renewLogin(refreshToken, true);
+    }
+
+    private AuthTokenBundleVO renewLogin(String refreshToken, boolean adminLogin) {
         if (!StringUtils.hasText(refreshToken)) {
             throw new BizException(Result.CODE_REFRESH_TOKEN_EXPIRED, "刷新令牌缺失或已过期，请重新登录");
         }
@@ -181,11 +210,16 @@ public class AuthServiceImpl implements IAuthService {
             loginType = AuthConstants.LOGIN_TYPE_EMAIL;
         }
         // 生成新的访问令牌
-        String newAccessToken = generateAccessToken(user, loginType);
+        List<String> roleCodes = loadRoleCodes(user);
+        if (adminLogin && roleCodes.stream().noneMatch(role ->
+                UserRoleService.ADMIN.equals(role) || UserRoleService.SUPER_ADMIN.equals(role))) {
+            throw new BizException(Result.CODE_FORBIDDEN, "该账号没有管理端权限");
+        }
+        String newAccessToken = generateAccessToken(user, loginType, roleCodes);
         String newRefreshToken = generateRefreshToken(userIdStr, loginType);
         storeRefreshToken(newRefreshToken, userIdStr);
         // 构建令牌包
-        return buildTokenBundle(newAccessToken, newRefreshToken, user);
+        return buildTokenBundle(newAccessToken, newRefreshToken, user, roleCodes);
     }
 
     @Transactional
@@ -221,9 +255,9 @@ public class AuthServiceImpl implements IAuthService {
             if (StringUtils.hasText(avatarUrl)) {
                 user.setAvatar(avatarUrl.trim());
             }
-            user.setRole("ROLE_USER");
             user.setStatus(UserStatusConstants.ACTIVE);
             userService.save(user);
+            userRoleService.replaceRoles(user.getId(), List.of(UserRoleService.USER));
 
             UserAuth auth = new UserAuth();
             auth.setUserId(user.getId());
@@ -247,11 +281,12 @@ public class AuthServiceImpl implements IAuthService {
             }
         }
 
+        List<String> roleCodes = loadRoleCodes(user);
         String userId = String.valueOf(user.getId());
-        String accessToken = generateAccessToken(user, AuthConstants.LOGIN_TYPE_GITHUB);
+        String accessToken = generateAccessToken(user, AuthConstants.LOGIN_TYPE_GITHUB, roleCodes);
         String refreshToken = generateRefreshToken(userId, AuthConstants.LOGIN_TYPE_GITHUB);
         storeRefreshToken(refreshToken, userId);
-        return buildTokenBundle(accessToken, refreshToken, user);
+        return buildTokenBundle(accessToken, refreshToken, user, roleCodes);
     }
 
     private String resolveUniqueNickname(String loginName, String displayName, String githubId) {
@@ -322,10 +357,10 @@ public class AuthServiceImpl implements IAuthService {
         // 创建用户（主键由 MyBatis-Plus 雪花算法自动填充）
         User user = new User();
         user.setNickname(nickname);
-        user.setRole("ROLE_USER");
         user.setStatus(UserStatusConstants.ACTIVE);
         userService.save(user);
         long userId = user.getId();
+        userRoleService.replaceRoles(userId, List.of(UserRoleService.USER));
 
         // 创建用户认证信息
         UserAuth userAuth = new UserAuth();
@@ -490,6 +525,9 @@ public class AuthServiceImpl implements IAuthService {
      * 校验用户状态，status 为 0 视为禁用。
      */
     private void ensureUserActive(User user) {
+        if (user.getDeletedAt() != null) {
+            throw new BizException(Result.CODE_ERROR, "账号已注销，无法登录");
+        }
         if (user.getStatus() == null || user.getStatus() == UserStatusConstants.DISABLED) {
             throw new BizException(Result.CODE_ERROR, "账号已被禁用");
         }
@@ -556,10 +594,11 @@ public class AuthServiceImpl implements IAuthService {
         return responseVO;
     }
 
-    private String generateAccessToken(User user, String loginType) {
+    private String generateAccessToken(User user, String loginType, List<String> roleCodes) {
         Map<String, Object> claims = new HashMap<>(4);
         claims.put(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS);
-        claims.put(AuthConstants.CLAIM_ROLE, user.getRole());
+        claims.put(AuthConstants.CLAIM_ROLES, roleCodes);
+        claims.put(AuthConstants.CLAIM_ROLE, toAuthority(roleCodes.isEmpty() ? UserRoleService.USER : roleCodes.get(0)));
         claims.put(AuthConstants.CLAIM_LOGIN_TYPE, loginType);
         claims.put(AuthConstants.CLAIM_TOKEN_VERSION, userSessionRevoker.currentTokenVersion(String.valueOf(user.getId())));
         return jwtUtil.generateToken(String.valueOf(user.getId()), claims, accessTokenExpirationMillis);
@@ -578,13 +617,14 @@ public class AuthServiceImpl implements IAuthService {
         userSessionRevoker.registerSession(refreshToken, userId, refreshTokenExpirationMillis);
     }
 
-    private AuthTokenBundleVO buildTokenBundle(String accessToken, String refreshToken, User user) {
+    private AuthTokenBundleVO buildTokenBundle(String accessToken, String refreshToken, User user, List<String> roleCodes) {
         LoginUserVO userVO = new LoginUserVO();
         userVO.setId(user.getId());
         userVO.setNickname(user.getNickname());
         userVO.setAvatar(ossUrlHelper.toPublicUrl(user.getAvatar()));
         userVO.setSignature(user.getSignature());
-        userVO.setRole(user.getRole());
+        userVO.setRole(toAuthority(roleCodes.isEmpty() ? UserRoleService.USER : roleCodes.get(0)));
+        userVO.setRoles(roleCodes);
         userVO.setStatus(user.getStatus());
 
         AuthTokenBundleVO bundleVO = new AuthTokenBundleVO();
@@ -592,5 +632,18 @@ public class AuthServiceImpl implements IAuthService {
         bundleVO.setRefreshToken(refreshToken);
         bundleVO.setUser(userVO);
         return bundleVO;
+    }
+
+    private List<String> loadRoleCodes(User user) {
+        List<String> roleCodes = userRoleService.getRoleCodes(user.getId());
+        if (roleCodes == null || roleCodes.isEmpty()) {
+            userRoleService.addRole(user.getId(), UserRoleService.USER);
+            return List.of(UserRoleService.USER);
+        }
+        return roleCodes;
+    }
+
+    private String toAuthority(String roleCode) {
+        return roleCode.startsWith("ROLE_") ? roleCode : "ROLE_" + roleCode;
     }
 }

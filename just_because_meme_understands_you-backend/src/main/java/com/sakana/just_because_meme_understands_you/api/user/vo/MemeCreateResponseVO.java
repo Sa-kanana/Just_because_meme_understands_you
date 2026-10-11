@@ -11,7 +11,7 @@ import lombok.Data;
 public class MemeCreateResponseVO {
 
     /** 新建的梗 id */
-    private Integer memeId;
+    private Long memeId;
 
     /** 状态（1.正常，2.审核中，3.下架） */
     private Integer status;

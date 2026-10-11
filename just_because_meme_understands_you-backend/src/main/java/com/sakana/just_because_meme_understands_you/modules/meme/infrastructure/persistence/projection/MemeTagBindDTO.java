@@ -12,7 +12,7 @@ import lombok.Data;
 public class MemeTagBindDTO {
 
     /** 所属梗 id */
-    private Integer memeId;
+    private Long memeId;
 
     /** 标签 id */
     private Integer id;
@@ -20,6 +20,6 @@ public class MemeTagBindDTO {
     /** 标签名 */
     private String name;
 
-    /** 相关梗数量（DB 中为 varchar，保持原样回填到实体） */
-    private String relatedQuantity;
+    /** 相关梗数量（数据库字段为 INT） */
+    private Integer relatedQuantity;
 }

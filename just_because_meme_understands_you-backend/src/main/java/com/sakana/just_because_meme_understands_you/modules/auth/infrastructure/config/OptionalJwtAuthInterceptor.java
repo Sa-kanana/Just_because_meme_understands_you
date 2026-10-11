@@ -10,7 +10,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerInterceptor;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 公开接口可选登录：携带有效 access token 时写入 userId，不阻断匿名访问。
@@ -53,11 +57,33 @@ public class OptionalJwtAuthInterceptor implements HandlerInterceptor {
             if (!userSessionRevoker.isTokenVersionValid(userId, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
                 return true;
             }
-            request.setAttribute(AuthContext.ATTR_USER_ID, userId);
-            request.setAttribute(AuthContext.ATTR_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
+            AuthContext.establish(request, userId, extractRoleCodes(claims));
         } catch (Exception ignored) {
             // 无效 token 按匿名处理
         }
         return true;
+    }
+
+    @Override
+    public void afterCompletion(@NonNull HttpServletRequest request,
+                                @NonNull HttpServletResponse response,
+                                @NonNull Object handler,
+                                Exception exception) {
+        SecurityContextHolder.clearContext();
+    }
+
+    private List<String> extractRoleCodes(Claims claims) {
+        Object rolesClaim = claims.get(AuthConstants.CLAIM_ROLES);
+        List<String> roleValues = new ArrayList<>();
+        if (rolesClaim instanceof Collection<?> roles) {
+            roles.forEach(role -> roleValues.add(String.valueOf(role)));
+        }
+        if (roleValues.isEmpty()) {
+            Object legacyRole = claims.get(AuthConstants.CLAIM_ROLE);
+            if (legacyRole != null) {
+                roleValues.add(String.valueOf(legacyRole));
+            }
+        }
+        return roleValues.stream().map(AuthContext::normalizeRoleCode).filter(role -> !role.isEmpty()).distinct().toList();
     }
 }

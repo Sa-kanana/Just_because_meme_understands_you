@@ -63,7 +63,8 @@ export function uploadAdminKnowledgeFile({
   return request('/admin/knowledge-documents/uploads', {
     method: 'POST',
     body: form,
-    timeout: 120000,
+    // 中文注释：25 MB PDF 需要同步完成内存解析与 MySQL/outbox 写入，允许最长 5 分钟。
+    timeout: 300000,
   }).then((res) => assertData(res, '上传知识文件失败'))
 }
 
@@ -90,4 +91,15 @@ export function reindexAdminKnowledge(id) {
   return request(`/admin/knowledge-documents/${encodeURIComponent(docId)}/indexing-jobs`, {
     method: 'POST',
   }).then((res) => assertData(res, '重新灌库失败'))
+}
+
+/** 查询指定向量任务的持久化状态。 */
+export function fetchAdminKnowledgeTask(id, taskId) {
+  const docId = id != null ? String(id).trim() : ''
+  const jobId = taskId != null ? String(taskId).trim() : ''
+  if (!docId || !jobId) return Promise.reject(new Error('缺少文档或任务 id'))
+  return request(
+    `/admin/knowledge-documents/${encodeURIComponent(docId)}/indexing-jobs/${encodeURIComponent(jobId)}`,
+    { method: 'GET' }
+  ).then((res) => assertData(res, '获取向量任务状态失败'))
 }

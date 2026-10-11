@@ -45,11 +45,6 @@ public class User {
     private LocalDate birthday;
 
     /**
-     * 角色（ROLE_USER, ROLE_ADMIN）
-     */
-    private String role;
-
-    /**
      * 状态：0 禁用，1 正常
      */
     private Integer status;
@@ -65,5 +60,9 @@ public class User {
      */
     @TableField("update_time")
     private LocalDateTime updateTime;
+
+    /** 逻辑删除时间；为 null 表示账号仍在使用，恢复账号时清空该字段。 */
+    @TableField("deleted_at")
+    private LocalDateTime deletedAt;
 }
 

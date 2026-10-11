@@ -23,5 +23,5 @@ public interface MemeTagRelationMapper extends BaseMapper<MemeTagRelation> {
      * @param memeIds 梗 id 列表，不能为空
      * @return 标签关联行列表
      */
-    List<MemeTagBindDTO> selectTagsByMemeIds(@Param("memeIds") List<Integer> memeIds);
+    List<MemeTagBindDTO> selectTagsByMemeIds(@Param("memeIds") List<Long> memeIds);
 }

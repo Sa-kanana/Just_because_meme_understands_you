@@ -4,8 +4,23 @@
       <a-select v-model="status" :options="statusOptions" style="width: 160px" @change="reload" />
       <a-button @click="reload">刷新</a-button>
     </div>
+    <div v-if="selectedKeys.length" class="batch-toolbar">
+      <span class="batch-selection">已选 {{ selectedRecords.length }} 条</span>
+      <a-button size="small" type="primary" :disabled="!eligibleReports('DISMISSED').length || saving" @click="openBatchResolution('DISMISSED')">
+        批量驳回 {{ eligibleReports('DISMISSED').length }}
+      </a-button>
+      <a-button size="small" status="danger" :disabled="!eligibleReports('OFFLINED').length || saving" @click="openBatchResolution('OFFLINED')">
+        批量下架梗 {{ eligibleReports('OFFLINED').length }}
+      </a-button>
+      <a-button size="small" status="danger" :disabled="!eligibleReports('COMMENT_HIDDEN').length || saving" @click="openBatchResolution('COMMENT_HIDDEN')">
+        批量隐藏评论 {{ eligibleReports('COMMENT_HIDDEN').length }}
+      </a-button>
+      <a-button size="small" type="text" :disabled="saving" @click="selectedKeys = []">清除选择</a-button>
+    </div>
     <a-table
       row-key="id"
+      v-model:selectedKeys="selectedKeys"
+      :row-selection="rowSelection"
       :columns="columns"
       :data="rows"
       :loading="loading"
@@ -60,7 +75,8 @@
       :ok-loading="saving"
       @ok="submitResolution"
     >
-      <p>举报 #{{ selected && selected.id }} · {{ selected && selected.targetType === 'COMMENT' ? '评论' : '梗' }} · {{ selected && selected.memeName }}</p>
+      <p v-if="selected">举报 #{{ selected.id }} · {{ selected.targetType === 'COMMENT' ? '评论' : '梗' }} · {{ selected.memeName }}</p>
+      <p v-else>将处理 {{ batchSelected.length }} 条符合条件的待处理举报；其他已处理或对象类型不匹配的选中项会跳过。</p>
       <blockquote v-if="selected && selected.targetType === 'COMMENT'" class="comment-context">{{ selected.commentContent }}</blockquote>
       <a-textarea v-model="note" placeholder="处理备注（选填，最多 500 字）" :max-length="500" show-word-limit />
     </a-modal>
@@ -73,6 +89,7 @@ import { fetchAdminReports, resolveAdminReport } from '@/api/adminReport'
 import { resolutionSuccessMessage } from '@/utils/reportFeedback.mjs'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import { toastError, toastSuccess } from '@/utils/uiFeedback'
+import { runBatchOperations } from '@/utils/batchOperations.mjs'
 
 const statusOptions = [
   { label: '待处理', value: 'PENDING' },
@@ -95,18 +112,26 @@ const columns = [
   { title: '操作', slotName: 'actions', width: 175 },
 ]
 const rows = ref([])
+const selectedKeys = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const status = ref('PENDING')
 const pagination = reactive({ current: 1, pageSize: 10, total: 0, showTotal: true, showPageSize: true })
 const dialogVisible = ref(false)
 const selected = ref(null)
+const batchSelected = ref([])
 const decision = ref('DISMISSED')
 const note = ref('')
 const decisionTitle = computed(() => decision.value === 'OFFLINED' ? '确认下架梗'
   : decision.value === 'COMMENT_HIDDEN' ? '确认隐藏评论' : '确认驳回举报')
+const rowSelection = { type: 'checkbox', showCheckedAll: true, onlyCurrent: true }
+const selectedRecords = computed(() => {
+  const selectedIds = new Set(selectedKeys.value.map(String))
+  return rows.value.filter((record) => selectedIds.has(String(record.id)))
+})
 
 async function load() {
+  selectedKeys.value = []
   loading.value = true
   try {
     const data = await fetchAdminReports({ page: pagination.current, size: pagination.pageSize, status: status.value })
@@ -123,18 +148,52 @@ function changePage(page) { pagination.current = page; load() }
 function changeSize(size) { pagination.pageSize = size; pagination.current = 1; load() }
 function openResolution(record, result) {
   selected.value = record
+  batchSelected.value = []
   decision.value = result
   note.value = ''
   dialogVisible.value = true
 }
+
+function eligibleReports(result) {
+  return selectedRecords.value.filter((record) => {
+    if (record.status !== 'PENDING') return false
+    if (result === 'OFFLINED') return record.targetType === 'MEME'
+    if (result === 'COMMENT_HIDDEN') return record.targetType === 'COMMENT'
+    return result === 'DISMISSED'
+  })
+}
+
+function openBatchResolution(result) {
+  const targets = eligibleReports(result)
+  if (!targets.length) return
+  selected.value = null
+  batchSelected.value = targets
+  decision.value = result
+  note.value = ''
+  dialogVisible.value = true
+}
+
 async function submitResolution() {
-  if (!selected.value || saving.value) return
+  if ((!selected.value && !batchSelected.value.length) || saving.value) return
   saving.value = true
   try {
-    await resolveAdminReport(selected.value.id, decision.value, note.value.trim())
-    toastSuccess(resolutionSuccessMessage(decision.value))
+    if (selected.value) {
+      await resolveAdminReport(selected.value.id, decision.value, note.value.trim())
+      toastSuccess(resolutionSuccessMessage(decision.value))
+    } else {
+      const result = await runBatchOperations(batchSelected.value, (record) =>
+        resolveAdminReport(record.id, decision.value, note.value.trim()))
+      if (result.failed.length === 0) {
+        toastSuccess(`${resolutionSuccessMessage(decision.value)} ${result.succeeded.length} 条`)
+      } else {
+        const reason = result.failed[0].error && result.failed[0].error.message
+        const message = `批量处理完成：成功 ${result.succeeded.length} 条，失败 ${result.failed.length} 条${reason ? `（${reason}）` : ''}`
+        if (!isAuthErrorHandled(result.failed[0].error)) toastError(message)
+      }
+    }
     dialogVisible.value = false
-    load()
+    batchSelected.value = []
+    await load()
   } catch (error) {
     if (!isAuthErrorHandled(error)) toastError(error.message || '处理失败')
   } finally {

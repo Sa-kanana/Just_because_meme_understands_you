@@ -11,8 +11,6 @@ public class UserStats {
     @TableId("user_id")
     private Long userId;
 
-    private Integer memeCount;
-
     private Integer likeReceived;
 
     private Integer favoriteCount;

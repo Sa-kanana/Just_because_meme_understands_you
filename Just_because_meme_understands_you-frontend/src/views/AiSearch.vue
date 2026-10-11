@@ -47,7 +47,7 @@
         <AiComposer
           ref="composer"
           v-model="draft"
-          :streaming="store.streaming"
+          :streaming="store.streaming || store.taskStatus === 'GENERATING'"
           @submit="onSubmit"
           @stop="onStop"
         />
@@ -82,6 +82,7 @@ export default {
   async mounted() {
     try {
       await this.store.loadSessions({ reset: true })
+      await this.store.resumeCurrentTask()
     } catch (e) {
       if (isAuthErrorHandled(e)) return
       toast.error(e.message || '加载会话失败')
@@ -91,7 +92,7 @@ export default {
     })
   },
   beforeUnmount() {
-    this.store.abortStream()
+    this.store.detachTaskEvents()
   },
   methods: {
     onNewChat() {
@@ -156,7 +157,10 @@ export default {
       }
     },
     onStop() {
-      this.store.abortStream()
+      this.store.stopCurrentTask().catch((e) => {
+        if (isAuthErrorHandled(e)) return
+        toast.error(e.message || '停止失败')
+      })
     },
     async onSubmit(query) {
       this.draft = ''

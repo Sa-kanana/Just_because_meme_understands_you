@@ -64,7 +64,7 @@ public class AuthController {
      * 登录
      * POST /v1/auth/sessions
      */
-    @PostMapping("/auth/sessions")
+    @PostMapping({"/auth/sessions", "/auth/login"})
     public Result<LoginResponseVO> login(
             @Valid @RequestBody LoginRequestDTO request,
             HttpServletResponse response) {

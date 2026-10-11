@@ -107,7 +107,7 @@
         <template #text>
           <ui-tabs v-model="activeTab" class="profile-tabs">
             <ui-tab-pane :label="`发布梗图 (${publishedDisplayTotal})`" name="published">
-              <div class="published-panel">
+              <div ref="publishedPanel" class="published-panel">
                 <div v-if="isOwnProfile" class="published-panel-header">
                   <div class="published-panel-head">
                     <p class="meme-section-kicker">MY MEMES</p>
@@ -124,21 +124,63 @@
                   </vs-button>
                 </div>
 
-                <div v-if="isOwnProfile" class="published-filter-bar">
-                  <button
-                    v-for="opt in publishedFilterOptions"
-                    :key="`pub-filter-${opt.key}`"
-                    type="button"
-                    class="published-filter-chip"
-                    :class="[
-                      `published-filter-chip--${opt.tone}`,
-                      { 'is-active': String(publishedStatusFilter) === String(opt.key) },
-                    ]"
-                    @click="setPublishedStatusFilter(opt.key)"
+                <div class="published-list-toolbar" :class="{ 'has-status-filter': isOwnProfile }">
+                  <div v-if="isOwnProfile" class="published-filter-bar">
+                    <button
+                      v-for="opt in publishedFilterOptions"
+                      :key="`pub-filter-${opt.key}`"
+                      type="button"
+                      class="published-filter-chip"
+                      :class="[
+                        `published-filter-chip--${opt.tone}`,
+                        { 'is-active': String(publishedStatusFilter) === String(opt.key) },
+                      ]"
+                      @click="setPublishedStatusFilter(opt.key)"
+                    >
+                      <span class="published-filter-label">{{ opt.label }}</span>
+                      <span class="published-filter-count">{{ opt.count }}</span>
+                    </button>
+                  </div>
+                  <ui-dropdown
+                    trigger="click"
+                    placement="bottom-end"
+                    class="published-sort-dropdown"
+                    @command="setPublishedSort"
                   >
-                    <span class="published-filter-label">{{ opt.label }}</span>
-                    <span class="published-filter-count">{{ opt.count }}</span>
-                  </button>
+                    <button
+                      ref="publishedSortTrigger"
+                      type="button"
+                      class="published-sort-trigger"
+                      :aria-label="`排序方式：${publishedSortLabel}`"
+                      aria-haspopup="listbox"
+                    >
+                      <span class="published-sort-trigger__icon"><i class="ri-sort-desc" aria-hidden="true" /></span>
+                      <span class="published-sort-trigger__label">排序</span>
+                      <span class="published-sort-trigger__value">{{ publishedSortLabel }}</span>
+                      <i class="ri-arrow-down-s-line published-sort-trigger__chevron" aria-hidden="true" />
+                    </button>
+                    <template #dropdown>
+                      <ui-dropdown-menu class="published-sort-menu" role="listbox" aria-label="梗图排序方式">
+                        <p class="published-sort-menu__heading">排列方式</p>
+                        <ui-dropdown-item
+                          v-for="option in publishedSortOptions"
+                          :key="option.value"
+                          :command="option.value"
+                          class="published-sort-option"
+                          role="option"
+                          :aria-selected="publishedSort === option.value"
+                        >
+                          <i :class="option.icon" class="published-sort-option__icon" aria-hidden="true" />
+                          <span class="published-sort-option__label">{{ option.label }}</span>
+                          <i
+                            v-if="publishedSort === option.value"
+                            class="ri-check-line published-sort-option__check"
+                            aria-hidden="true"
+                          />
+                        </ui-dropdown-item>
+                      </ui-dropdown-menu>
+                    </template>
+                  </ui-dropdown>
                 </div>
 
                 <div v-if="publishedLoading && !publishedList.length" class="published-skeleton">
@@ -162,6 +204,21 @@
                       :show-stats="true"
                       :show-author="false"
                     >
+                      <template #footer>
+                        <div class="published-card-footer">
+                          <p class="published-card-meta">{{ formatPublishedDate(item.releaseTime || item.createTime || item.updateTime) }}</p>
+                          <div
+                            v-if="isOwnProfile && item.editRevisionStatus"
+                            class="published-edit-review"
+                            :class="`published-edit-review--${String(item.editRevisionStatus).toLowerCase()}`"
+                          >
+                            <span>{{ editRevisionStatusLabel(item.editRevisionStatus) }}</span>
+                            <span v-if="['REJECTED', 'CANCELED'].includes(item.editRevisionStatus) && item.editRevisionNote" class="published-edit-review__note">
+                              {{ item.editRevisionNote }}
+                            </span>
+                          </div>
+                        </div>
+                      </template>
                       <template #title-extra>
                         <ui-dropdown
                           v-if="isOwnProfile && canVoluntaryOffline(item)"
@@ -180,6 +237,9 @@
                           </button>
                           <template #dropdown>
                             <ui-dropdown-menu>
+                          <ui-dropdown-item v-if="canEditPublishedMeme(item)" command="edit">
+                            <span class="published-menu-item"><i class="ri-edit-2-line" /> 修改内容</span>
+                          </ui-dropdown-item>
                               <ui-dropdown-item command="delete">
                                 <span class="published-menu-item published-menu-item--danger"><i class="ri-inbox-unarchive-line" /> 下架梗</span>
                               </ui-dropdown-item>
@@ -203,6 +263,9 @@
                           </button>
                           <template #dropdown>
                             <ui-dropdown-menu>
+                              <ui-dropdown-item v-if="canEditPublishedMeme(item)" command="edit">
+                                <span class="published-menu-item"><i class="ri-edit-2-line" /> 修改内容</span>
+                              </ui-dropdown-item>
                               <ui-dropdown-item command="restore">
                                 <span class="published-menu-item"><i class="ri-arrow-go-back-line" /> 重新上架</span>
                               </ui-dropdown-item>
@@ -347,6 +410,7 @@
                   </div>
 
                   <div
+                    ref="folderContentPanel"
                     class="folder-content"
                     :class="{ 'folder-content--batch-active': isOwnProfile && selectedMemeIds.length > 0 }"
                   >
@@ -1173,6 +1237,7 @@ import { getFollowStatus } from '@/api/follow'
 import { getUserSuppressionStatus } from '@/api/userSafety'
 import { useUserSafetyStore } from '@/stores/userSafety'
 import { canApplySafetyStatus } from '@/utils/userSafety.mjs'
+import { formatDateShort } from '@/utils/formatDate'
 
 export default {
   name: 'UserProfilePage',
@@ -1251,6 +1316,13 @@ export default {
       publishedPageSize: 12,
       publishedLoading: false,
       publishedStatusFilter: 'all',
+      publishedSort: 'latest',
+      publishedSortOptions: [
+        { value: 'latest', label: '最新发布', icon: 'ri-time-line' },
+        { value: 'views', label: '最多浏览', icon: 'ri-eye-line' },
+        { value: 'likes', label: '最多点赞', icon: 'ri-thumb-up-line' },
+        { value: 'comments', label: '最多评论', icon: 'ri-chat-3-line' },
+      ],
       deletePublishedDialogVisible: false,
       deletePublishedTarget: null,
       deletePublishedSubmitting: false,
@@ -1340,6 +1412,9 @@ export default {
     },
     publishedPageTotal() {
       return Number(this.publishedPage.total) || 0
+    },
+    publishedSortLabel() {
+      return this.publishedSortOptions.find((option) => option.value === this.publishedSort)?.label || '最新发布'
     },
     publishedDisplayTotal() {
       return Number(this.publishedStatusCounts.all) || this.publishedPageTotal
@@ -1548,7 +1623,9 @@ export default {
     },
     handlePublishedMemeCommand(command, item) {
       if (!item) return
-      if (command === 'delete') {
+      if (command === 'edit' && this.canEditPublishedMeme(item)) {
+        this.$router.push({ name: 'publishMeme', query: { edit: this.normalizeMemeId(item.id) } })
+      } else if (command === 'delete') {
         this.openDeletePublishedDialog(item)
       } else if (command === 'restore') {
         this.openRestorePublishedDialog(item)
@@ -1591,6 +1668,21 @@ export default {
     canVoluntaryOffline(item) {
       const status = Number(item?.status)
       return status === 1 || status === 2
+    },
+    canEditPublishedMeme(item) {
+      const status = Number(item?.status)
+      return this.isOwnProfile && (status === 1 || status === 3) && item?.editRevisionStatus !== 'PENDING'
+    },
+    editRevisionStatusLabel(status) {
+      return ({
+        PENDING: '修改审核中，当前展示旧版',
+        APPROVED: '修改已通过',
+        REJECTED: '修改未通过，可查看原因后重提',
+        CANCELED: '修改稿已取消',
+      })[String(status || '').toUpperCase()] || '修改审核状态已更新'
+    },
+    formatPublishedDate(value) {
+      return formatDateShort(value)
     },
     openRestorePublishedDialog(item) {
       const status = Number(item?.status)
@@ -1664,6 +1756,7 @@ export default {
           page: this.publishedPageNo,
           size: this.publishedPageSize,
           status: statusParam,
+          sort: this.publishedSort,
         })
         const list = Array.isArray(data.list) ? data.list : []
         const normalized = list.map((it) => ({
@@ -1729,11 +1822,29 @@ export default {
       this.publishedPageNo = 1
       this.loadPublishedMemes()
     },
+    setPublishedSort(value) {
+      this.$nextTick(() => this.$refs.publishedSortTrigger?.focus())
+      const allowedSorts = this.publishedSortOptions.map((option) => option.value)
+      const next = allowedSorts.includes(value) ? value : 'latest'
+      if (next === this.publishedSort) return
+      this.publishedSort = next
+      this.publishedPageNo = 1
+      this.loadPublishedMemes()
+    },
     goPublishedPage(page) {
       const next = Math.max(1, Number(page) || 1)
       if (next === this.publishedPageNo) return
       this.publishedPageNo = next
+      this.scrollToProfileList('publishedPanel')
       this.loadPublishedMemes()
+    },
+    scrollToProfileList(refName) {
+      this.$nextTick(() => {
+        const target = this.$refs[refName]
+        if (target && typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      })
     },
     async handleEditProfile() {
       this.editDialogVisible = true
@@ -2117,6 +2228,7 @@ export default {
       if (next === this.folderContentPageNo) return
       this.folderContentPageNo = next
       this.clearMemeSelection()
+      this.scrollToProfileList('folderContentPanel')
       this.loadFolderContent()
     },
     handleFolderCommand(cmd, folder) {
@@ -2655,13 +2767,19 @@ export default {
 
 .meme-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
-  gap: 16px;
+  gap: 14px;
 }
 
 .meme-grid > * {
   min-width: 0;
+}
+
+@media (max-width: 1440px) {
+  .meme-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1180px) {
@@ -2684,6 +2802,15 @@ export default {
   background: var(--meme-bg-card);
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.meme-grid > .meme-card-item:hover,
+.meme-grid > .meme-card-item:focus-within {
+  z-index: 2;
+}
+
+.meme-grid :deep(.meme-card) {
+  overflow: visible !important;
 }
 
 .meme-card-item:hover {
@@ -2712,6 +2839,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scroll-margin-top: 96px;
 }
 
 .published-panel-header {
@@ -2768,6 +2896,152 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.published-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.published-list-toolbar.has-status-filter {
+  justify-content: space-between;
+}
+
+.published-sort-dropdown {
+  flex: 0 0 auto;
+}
+
+.published-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--meme-border);
+  border-radius: 12px;
+  color: var(--meme-text);
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--meme-text) 4%, transparent);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.published-sort-trigger:hover,
+.published-sort-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--meme-primary) 46%, var(--meme-border));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--meme-primary) 12%, transparent);
+  outline: none;
+}
+
+.published-sort-trigger:active {
+  transform: translateY(1px);
+}
+
+.published-sort-trigger__icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
+  font-size: 15px;
+}
+
+.published-sort-trigger__label {
+  color: var(--meme-text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.published-sort-trigger__value {
+  color: var(--meme-text);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.published-sort-trigger__chevron {
+  margin-left: 1px;
+  color: var(--meme-text-muted);
+  font-size: 16px;
+  transition: transform 0.18s ease;
+}
+
+.published-sort-dropdown :deep(.ui-dropdown__menu) {
+  z-index: 1300;
+  min-width: 216px;
+  padding: 8px;
+  border-color: var(--meme-border);
+  border-radius: 15px;
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--meme-text) 15%, transparent);
+  animation: published-sort-menu-in 0.16s ease-out;
+  transform-origin: top right;
+}
+
+.published-sort-menu__heading {
+  margin: 2px 8px 7px;
+  color: var(--meme-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.published-sort-dropdown :deep(.published-sort-option) {
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.published-sort-dropdown :deep(.published-sort-option:hover:not(:disabled)) {
+  color: var(--meme-text);
+  background: var(--meme-bg-muted);
+  transform: translateX(2px);
+}
+
+.published-sort-dropdown :deep(.published-sort-option[aria-selected='true']) {
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+  font-weight: 700;
+}
+
+.published-sort-option__icon {
+  width: 18px;
+  color: var(--meme-text-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.published-sort-dropdown :deep(.published-sort-option[aria-selected='true'] .published-sort-option__icon) {
+  color: var(--meme-primary);
+}
+
+.published-sort-option__label {
+  flex: 1;
+}
+
+.published-sort-option__check {
+  color: var(--meme-primary);
+  font-size: 16px;
+}
+
+@keyframes published-sort-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .published-filter-chip {
@@ -3025,6 +3299,41 @@ export default {
 
 .published-menu-item--danger {
   color: var(--meme-danger);
+}
+
+.published-card-meta {
+  margin: 6px 0 0;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.published-edit-review {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+  color: var(--meme-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.published-edit-review--pending {
+  color: var(--meme-primary);
+}
+
+.published-edit-review--rejected,
+.published-edit-review--canceled {
+  color: var(--meme-danger);
+}
+
+.published-edit-review--approved {
+  color: var(--meme-success, #16865b);
+}
+
+.published-edit-review__note {
+  color: var(--meme-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .published-filter-empty {
@@ -3981,6 +4290,15 @@ export default {
     width: 100%;
   }
 
+  .published-list-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .published-sort-dropdown {
+    align-self: flex-end;
+  }
+
   .cropper-controls {
     flex-direction: column;
     align-items: stretch;
@@ -4194,6 +4512,7 @@ html.dark .folder-card-loading {
 }
 .folder-content {
   min-width: 0;
+  scroll-margin-top: 96px;
 }
 .folder-content--batch-active {
   padding-bottom: 88px;

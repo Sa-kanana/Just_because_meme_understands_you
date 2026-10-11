@@ -116,7 +116,7 @@ public class MemeViewServiceImpl implements IMemeViewService {
         Map<Long, Meme> memeMap = new HashMap<>();
         for (Meme meme : memes) {
             if (meme != null && meme.getId() != null) {
-                memeMap.put(meme.getId().longValue(), meme);
+                memeMap.put(meme.getId(), meme);
             }
         }
 
@@ -133,7 +133,7 @@ public class MemeViewServiceImpl implements IMemeViewService {
     }
 
     private Meme loadPublicMeme(long memeId, Long userId) {
-        if (!memeBloomFilterService.mightContain((int) memeId)) {
+        if (!memeBloomFilterService.mightContain(memeId)) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可统计浏览");
         }
         Meme meme = memeService.getById(memeId);

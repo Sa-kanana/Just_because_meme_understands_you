@@ -15,7 +15,7 @@ public class AdminKnowledgeSaveRequestDTO {
     private String title;
 
     @NotBlank(message = "正文不能为空")
-    @Size(max = 200000, message = "正文过长")
+    @Size(max = 1000000, message = "正文最多 1,000,000 个字符")
     private String content;
 
     @Size(max = 64, message = "分类最多 64 字")

@@ -1,25 +1,19 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.application.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.projection.MemeTagBindDTO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiIngestService;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.AiIngestPublisher;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
 import com.sakana.just_because_meme_understands_you.modules.ai.application.support.AiContentHashSupport;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AiIngestBackfillVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
-
-import java.util.ArrayList;
+import reactor.core.publisher.Mono;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -28,22 +22,24 @@ public class AiIngestServiceImpl implements IAiIngestService {
     private static final int DEFAULT_BACKFILL_LIMIT = 500;
     private static final int MAX_BACKFILL_LIMIT = 2000;
 
-    private final MemeMapper memeMapper;
-    private final MemeTagRelationMapper memeTagRelationMapper;
+    private final MemeCatalogPort memeCatalogPort;
     private final AiIngestPublisher aiIngestPublisher;
     private final MemeAgentClient memeAgentClient;
     private final MemeAgentProperties properties;
 
-    public AiIngestServiceImpl(MemeMapper memeMapper,
-                               MemeTagRelationMapper memeTagRelationMapper,
+    public AiIngestServiceImpl(MemeCatalogPort memeCatalogPort,
                                AiIngestPublisher aiIngestPublisher,
                                MemeAgentClient memeAgentClient,
                                MemeAgentProperties properties) {
-        this.memeMapper = memeMapper;
-        this.memeTagRelationMapper = memeTagRelationMapper;
+        this.memeCatalogPort = memeCatalogPort;
         this.aiIngestPublisher = aiIngestPublisher;
         this.memeAgentClient = memeAgentClient;
         this.properties = properties;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return memeAgentClient.isConfigured();
     }
 
     @Override
@@ -55,24 +51,31 @@ public class AiIngestServiceImpl implements IAiIngestService {
             log.warn("Skip AI ingest: agent not configured, memeId={}", memeId);
             return false;
         }
-        Meme meme = memeMapper.selectById(memeId);
-        if (meme == null) {
-            aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId));
+        MemeCatalogPort.MemeCard meme = memeCatalogPort.findById(memeId);
+        if (meme == null || !Integer.valueOf(1).equals(meme.status())) {
+            aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId))
+                    .subscribe(null, error -> log.warn("AI ingest delete failed memeId={}", memeId, error));
             return false;
         }
-        if (!Integer.valueOf(MemeVisibilitySupport.STATUS_NORMAL).equals(meme.getStatus())) {
-            aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId));
-            return false;
-        }
-        List<String> tags = loadTagNames(meme.getId());
-        String hash = AiContentHashSupport.hash(meme.getName(), meme.getIntroduction(), tags);
-        aiIngestPublisher.publishPublishedMeme(
-                String.valueOf(meme.getId()),
-                meme.getName(),
-                meme.getIntroduction(),
-                tags,
-                hash);
+        publishMeme(meme).subscribe(null,
+                error -> log.warn("AI ingest failed memeId={}", memeId, error));
         return true;
+    }
+
+    @Override
+    public void synchronizeMemeIndex(Long memeId) {
+        if (memeId == null || memeId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
+        }
+        if (!memeAgentClient.isConfigured()) {
+            throw new IllegalStateException("MemeAgent 未配置，索引事件稍后重试");
+        }
+        MemeCatalogPort.MemeCard meme = memeCatalogPort.findById(memeId);
+        if (meme == null || !Integer.valueOf(1).equals(meme.status())) {
+            aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId)).block();
+            return;
+        }
+        publishMeme(meme).block();
     }
 
     @Override
@@ -83,7 +86,8 @@ public class AiIngestServiceImpl implements IAiIngestService {
         if (!memeAgentClient.isConfigured()) {
             return;
         }
-        aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId));
+        aiIngestPublisher.publishDeletedMeme(String.valueOf(memeId))
+                .subscribe(null, error -> log.warn("AI ingest delete failed memeId={}", memeId, error));
     }
 
     @Override
@@ -98,16 +102,13 @@ public class AiIngestServiceImpl implements IAiIngestService {
             return vo;
         }
 
-        List<Meme> memes = memeMapper.selectList(new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL)
-                .orderByAsc(Meme::getId)
-                .last("LIMIT " + pageSize));
+        List<MemeCatalogPort.MemeCard> memes = memeCatalogPort.findPublished(pageSize);
         int queued = 0;
-        for (Meme meme : memes) {
-            if (meme == null || meme.getId() == null) {
+        for (MemeCatalogPort.MemeCard meme : memes) {
+            if (meme == null || meme.id() == null) {
                 continue;
             }
-            if (syncMeme(meme.getId().longValue())) {
+            if (syncMeme(meme.id())) {
                 queued++;
             }
         }
@@ -116,20 +117,15 @@ public class AiIngestServiceImpl implements IAiIngestService {
         return vo;
     }
 
-    private List<String> loadTagNames(Integer memeId) {
-        if (memeId == null) {
-            return List.of();
-        }
-        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(List.of(memeId));
-        if (rows == null || rows.isEmpty()) {
-            return List.of();
-        }
-        List<String> tags = new ArrayList<>();
-        for (MemeTagBindDTO row : rows) {
-            if (row != null && StringUtils.hasText(row.getName())) {
-                tags.add(row.getName().trim());
-            }
-        }
-        return tags;
+    private Mono<Void> publishMeme(MemeCatalogPort.MemeCard meme) {
+        Map<Long, List<MemeCatalogPort.MemeTagSummary>> groupedTags =
+                memeCatalogPort.findTagsByMemeIds(List.of(meme.id()));
+        List<String> tags = groupedTags.getOrDefault(meme.id(), List.of()).stream()
+                .map(MemeCatalogPort.MemeTagSummary::name)
+                .toList();
+        String hash = AiContentHashSupport.hash(meme.name(), meme.introduction(), tags);
+        return aiIngestPublisher.publishPublishedMeme(
+                String.valueOf(meme.id()), meme.name(), meme.introduction(), tags, hash);
     }
+
 }

@@ -105,7 +105,7 @@ public class HomeController {
      */
     @GetMapping("/memes/{memeId}")
     public Result<MemeDetailVO> detail(
-            @PathVariable("memeId") Integer memeId,
+            @PathVariable("memeId") Long memeId,
             HttpServletRequest httpServletRequest
     ) {
         log.info("请求梗的详细页面, memeId={}", memeId);

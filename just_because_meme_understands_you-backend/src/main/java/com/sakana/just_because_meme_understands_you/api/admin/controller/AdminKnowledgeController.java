@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,7 +29,8 @@ import java.util.stream.Collectors;
 import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
 @RestController
-@RequestMapping("/v1/admin/knowledge-documents")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+@RequestMapping("/admin/v1/knowledge-documents")
 public class AdminKnowledgeController {
 
     @Resource
@@ -86,11 +88,10 @@ public class AdminKnowledgeController {
     }
 
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable("id") String id, HttpServletRequest request) {
+    public Result<AdminKnowledgeVO> delete(@PathVariable("id") String id, HttpServletRequest request) {
         AdminAuthSupport.requireAdmin(request);
         Long docId = RequestIdParser.parseLongId(id, "id");
-        adminKnowledgeService.delete(docId);
-        return Result.success();
+        return Result.success(adminKnowledgeService.delete(docId));
     }
 
     @PostMapping("/{id}/indexing-jobs")
@@ -98,6 +99,17 @@ public class AdminKnowledgeController {
         AdminAuthSupport.requireAdmin(request);
         Long docId = RequestIdParser.parseLongId(id, "id");
         return Result.success(adminKnowledgeService.reindex(docId));
+    }
+
+    /** 查询当前文档对应的异步向量任务状态。 */
+    @GetMapping("/{id}/indexing-jobs/{taskId}")
+    public Result<AdminKnowledgeVO> taskStatus(@PathVariable("id") String id,
+                                               @PathVariable("taskId") String taskId,
+                                               HttpServletRequest request) {
+        AdminAuthSupport.requireAdmin(request);
+        Long docId = RequestIdParser.parseLongId(id, "id");
+        Long jobId = RequestIdParser.parseLongId(taskId, "taskId");
+        return Result.success(adminKnowledgeService.taskStatus(docId, jobId));
     }
 
     private static List<String> parseTagsParam(String raw) {

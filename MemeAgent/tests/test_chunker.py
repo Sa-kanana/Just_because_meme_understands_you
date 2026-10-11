@@ -22,6 +22,23 @@ def test_build_chunks_includes_title():
     assert "音乐" in chunks[0]
 
 
+def test_long_document_chunks_repeat_title_and_tags_for_vector_retrieval():
+    doc = IngestDocument(
+        meme_id="43",
+        title="不明觉厉",
+        introduction="这是一段用于测试的梗介绍。" * 30,
+        tags=["网络用语", "评价"],
+        updated_at=datetime.now(timezone.utc),
+        content_hash="hashhash13",
+    )
+
+    chunks = build_chunks(doc, max_chunk_chars=80)
+
+    assert len(chunks) > 1
+    assert all("标题: 不明觉厉" in chunk for chunk in chunks)
+    assert all("标签: 网络用语 评价" in chunk for chunk in chunks)
+
+
 def test_openai():
     settings = get_settings()
     apply_langsmith_env(settings)

@@ -29,6 +29,8 @@ public class Result<T> {
     public static final int CODE_NOT_FOUND = 404;
     /** 无权限（403） */
     public static final int CODE_FORBIDDEN = 403;
+    /** 状态冲突（409），如重复审核或正式内容已变化 */
+    public static final int CODE_CONFLICT = 409;
     /** refresh token 失效/过期，需重新登录 */
     public static final int CODE_REFRESH_TOKEN_EXPIRED = 1002;
 

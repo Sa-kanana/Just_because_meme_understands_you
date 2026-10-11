@@ -172,7 +172,7 @@ export default {
         ]
       }
       return [
-        { key: 'view', enabled: true, text: '可预览标题 / 封面 / 标签 / 链接' },
+        { key: 'view', enabled: true, text: '可预览标题 / 可选封面 / 标签 / 链接' },
         { key: 'public', enabled: false, text: '公域用户暂不可见' },
         { key: 'interact', enabled: false, text: '评论与收藏未开放' },
         { key: 'pass', enabled: true, text: '审核通过后才会上线' },

@@ -46,7 +46,7 @@ public class MemeOssCleanupHandler {
 
         List<MemeResource> resources = memeResourceMapper.selectList(
                 new LambdaQueryWrapper<MemeResource>()
-                        .eq(MemeResource::getMemeId, meme.getId() != null ? meme.getId().longValue() : null)
+                        .eq(MemeResource::getMemeId, meme.getId())
         );
         if (resources != null) {
             for (MemeResource resource : resources) {

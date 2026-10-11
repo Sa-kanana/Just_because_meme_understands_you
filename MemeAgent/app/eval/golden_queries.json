@@ -23,5 +23,26 @@
     "query": "网络上说养龙虾指的是什么？",
     "expected_meme_names": ["养龙虾"],
     "expected_answer_fact_groups": [["OpenClaw"], ["龙虾标志", "龙虾 logo"]]
+  },
+  {
+    "query": "不明觉厉是什么意思？",
+    "expected_meme_names": ["不明觉厉"],
+    "expected_answer_fact_groups": []
+  },
+  {
+    "query": "你好",
+    "expected_empty": true
+  },
+  {
+    "query": "谢谢",
+    "expected_empty": true
+  },
+  {
+    "query": "帮我写一个 Java 快速排序算法",
+    "expected_empty": true
+  },
+  {
+    "query": "太阳系有几颗行星？",
+    "expected_empty": true
   }
 ]

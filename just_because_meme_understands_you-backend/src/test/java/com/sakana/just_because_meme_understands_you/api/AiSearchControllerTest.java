@@ -20,7 +20,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,7 +28,7 @@ class AiSearchControllerTest {
 
     private static final Long USER_ID = 7L;
     private static final AiStreamTaskSnapshot SNAPSHOT = new AiStreamTaskSnapshot(
-            "task-1", USER_ID, 99L, "request-1", AiStreamTaskStatus.RUNNING,
+            "task-1", USER_ID, 99L, "request-1", AiStreamTaskStatus.GENERATING,
             1_000L, 601_000L, 5L);
 
     @Mock
@@ -52,7 +51,7 @@ class AiSearchControllerTest {
         assertEquals("task-1", task.taskId());
         assertEquals(99L, task.sessionId());
         assertEquals("request-1", task.requestId());
-        assertEquals(AiStreamTaskStatus.RUNNING, task.status());
+        assertEquals(AiStreamTaskStatus.GENERATING, task.status());
         assertEquals(601_000L, task.expiresAtMillis());
         verify(taskService).submit(USER_ID, request);
     }
@@ -85,13 +84,13 @@ class AiSearchControllerTest {
     void cancelUsesAuthenticatedUser() {
         when(httpRequest.getAttribute(AuthContext.ATTR_USER_ID)).thenReturn(USER_ID);
         AiStreamTaskSnapshot cancelled = new AiStreamTaskSnapshot(
-                "task-1", USER_ID, 99L, "request-1", AiStreamTaskStatus.CANCELLED,
+                "task-1", USER_ID, 99L, "request-1", AiStreamTaskStatus.STOPPED,
                 1_000L, 601_000L, 5L);
         when(taskService.cancel(USER_ID, "task-1")).thenReturn(cancelled);
 
         AiStreamTaskVO task = controller.cancel("task-1", httpRequest).getData();
 
-        assertEquals(AiStreamTaskStatus.CANCELLED, task.status());
+        assertEquals(AiStreamTaskStatus.STOPPED, task.status());
         verify(taskService).cancel(USER_ID, "task-1");
     }
 

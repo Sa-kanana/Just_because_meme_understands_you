@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.modules.comment.domain.entit
 import com.sakana.just_because_meme_understands_you.modules.comment.application.assembler.MemeCommentViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeCommentImage;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentImageMapper;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
@@ -97,8 +98,8 @@ public class MemeCommentSupport {
     public MemeRootCommentVO toRootVO(MemeComment comment, Map<Long, User> userMap, Map<Long, List<String>> imageMap) {
         MemeRootCommentVO vo = memeCommentViewMapper.toRootVO(comment);
         User user = userMap.get(comment.getUserId());
-        vo.setUserName(user == null ? "匿名用户" : user.getNickname());
-        vo.setUserAvatar(ossUrlHelper.toPublicUrl(user == null ? null : user.getAvatar()));
+        vo.setUserName(UserDisplayPolicy.displayName(user, "匿名用户"));
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(user)));
         vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
         vo.setReplyCount(defaultInt(comment.getReplyCount()));
         vo.setLikes(defaultInt(comment.getLikes()));
@@ -113,8 +114,8 @@ public class MemeCommentSupport {
                                         Map<Long, List<String>> imageMap) {
         MemeReplyCommentVO vo = memeCommentViewMapper.toReplyVO(comment);
         User author = userMap.get(comment.getUserId());
-        vo.setUserName(author == null ? "匿名用户" : author.getNickname());
-        vo.setUserAvatar(ossUrlHelper.toPublicUrl(author == null ? null : author.getAvatar()));
+        vo.setUserName(UserDisplayPolicy.displayName(author, "匿名用户"));
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(author)));
         MemeComment parent = parentMap.get(comment.getParentId());
         if (parent != null) {
             vo.setReplyToUserId(parent.getUserId());
@@ -125,7 +126,7 @@ public class MemeCommentSupport {
                     replyToUser = loaded;
                 }
             }
-            vo.setReplyToUserName(replyToUser == null ? "匿名用户" : replyToUser.getNickname());
+            vo.setReplyToUserName(UserDisplayPolicy.displayName(replyToUser, "匿名用户"));
         }
         vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
         vo.setLikes(defaultInt(comment.getLikes()));

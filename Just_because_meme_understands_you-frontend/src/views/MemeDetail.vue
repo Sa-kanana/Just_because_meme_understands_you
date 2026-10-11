@@ -183,8 +183,6 @@
         </template>
       </vs-card>
 
-      <MemeKnowledgeCard v-if="!ownerPreview" :meme-id="meme.id" />
-
       <!-- 相关链接 / 延伸阅读 -->
       <vs-card v-if="normalizedLinks.length" class="detail-section-card">
         <template #title>
@@ -825,7 +823,6 @@ import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
 import MemeReportButton from '@/components/meme/MemeReportButton.vue'
 import ContentReportButton from '@/components/meme/ContentReportButton.vue'
-import MemeKnowledgeCard from '@/components/meme/MemeKnowledgeCard.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive, nextTick } from 'vue'

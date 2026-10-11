@@ -20,6 +20,11 @@ server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
 spring:
+  config:
+    # 支持从后端模块目录或仓库根目录启动；系统环境变量仍可覆盖 .env。
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:./just_because_meme_understands_you-backend/.env[.properties]
   application:
     name: just_because_meme_understands_you
 
@@ -29,8 +34,12 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 15MB
-      max-request-size: 16MB
+      # 知识文件单份上限为 25 MB；阈值高于上限，上传正文只在受限内存中暂存。
+      file-size-threshold: 26MB
+      # 中文注释：单个上传请求的最大文件体积。
+      max-file-size: ${KNOWLEDGE_UPLOAD_MAX_FILE_SIZE:25MB}
+      # 中文注释：为 multipart 边界和表单字段预留 1 MB 请求开销。
+      max-request-size: 26MB
 
   # ---------- 邮箱（验证码 / 找回密码）----------
   mail:
@@ -60,6 +69,8 @@ spring:
     password: ${DB_PASSWORD}
     url: ${DB_URL}
     hikari:
+      # 知识库等 DATETIME 字段按中国标准时间写入，避免 MySQL 自动更新时间使用 UTC。
+      connection-init-sql: "SET time_zone = '+08:00'"
       # 连接最大存活时间（毫秒），建议小于 MySQL wait_timeout
       max-lifetime: 1800000
       # 空闲连接保留时间（毫秒）
@@ -144,6 +155,8 @@ auth:
   login-lockout-after-failures: 5
   # 锁定时长（分钟）
   login-lockout-minutes: 15
+  # 首次初始化 SUPER_ADMIN 的已有邮箱；未配置时不自动提升任何账号
+  bootstrap-super-admin-email: ${AUTH_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
 
 # ---------- 安全头 / CORS / 反代 / 反馈 ----------
 app:
@@ -185,11 +198,13 @@ user:
     rate-limit-per-minute: 60
 
 meme-comment:
-  # 评论计数 Redis → meme.comments 回写间隔（毫秒）
-  count-sync-interval-ms: 120000
+  # 评论事务提交后由本地线程池处理用户活跃度奖励。
   async:
+    # 评论事务提交后的异步奖励线程数。
     core-pool-size: 4
+    # 评论事务提交后的异步奖励线程池最大线程数。
     max-pool-size: 16
+    # 异步奖励任务队列容量，满载时由调用线程执行以避免丢弃。
     queue-capacity: 500
 
 meme:
@@ -209,8 +224,8 @@ meme:
     # 写密钥：ingest/crawl；空则回退 api-key
     write-api-key: ${MEME_AGENT_WRITE_API_KEY:}
     connect-timeout-ms: ${MEME_AGENT_CONNECT_TIMEOUT_MS:2000}
-    # B站理解 + Firecrawl 细节/图片 + LLM，默认 10 分钟
-    response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:600000}
+    # MemeAgent 知识向量入库可能较慢，默认响应读取超时为 20 分钟；可由环境变量覆盖。
+    response-timeout-ms: ${MEME_AGENT_RESPONSE_TIMEOUT_MS:1200000}
     # AI 流式上游连接池最大活跃连接数，按 MemeAgent 可承载并发调整
     max-connections: ${MEME_AGENT_MAX_CONNECTIONS:100}
     # 上游连接池排队上限，达到上限后新请求在配置等待时间后失败
@@ -220,6 +235,8 @@ meme:
     stream-path: /stream
     ingest-path: /ingest
     knowledge-ingest-path: /ingest/knowledge
+    # 中文注释：知识索引 outbox 的并行 worker 数，范围 1–8，默认 2。
+    knowledge-index-concurrency: ${MEME_AGENT_KNOWLEDGE_INDEX_CONCURRENCY:2}
     # 逐条 enrichment 可能较慢，建议 >=600000
     crawl-path: /crawl/hot-memes
   ai:
@@ -233,10 +250,6 @@ meme:
     rate-limit-per-minute: ${MEME_AI_RATE_LIMIT_PER_MINUTE:20}
     chars-per-token-estimate: ${MEME_AI_CHARS_PER_TOKEN:3}
     backfill-enabled: ${MEME_AI_BACKFILL_ENABLED:true}
-  ops:
-    # crawl/ingest 手动入口需 ROLE_ADMIN，或命中白名单（在 application-dev.yml 配置）
-    require-admin: ${MEME_OPS_REQUIRE_ADMIN:true}
-    admin-user-ids: []
   crawl:
     enabled: ${MEME_CRAWL_ENABLED:true}
     schedule-enabled: ${MEME_CRAWL_SCHEDULE_ENABLED:true}
@@ -246,3 +259,15 @@ meme:
     publisher-user-id: ${MEME_CRAWL_PUBLISHER_USER_ID:0}
     live-limit: ${MEME_CRAWL_LIVE_LIMIT:8}
     live-hours: ${MEME_CRAWL_LIVE_HOURS:48}
+
+# 管理员知识文件上传的内存与解析边界。
+knowledge:
+  upload:
+    # 中文注释：单文件最大字节数；默认 25 MiB，需与 multipart 限制一致。
+    max-file-size: ${KNOWLEDGE_UPLOAD_MAX_FILE_SIZE:25MB}
+    # 中文注释：允许提取的正文最大字符数；超限时拒绝，不静默截断。
+    max-content-chars: ${KNOWLEDGE_UPLOAD_MAX_CONTENT_CHARS:1000000}
+    # 中文注释：同一实例同时解析的 multipart 请求数，默认 2，限制知识 PDF 等上传的峰值内存。
+    max-concurrent-requests: ${KNOWLEDGE_UPLOAD_MAX_CONCURRENT_REQUESTS:2}
+    # 中文注释：等待上传解析槽位的最长时间；超时返回繁忙错误。
+    admission-wait-ms: ${KNOWLEDGE_UPLOAD_ADMISSION_WAIT_MS:30000}

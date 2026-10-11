@@ -237,7 +237,13 @@ FROM (
 ) AS seed
 CROSS JOIN (
     SELECT COALESCE(
-        (SELECT id FROM `meme`.`user` WHERE status = 1 AND role = 'ROLE_ADMIN' ORDER BY id LIMIT 1),
+        (SELECT user_account.id
+         FROM `meme`.`user` AS user_account
+         JOIN `meme`.`user_role` AS assigned_role ON assigned_role.user_id = user_account.id
+         JOIN `meme`.`role` AS role_definition ON role_definition.id = assigned_role.role_id
+         WHERE user_account.status = 1 AND role_definition.code IN ('ADMIN', 'SUPER_ADMIN')
+         ORDER BY CASE role_definition.code WHEN 'SUPER_ADMIN' THEN 0 ELSE 1 END, user_account.id
+         LIMIT 1),
         (SELECT id FROM `meme`.`user` WHERE status = 1 ORDER BY create_time, id LIMIT 1)
     ) AS `user_id`
 ) AS selected_user

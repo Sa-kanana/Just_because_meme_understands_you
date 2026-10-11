@@ -22,7 +22,6 @@
       <div class="panel-heading">
         <div>
           <h2>互动热度</h2>
-          <p>浏览 + 点赞 × 4 + 评论 × 6</p>
         </div>
         <div class="range-switch" role="group" aria-label="趋势范围">
           <button :class="{ active: days === 7 }" @click="changeRange(7)">近 7 天</button>
@@ -58,7 +57,14 @@
           @click="$router.push(`/detail/${item.memeId}`)"
         >
           <span class="trend-rank">{{ String(index + 1).padStart(2, '0') }}</span>
-          <ui-image :src="item.image" :alt="item.name" fit="cover" class="trend-cover" />
+          <ui-image v-if="item.image" :src="item.image" :alt="item.name" fit="cover" class="trend-cover" />
+          <MemeCoverPlaceholder
+            v-else
+            :name="item.name"
+            :seed="item.memeId"
+            abstract
+            class="trend-cover trend-cover--placeholder"
+          />
           <span class="trend-copy">
             <strong>{{ item.name }}</strong>
             <small>{{ item.tags.map((tag) => `#${tag}`).join(' · ') || '梗图社区' }}</small>
@@ -75,6 +81,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getMemeTrends } from '@/api/trends'
+import MemeCoverPlaceholder from '@/components/meme/MemeCoverPlaceholder.vue'
 
 const router = useRouter()
 const days = ref(7)

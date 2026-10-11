@@ -41,7 +41,7 @@ public class MemeTag implements Serializable {
      * 相关梗的数量
      */
     @TableField("related_quantity")
-    private String relatedQuantity;
+    private Integer relatedQuantity;
 
 
 }

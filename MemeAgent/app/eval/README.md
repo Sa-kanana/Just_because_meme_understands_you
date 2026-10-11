@@ -2,6 +2,31 @@
 
 评估集保存在 `golden_queries.json`，目前以固定梗名作为标签，避免不同数据库中的自增 ID 让结果失去可比性。标签和事实词组由项目维护者人工确认；每次修改检索、提示词或模型配置后，使用同一问题集比较指标。
 
+## 管理员知识库检索评估与门槛校准
+
+管理员知识库使用独立的评估集。先把真实用户问题保存到 `app/eval/admin_knowledge_golden_queries.json`，可以暂时只写 `query` 和 `top_k` 来查看候选；人工核对候选后，再给问题补上 `expected_doc_ids` 或 `expected_empty` 标签。正例必须对应当前已发布知识文档，空结果负例用于测量误命中。
+
+```json
+[
+  {"query": "如何修改已上传的资料？", "top_k": 5},
+  {"query": "知识库里没有的某个特定问题", "top_k": 5}
+]
+```
+
+从 `MemeAgent` 目录第一次运行候选收集：
+
+```bash
+python -m app.eval.admin_knowledge_eval app/eval/admin_knowledge_golden_queries.json --output reports/admin-knowledge-candidates.json
+```
+
+根据候选文档 ID 和章节人工标注原始问题集：正例填写 `expected_doc_ids`，确认知识库中没有答案的问题填写 `expected_empty: true`。之后用相同命令重新评估。报告包含门槛建议、Precision@K、Recall@K、MRR、空结果准确率及检索耗时。门槛由标注候选校准，不会自动写入 `.env`；复核报告后再设置 `ADMIN_KNOWLEDGE_MIN_SIMILARITY`。没有正例标签时只生成候选报告，不会虚构校准值。
+
+当前未配置门槛时，线上会保留标题、标签和正文完整短语命中，但不会接纳没有校准依据的纯向量候选。Agent 对非问候问题会并发预检索站内梗库和管理员知识库，模型上下文只包含这两类数据库证据。
+
+### 比较知识切块参数
+
+基线为 `KNOWLEDGE_CHUNK_SIZE=1000`、`KNOWLEDGE_CHUNK_OVERLAP=160`，切分器保留 Markdown 标题路径、FAQ 问题和 PDF 页码。可在隔离环境试验不同组合，使用同一份人工标注问题集比较召回与精确率。每次比较都要用新文档 revision 重新入库；只改参数不会改写已发布向量。不要只凭单题分数决定全量切块参数。
+
 ## 问题集字段
 
 每个数组对象是一道固定问题：
@@ -11,10 +36,18 @@
 - `expected_answer_fact_groups`：回答中应覆盖的事实词组。每个内层数组是一组可接受的同义表达，命中其中任意一个即算该组命中；组与组之间都需要覆盖。
 - `expected_meme_ids`：可选的旧格式标签；仅在没有梗名标签时按 ID 计算相关性。
 - `expected_empty`：可选布尔值，标记确认没有相关结果的问题，用于统计空结果准确率。
-- `hint_meme_ids`：可选的 Java 候选梗 ID，模拟业务预检索上下文。
-- `snippets`：可选的 Java 梗摘要数组，模拟业务传入的候选内容；对象字段沿用搜梗接口的 `meme_id`、`title`、`introduction`、`tags`。
 
-当前问题覆盖“背手负鼠”“哭哭马”“SBTI”“AI水果”和“养龙虾”。添加新问题时，请先检查梗库中确有对应条目，并由人工复核标题和事实标签，避免评估集把错误内容固定成标准答案。
+当前问题覆盖“背手负鼠”“哭哭马”“SBTI”“AI水果”“养龙虾”“不明觉厉”，以及问候、致谢和非梗问题负例。添加新问题时，请先检查梗库中确有对应条目，并由人工复核标题和事实标签，避免评估集把错误内容固定成标准答案。
+
+## 校准向量相关度门槛
+
+先将已发布梗回填到 pgvector，再运行：
+
+```bash
+python -m app.eval.retrieval_eval --calibrate-threshold --output reports/retrieval-threshold.json
+```
+
+校准模式直接读取未经过滤的向量分数，并按每题 `expected_meme_names` / `expected_empty` 标注评估。纯问候与致谢会和线上 Agent 一样跳过向量检索，不参与向量门槛判断。门槛选择按线上 `RETRIEVAL_TOP_K` 截断候选并选择 F1 最大值；并列时优先精确率，再优先较高门槛。校准报告保留门槛过滤后的前 10 条结果，分别计算 Recall@5 和 Recall@10。将报告中的 `threshold` 复核后写入 `VECTOR_MIN_SIMILARITY`，不要根据单个查询手工猜分数。空向量表或没有正例时校准会失败。
 
 ## 仅评估检索
 

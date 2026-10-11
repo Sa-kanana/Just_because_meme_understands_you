@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.modules.comment.domain.entit
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeBloomFilterService;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
 import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.safety.UserSafetyService;
@@ -18,6 +19,42 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 class MemeCommentSafetyTest {
+    @Test
+    void incrementsMemeCommentCountInTheCommentTransaction() {
+        MemeCommentMapper comments = mock(MemeCommentMapper.class);
+        MemeCommentSupport support = mock(MemeCommentSupport.class);
+        IMemeService memes = mock(IMemeService.class);
+        MemeBloomFilterService bloom = mock(MemeBloomFilterService.class);
+        SensitiveWordFilterService filter = mock(SensitiveWordFilterService.class);
+        MemeCatalogPort memeCatalogPort = mock(MemeCatalogPort.class);
+        MemeCommentAsyncHandler asyncHandler = mock(MemeCommentAsyncHandler.class);
+        MemeCommentServiceImpl service = new MemeCommentServiceImpl();
+        ReflectionTestUtils.setField(service, "memeCommentMapper", comments);
+        ReflectionTestUtils.setField(service, "commentSupport", support);
+        ReflectionTestUtils.setField(service, "memeService", memes);
+        ReflectionTestUtils.setField(service, "memeBloomFilterService", bloom);
+        ReflectionTestUtils.setField(service, "sensitiveWordFilterService", filter);
+        ReflectionTestUtils.setField(service, "memeCatalogPort", memeCatalogPort);
+        ReflectionTestUtils.setField(service, "memeCommentAsyncHandler", asyncHandler);
+
+        Meme meme = new Meme().setId(7L).setStatus(1).setComments(2);
+        when(bloom.mightContain(7L)).thenReturn(true);
+        when(memes.getById(7L)).thenReturn(meme);
+        when(memeCatalogPort.incrementCommentCount(7L)).thenReturn(true);
+        when(filter.filterForInsert("hello")).thenReturn("hello");
+        when(support.toCreateResponseVO(any(MemeComment.class)))
+                .thenReturn(new com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentCreateResponseVO());
+
+        MemeCommentCreateRequestDTO request = new MemeCommentCreateRequestDTO();
+        request.setMemeId(7L);
+        request.setContent("hello");
+
+        service.createComment(3L, request);
+
+        verify(comments).insert(any(MemeComment.class));
+        verify(memeCatalogPort).incrementCommentCount(7L);
+    }
+
     @Test
     void rejectsReplyToBlockedAuthorBeforeInsertingComment() {
         MemeCommentMapper comments = mock(MemeCommentMapper.class);
@@ -34,8 +71,8 @@ class MemeCommentSafetyTest {
         ReflectionTestUtils.setField(service, "userSafetyService", safety);
         ReflectionTestUtils.setField(service, "sensitiveWordFilterService", filter);
 
-        Meme meme = new Meme().setId(7).setUserId(9L).setStatus(1);
-        when(bloom.mightContain(7)).thenReturn(true);
+        Meme meme = new Meme().setId(7L).setUserId(9L).setStatus(1);
+        when(bloom.mightContain(7L)).thenReturn(true);
         when(memes.getById(7L)).thenReturn(meme);
         when(support.parseCommentRefId("5", "rootId")).thenReturn(5L);
         when(support.parseCommentRefId("6", "parentId")).thenReturn(6L);

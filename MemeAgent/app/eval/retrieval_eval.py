@@ -5,18 +5,104 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any
 
 from app.agents.search_agent import stream_ai_search
-from app.agents.tools import retrieve_meme_chunks
+from app.agents.query_intent import greeting_reply
+from app.agents.tools import rank_vector_candidates, retrieve_meme_chunks
 from app.core.settings import get_settings
 from app.retrieval.db import close_pool, create_pool
+from app.retrieval.repository import similarity_search
 from app.schemas.stream import StreamRequest
 
 DEFAULT_DATASET = Path(__file__).with_name("golden_queries.json")
 TOP_KS = (5, 10)
+
+
+def calibrate_vector_similarity_threshold(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """在人工标注的正负例上选择 F1 最优且更偏向高精度的相似度门槛。"""
+    candidates_by_query: list[tuple[set[str], dict[str, tuple[float, int]], int]] = []
+    observed_scores: set[float] = set()
+    total_positive_labels = 0
+    for case in cases:
+        expected = {
+            str(name).strip().casefold()
+            for name in case.get("expected_meme_names") or []
+            if str(name).strip()
+        }
+        if not expected and case.get("expected_empty") is not True:
+            continue
+        if expected and case.get("expected_empty") is True:
+            raise ValueError("评估问题不能同时标记 expected_meme_names 和 expected_empty")
+        total_positive_labels += len(expected)
+        scores_by_title: dict[str, tuple[float, int]] = {}
+        for rank, candidate in enumerate(case.get("candidates") or []):
+            title = str(candidate.get("title") or "").strip().casefold()
+            try:
+                score = float(candidate.get("score"))
+            except (TypeError, ValueError):
+                continue
+            if not title or not math.isfinite(score):
+                continue
+            existing_score = scores_by_title.get(title, (float("-inf"), rank))[0]
+            if score > existing_score:
+                scores_by_title[title] = (score, rank)
+            observed_scores.add(score)
+        candidates_by_query.append(
+            (expected, scores_by_title, max(1, int(case.get("top_k") or 5)))
+        )
+
+    if total_positive_labels == 0:
+        raise ValueError("相似度门槛校准至少需要一条带 expected_meme_names 的正例")
+    if not observed_scores:
+        raise ValueError("评估集中没有可用于校准的向量分数")
+    observed_scores.add(1.0)
+
+    best: tuple[float, float, float, int, int, int] | None = None
+    for threshold in observed_scores:
+        true_positive = 0
+        false_positive = 0
+        false_negative = 0
+        predicted = 0
+        for expected, scores_by_title, top_k in candidates_by_query:
+            selected_ordered = [
+                title
+                for title, (score, _rank) in sorted(
+                    scores_by_title.items(), key=lambda item: item[1][1]
+                )
+                if score >= threshold
+            ][:top_k]
+            selected = set(selected_ordered)
+            hits = expected.intersection(selected)
+            true_positive += len(hits)
+            false_positive += len(selected - expected)
+            false_negative += len(expected - hits)
+            predicted += len(selected)
+        precision = true_positive / predicted if predicted else 0.0
+        recall = true_positive / total_positive_labels
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        candidate = (f1, precision, threshold, true_positive, false_positive, false_negative)
+        if best is None or candidate[:3] > best[:3]:
+            best = candidate
+
+    assert best is not None
+    f1, precision, threshold, true_positive, false_positive, false_negative = best
+    return {
+        "selection_metric": "maximum_f1; ties prefer precision then higher threshold",
+        # 保留原始浮点门槛，避免序列化时向上舍入排除边界正例。
+        "threshold": threshold,
+        "precision": round(precision, 4),
+        "recall": round(true_positive / total_positive_labels, 4),
+        "f1": round(f1, 4),
+        "true_positive_count": true_positive,
+        "false_positive_count": false_positive,
+        "false_negative_count": false_negative,
+        "positive_label_count": total_positive_labels,
+        "labeled_query_count": len(candidates_by_query),
+    }
 
 
 def score_retrieval(
@@ -217,6 +303,7 @@ async def evaluate_dataset(
     dataset_path: Path = DEFAULT_DATASET,
     *,
     include_answers: bool = False,
+    calibrate_threshold: bool = False,
     stream_usage: bool = False,
     input_price_per_million: float | None = None,
     output_price_per_million: float | None = None,
@@ -226,6 +313,8 @@ async def evaluate_dataset(
         raise ValueError("Golden query dataset must be a JSON array")
     if stream_usage and not include_answers:
         raise ValueError("--stream-usage 需要同时启用 --include-answers")
+    if calibrate_threshold and include_answers:
+        raise ValueError("--calibrate-threshold 只能用于检索评估，不能同时启用 --include-answers")
 
     settings = get_settings()
     settings.llm_stream_usage = stream_usage
@@ -233,6 +322,7 @@ async def evaluate_dataset(
     details: list[dict[str, Any]] = []
     latencies: list[float] = []
     first_token_latencies: list[float] = []
+    calibration_cases: list[dict[str, Any]] = []
     try:
         for index, case in enumerate(cases):
             if not isinstance(case, dict) or not str(case.get("query") or "").strip():
@@ -272,12 +362,62 @@ async def evaluate_dataset(
                 }
             else:
                 started = time.perf_counter()
-                chunks = await retrieve_meme_chunks(
-                    query=query,
-                    hint_meme_ids=case.get("hint_meme_ids") or [],
-                    mysql_snippets=case.get("snippets") or [],
-                    top_k=max(TOP_KS),
-                )
+                if greeting_reply(query) is not None:
+                    # 线上纯问候会在向量检索前短路；评估也跳过检索以复现真实链路。
+                    chunks = []
+                    if calibrate_threshold:
+                        calibration_cases.append(
+                            {
+                                # 中文注释：query 是与线上 Agent 相同的问题文本。
+                                "query": query,
+                                # 中文注释：正例梗标题标签；问候不产生向量候选。
+                                "expected_meme_names": expected_names,
+                                # 中文注释：标记该问题在梗库中应当没有相关结果。
+                                "expected_empty": expected_empty,
+                                # 中文注释：记录线上检索使用的候选数，供门槛评估截断。
+                                "top_k": settings.retrieval_top_k,
+                                # 中文注释：问候短路后不调用向量服务，因此候选为空。
+                                "candidates": [],
+                            }
+                        )
+                elif calibrate_threshold:
+                    raw_chunks = await similarity_search(query, max(TOP_KS))
+                    ranked_chunks = rank_vector_candidates(
+                        query,
+                        raw_chunks,
+                        min_similarity=-1.0,
+                        top_k=len(raw_chunks) or settings.retrieval_top_k,
+                    )
+                    calibration_cases.append(
+                        {
+                            # 中文注释：query 是与线上 Agent 相同的问题文本。
+                            "query": query,
+                            # 中文注释：由人工维护的正例梗标题标签。
+                            "expected_meme_names": expected_names,
+                            # 中文注释：标记该问题在梗库中应当没有相关结果。
+                            "expected_empty": expected_empty,
+                            # 中文注释：记录线上检索使用的候选数，供门槛评估截断。
+                            "top_k": settings.retrieval_top_k,
+                            # 中文注释：未过滤的向量候选及其原始余弦相似度。
+                            "candidates": [
+                                {
+                                    # 中文注释：候选梗的业务 ID。
+                                    "meme_id": chunk.meme_id,
+                                    # 中文注释：候选梗标题，用于人工标签匹配。
+                                    "title": chunk.title or "",
+                                    # 中文注释：候选向量与查询向量的 cosine 相似度。
+                                    "score": chunk.score,
+                                }
+                                for chunk in ranked_chunks
+                            ],
+                        }
+                    )
+                    chunks = ranked_chunks[: max(TOP_KS)]
+                else:
+                    chunks = await retrieve_meme_chunks(
+                        query=query,
+                        top_k=max(TOP_KS),
+                    )
                 latency_ms = (time.perf_counter() - started) * 1000
                 retrieved_ids = [chunk.meme_id for chunk in chunks]
                 retrieved_names = [chunk.title or "" for chunk in chunks]
@@ -370,6 +510,52 @@ async def evaluate_dataset(
         ),
         "cost_estimate_available_queries": len(available_costs),
     }
+    if calibrate_threshold:
+        calibration = calibrate_vector_similarity_threshold(calibration_cases)
+        threshold = float(calibration["threshold"])
+        # 让校准报告中的检索结果和空结果指标都反映最终门槛，而不是未过滤的原始近邻。
+        for detail, case in zip(details, calibration_cases):
+            selected = [
+                candidate
+                for candidate in case["candidates"]
+                if float(candidate["score"]) >= threshold
+            ][: max(TOP_KS)]
+            detail["retrieved_meme_ids"] = [str(candidate["meme_id"]) for candidate in selected]
+            detail["retrieved_meme_names"] = [str(candidate["title"] or "") for candidate in selected]
+            detail["metrics"] = (
+                score_retrieval_names(
+                    detail["expected_meme_names"], detail["retrieved_meme_names"]
+                )
+                if detail["expected_meme_names"]
+                else score_retrieval(detail["expected_meme_ids"], detail["retrieved_meme_ids"])
+            )
+            detail["empty_query_correct"] = (
+                not detail["retrieved_meme_ids"] if detail["expected_empty"] else None
+            )
+
+        labeled = [item for item in details if item["metrics"] is not None]
+        empty_cases = [item for item in details if item["expected_empty"]]
+        summary["empty_query_accuracy"] = (
+            sum(item["empty_query_correct"] for item in empty_cases) / len(empty_cases)
+            if empty_cases
+            else None
+        )
+        summary["recall_at_5"] = (
+            sum(item["metrics"]["recall_at_5"] for item in labeled) / len(labeled)
+            if labeled
+            else None
+        )
+        summary["recall_at_10"] = (
+            sum(item["metrics"]["recall_at_10"] for item in labeled) / len(labeled)
+            if labeled
+            else None
+        )
+        summary["mrr"] = (
+            sum(item["metrics"]["mrr"] for item in labeled) / len(labeled)
+            if labeled
+            else None
+        )
+        summary["vector_threshold_calibration"] = calibration
     return {"summary": summary, "queries": details}
 
 
@@ -377,6 +563,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET, help="中文注释：固定问题集 JSON 文件路径")
     parser.add_argument("--include-answers", action="store_true", help="中文注释：调用完整 SSE 搜索并评估回答质量")
+    parser.add_argument("--calibrate-threshold", action="store_true", help="中文注释：按已标注正负例校准向量相关度门槛")
     parser.add_argument("--stream-usage", action="store_true", help="中文注释：请求模型返回 token usage；需模型供应商支持")
     parser.add_argument("--input-price-per-million", type=float, help="中文注释：输入 token 每百万个的价格，单位美元")
     parser.add_argument("--output-price-per-million", type=float, help="中文注释：输出 token 每百万个的价格，单位美元")
@@ -387,6 +574,7 @@ def main() -> None:
             evaluate_dataset(
                 args.dataset,
                 include_answers=args.include_answers,
+                calibrate_threshold=args.calibrate_threshold,
                 stream_usage=args.stream_usage,
                 input_price_per_million=args.input_price_per_million,
                 output_price_per_million=args.output_price_per_million,

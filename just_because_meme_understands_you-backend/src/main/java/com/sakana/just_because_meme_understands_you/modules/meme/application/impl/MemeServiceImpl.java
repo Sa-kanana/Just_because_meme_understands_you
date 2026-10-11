@@ -19,7 +19,6 @@ import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeResourceService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.assembler.MemeViewMapper;
-import com.sakana.just_because_meme_understands_you.modules.comment.application.MemeCommentCountService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport.ViewAccess;
@@ -70,9 +69,6 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
 
     @Resource
     private IMemeResourceService memeResourceService;
-
-    @Resource
-    private MemeCommentCountService memeCommentCountService;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -210,22 +206,14 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             return Collections.emptyList();
         }
 
-        List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
-        Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        List<Long> memeIds = memeList.stream().map(Meme::getId).toList();
+        Map<Long, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
         Map<Long, User> authorMap = loadAuthorMap(memeList);
 
         List<SimpleMemeVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
-            SimpleMemeVO vo = new SimpleMemeVO();
-            vo.setId(meme.getId());
-            vo.setName(meme.getName());
+            SimpleMemeVO vo = memeViewMapper.toSimpleMemeVOBase(meme);
             vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            vo.setPageViews(meme.getPageViews());
-            vo.setLikes(meme.getLikes());
-            vo.setComments(meme.getComments());
-            vo.setReleaseTime(meme.getReleaseTime());
-            vo.setUpdateTime(meme.getUpdateTime());
-            vo.setStatus(meme.getStatus());
             vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, true));
             List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
             vo.setMemeTag(toMemeTagVOList(tags));
@@ -235,7 +223,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     @Override
-    public MemeDetailVO getMemeDetail(Integer memeId, Long currentUserId) {
+    public MemeDetailVO getMemeDetail(Long memeId, Long currentUserId) {
         if (memeId == null || memeId <= 0) {
             return null;
         }
@@ -269,7 +257,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         }
 
         List<MemeTag> tags = getTagsByMemeId(memeId);
-        List<MemeResource> links = getLinksByMemeId(memeId);
+        boolean includeOfflineResources = access == ViewAccess.OWNER_PREVIEW
+                && Objects.equals(meme.getStatus(), MemeVisibilitySupport.STATUS_OFFLINE);
+        List<MemeResource> links = getLinksByMemeId(memeId, includeOfflineResources);
         MemeDetailVO detailVO = buildDetailVO(meme, tags, links);
         applyViewMeta(detailVO, meme, currentUserId, access);
 
@@ -302,7 +292,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     /**
      * 根据梗 id 查询关联的标签列表（一次 JOIN 查询）
      */
-    private List<MemeTag> getTagsByMemeId(Integer memeId) {
+    private List<MemeTag> getTagsByMemeId(Long memeId) {
         return buildMemeIdToTags(java.util.Collections.singletonList(memeId))
                 .getOrDefault(memeId, java.util.Collections.emptyList());
     }
@@ -310,14 +300,13 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     /**
      * 根据梗 id 查询关联的相关链接（meme_resource）
      */
-    private List<MemeResource> getLinksByMemeId(Integer memeId) {
-        List<MemeResource> resources = memeResourceService.list(
-                new LambdaQueryWrapper<MemeResource>()
-                        .eq(MemeResource::getMemeId, memeId.longValue())
-                        .eq(MemeResource::getStatus, 1)
-                        .orderByAsc(MemeResource::getSortOrder)
-                        .orderByAsc(MemeResource::getId)
-        );
+    private List<MemeResource> getLinksByMemeId(Long memeId, boolean includeOfflineResources) {
+        LambdaQueryWrapper<MemeResource> query = new LambdaQueryWrapper<MemeResource>()
+                .eq(MemeResource::getMemeId, memeId)
+                .eq(MemeResource::getStatus, includeOfflineResources ? 0 : 1)
+                .orderByAsc(MemeResource::getSortOrder)
+                .orderByAsc(MemeResource::getId);
+        List<MemeResource> resources = memeResourceService.list(query);
         return resources != null ? resources : Collections.emptyList();
     }
 
@@ -325,21 +314,9 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
      * 根据梗实体、标签与链接列表组装详细页 VO（符合接口 Meme）
      */
     private MemeDetailVO buildDetailVO(Meme meme, List<MemeTag> tags, List<MemeResource> links) {
-        MemeDetailVO vo = new MemeDetailVO();
-        vo.setId(meme.getId());
-        vo.setIntroduction(meme.getIntroduction());
-        vo.setName(meme.getName());
+        MemeDetailVO vo = memeViewMapper.toMemeDetailVOBase(meme);
         vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-        vo.setPageViews(meme.getPageViews());
-        vo.setLikes(meme.getLikes());
-        if (meme.getId() != null) {
-            vo.setComments(memeCommentCountService.getCommentCount(meme.getId().longValue()));
-        } else {
-            vo.setComments(meme.getComments());
-        }
-        vo.setReleaseTime(meme.getReleaseTime());
-        vo.setUpdateTime(meme.getUpdateTime());
-        vo.setStatus(meme.getStatus());
+        vo.setComments(meme.getComments() == null ? 0 : meme.getComments());
         vo.setAuthor(buildAuthor(meme.getUserId(), true));
         vo.setMemeTag(toMemeTagVOList(tags));
         vo.setLinks(toMemeResourceVOList(links));
@@ -350,12 +327,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         if (vo == null || meme == null) {
             return;
         }
-        AuthorVO author = vo.getAuthor();
-        if (author == null || !StringUtils.hasText(author.getUserId())) {
-            vo.setAuthor(buildAuthor(meme.getUserId(), true));
-        } else if (StringUtils.hasText(author.getAvatar())) {
-            author.setAvatar(ossUrlHelper.toPublicUrl(author.getAvatar()));
-        }
+        // 中文注释：缓存命中时仍实时刷新作者，确保账号注销后的匿名化立即生效。
+        vo.setAuthor(buildAuthor(meme.getUserId(), true));
     }
 
     private AuthorVO buildAuthor(Long userId, boolean includeSignature) {
@@ -380,7 +353,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
      * 一次 JOIN 查询批量取回多个梗的标签，按梗 id 分组。
      * 替代原先「查关系表 + 批量查标签表」两次查询。
      */
-    private Map<Integer, List<MemeTag>> buildMemeIdToTags(List<Integer> memeIds) {
+    private Map<Long, List<MemeTag>> buildMemeIdToTags(List<Long> memeIds) {
         if (memeIds == null || memeIds.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -388,7 +361,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         if (rows == null || rows.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<Integer, List<MemeTag>> memeIdToTags = new HashMap<>();
+        Map<Long, List<MemeTag>> memeIdToTags = new HashMap<>();
         for (MemeTagBindDTO row : rows) {
             MemeTag tag = new MemeTag();
             tag.setId(row.getId());
@@ -406,7 +379,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         List<MemeTagVO> list = new ArrayList<>(tags.size());
         for (MemeTag t : tags) {
             MemeTagVO vo = memeViewMapper.toMemeTagVO(t);
-            vo.setRelatedQuantity(parseRelatedQuantity(t.getRelatedQuantity()));
+            vo.setRelatedQuantity(t.getRelatedQuantity());
             list.add(vo);
         }
         return list;
@@ -455,25 +428,14 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         }
     }
 
-    private static Integer parseRelatedQuantity(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
     private List<MemeListItemVO> toMemeListItemVOs(List<Meme> memeList) {
         if (memeList == null || memeList.isEmpty()) {
             return Collections.emptyList();
         }
-        List<Integer> memeIds = memeList.stream().map(Meme::getId).toList();
-        Map<Integer, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        List<Long> memeIds = memeList.stream().map(Meme::getId).toList();
+        Map<Long, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
         Map<Long, User> authorMap = loadAuthorMap(memeList);
-        Map<Integer, MemeResource> sourceByMemeId = loadFirstSourceLinkByMemeIds(memeIds);
+        Map<Long, MemeResource> sourceByMemeId = loadFirstSourceLinkByMemeIds(memeIds);
 
         List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
         for (Meme meme : memeList) {
@@ -508,20 +470,12 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     /**
      * 批量取每个梗的首条外链（link / video / article），供列表卡片展示来源。
      */
-    private Map<Integer, MemeResource> loadFirstSourceLinkByMemeIds(List<Integer> memeIds) {
+    private Map<Long, MemeResource> loadFirstSourceLinkByMemeIds(List<Long> memeIds) {
         if (memeIds == null || memeIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Long> longIds = memeIds.stream()
-                .filter(Objects::nonNull)
-                .map(Integer::longValue)
-                .distinct()
-                .toList();
-        if (longIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
         List<MemeResource> resources = memeResourceService.list(new LambdaQueryWrapper<MemeResource>()
-                .in(MemeResource::getMemeId, longIds)
+                .in(MemeResource::getMemeId, memeIds)
                 .eq(MemeResource::getStatus, 1)
                 .in(MemeResource::getResourceType, List.of(
                         MemeResourceType.LINK.getCode(),
@@ -532,7 +486,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         if (resources == null || resources.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<Integer, MemeResource> firstByMeme = new HashMap<>();
+        Map<Long, MemeResource> firstByMeme = new HashMap<>();
         for (MemeResource resource : resources) {
             if (resource.getMemeId() == null || !StringUtils.hasText(resource.getResourceUrl())) {
                 continue;
@@ -541,7 +495,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 continue;
             }
-            int memeId = resource.getMemeId().intValue();
+            Long memeId = resource.getMemeId();
             firstByMeme.putIfAbsent(memeId, resource);
         }
         return firstByMeme;
@@ -551,7 +505,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         if ("following".equals(sort)) {
             List<Long> followingIds = listFollowingUserIds(followingUserId);
             if (followingIds.isEmpty()) {
-                wrapper.eq(Meme::getId, -1);
+                wrapper.eq(Meme::getId, -1L);
             } else {
                 wrapper.in(Meme::getUserId, followingIds);
             }

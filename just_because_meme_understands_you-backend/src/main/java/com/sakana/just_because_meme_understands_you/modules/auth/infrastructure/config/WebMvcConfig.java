@@ -48,7 +48,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/**")
                 .excludePathPatterns(
                         "/v1/auth/sessions",
+                        "/v1/auth/login",
                         "/v1/auth/oauth/**",
+                        "/admin/v1/auth/login",
+                        "/admin/v1/auth/sessions/current",
                         "/v1/captchas",
                         "/v1/users",
                         "/v1/registration-verification-codes",

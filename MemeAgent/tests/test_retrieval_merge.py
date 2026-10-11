@@ -1,76 +1,8 @@
-from app.retrieval.repository import RetrievedChunk, merge_retrieved
+from types import SimpleNamespace
+
+from app.agents import tools
 from app.retrieval import repository
-
-
-def test_merge_retrieved_prefers_higher_score():
-    vector = [RetrievedChunk(meme_id="1", content="v", score=0.9, title="A")]
-    hint = [RetrievedChunk(meme_id="1", content="h", score=0.55, title="A")]
-    mysql = [RetrievedChunk(meme_id="2", content="m", score=0.45, title="B")]
-    merged = merge_retrieved(vector, hint, mysql, top_k=5)
-    assert [c.meme_id for c in merged] == ["1", "2"]
-    assert merged[0].score == 0.9
-    assert merged[0].content == "v"
-
-
-def test_merge_retrieved_respects_top_k():
-    chunks = [
-        RetrievedChunk(meme_id=str(i), content=str(i), score=1.0 - i * 0.1)
-        for i in range(5)
-    ]
-    merged = merge_retrieved(chunks, [], [], top_k=2)
-    assert len(merged) == 2
-    assert merged[0].meme_id == "0"
-
-
-def test_merge_retrieved_uses_rank_fusion_across_sources():
-    vector = [
-        RetrievedChunk(meme_id="a", content="vector-a", score=0.9),
-        RetrievedChunk(meme_id="b", content="vector-b", score=0.8),
-    ]
-    hints = [
-        RetrievedChunk(meme_id="b", content="hint-b", score=0.55),
-        RetrievedChunk(meme_id="c", content="hint-c", score=0.55),
-    ]
-    mysql = [
-        RetrievedChunk(meme_id="b", content="mysql-b", score=0.45),
-        RetrievedChunk(meme_id="a", content="mysql-a", score=0.45),
-    ]
-
-    merged = merge_retrieved(vector, hints, mysql, top_k=5)
-
-    assert [chunk.meme_id for chunk in merged] == ["b", "a", "c"]
-    assert merged[0].content == "vector-b"
-    assert merged[0].score == 0.8
-
-
-def test_merge_retrieved_does_not_count_duplicate_meme_chunks_twice_per_source():
-    vector = [
-        RetrievedChunk(meme_id="a", content="a-1", score=0.9),
-        RetrievedChunk(meme_id="a", content="a-2", score=0.8),
-        RetrievedChunk(meme_id="a", content="a-3", score=0.7),
-        RetrievedChunk(meme_id="b", content="b", score=0.6),
-    ]
-    hints = [RetrievedChunk(meme_id="b", content="hint-b", score=0.55)]
-
-    merged = merge_retrieved(vector, hints, [], top_k=5)
-
-    assert [chunk.meme_id for chunk in merged] == ["b", "a"]
-
-
-def test_merge_retrieved_does_not_double_count_java_hint_and_snippet_candidates():
-    vector = [RetrievedChunk(meme_id="a", content="vector-a", score=0.9)]
-    hints = [
-        RetrievedChunk(meme_id="b", content="hint-b", score=0.55),
-        RetrievedChunk(meme_id="c", content="hint-c", score=0.55),
-    ]
-    mysql = [
-        RetrievedChunk(meme_id="b", content="mysql-b", score=0.45),
-        RetrievedChunk(meme_id="a", content="mysql-a", score=0.45),
-    ]
-
-    merged = merge_retrieved(vector, hints, mysql, top_k=5)
-
-    assert [chunk.meme_id for chunk in merged] == ["a", "b", "c"]
+from app.retrieval.repository import RetrievedChunk
 
 
 async def test_similarity_search_oversamples_chunks_to_keep_distinct_meme_candidates(monkeypatch):
@@ -105,3 +37,69 @@ async def test_similarity_search_oversamples_chunks_to_keep_distinct_meme_candid
     await repository.similarity_search("query", top_k=5)
 
     assert conn.limit == 30
+
+
+async def test_retrieve_meme_chunks_filters_below_calibrated_threshold_and_prefers_title(monkeypatch):
+    vector_hits = [
+        RetrievedChunk(
+            meme_id="intro-only",
+            content="标题: 普通梗\n标签: 日常\n\n不明觉厉只在介绍里出现",
+            score=0.91,
+            title="普通梗",
+        ),
+        RetrievedChunk(
+            meme_id="exact-title",
+            content="标题: 不明觉厉\n标签: 评价\n\n不明白但觉得厉害",
+            score=0.76,
+            title="不明觉厉",
+        ),
+        RetrievedChunk(
+            meme_id="below-threshold",
+            content="标题: 低分候选",
+            score=0.69,
+            title="低分候选",
+        ),
+    ]
+    monkeypatch.setattr(
+        tools,
+        "get_settings",
+        lambda: SimpleNamespace(
+            retrieval_timeout_seconds=3,
+            retrieval_max_retries=0,
+            vector_min_similarity=0.70,
+        ),
+    )
+
+    async def search_vectors(_query, _top_k):
+        return vector_hits
+
+    monkeypatch.setattr(tools, "similarity_search", search_vectors)
+
+    actual = await tools.retrieve_meme_chunks(query="不明觉厉是什么意思", top_k=5)
+
+    assert [chunk.meme_id for chunk in actual] == ["exact-title", "intro-only"]
+
+
+def test_tag_hit_precedes_higher_scoring_introduction_only_match():
+    actual = tools.rank_vector_candidates(
+        "网络用语有什么梗",
+        [
+            RetrievedChunk(
+                meme_id="intro-only",
+                content="标题: 普通梗\n标签: 日常\n\n介绍里提到网络用语",
+                score=0.93,
+                title="普通梗",
+            ),
+            RetrievedChunk(
+                meme_id="tag-hit",
+                content="标题: 另一个梗\n标签: 网络用语 评价\n\n其它介绍",
+                score=0.75,
+                title="另一个梗",
+            ),
+        ],
+        min_similarity=0.70,
+        top_k=2,
+    )
+
+    assert [chunk.meme_id for chunk in actual] == ["tag-hit", "intro-only"]
+    assert actual[0].score == 0.75

@@ -1,18 +1,25 @@
 package com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * MemeAgent（FastAPI）与 AI 搜索业务参数。
  */
 @Data
 @Component
+@Validated
 @ConfigurationProperties(prefix = "meme")
 public class MemeAgentProperties {
 
+    @Valid
     private Agent agent = new Agent();
+    @Valid
     private Ai ai = new Ai();
 
     @Data
@@ -25,7 +32,8 @@ public class MemeAgentProperties {
          */
         private String writeApiKey = "";
         private long connectTimeoutMs = 2000L;
-        private long responseTimeoutMs = 180000L;
+        /** MemeAgent 响应读取超时时间（毫秒），默认 20 分钟。 */
+        private long responseTimeoutMs = 1200000L;
         /** MemeAgent SSE 上游连接池的最大活跃连接数。 */
         private int maxConnections = 100;
         /** 等待上游连接池连接的最大排队请求数，避免无限堆积。 */
@@ -35,6 +43,10 @@ public class MemeAgentProperties {
         private String streamPath = "/stream";
         private String ingestPath = "/ingest";
         private String knowledgeIngestPath = "/ingest/knowledge";
+        /** 知识索引 outbox 并行 worker 数，避免单线程串行等待模型向量服务。 */
+        @Min(1)
+        @Max(8)
+        private int knowledgeIndexConcurrency = 2;
         private String crawlPath = "/crawl/hot-memes";
     }
 
@@ -56,42 +68,4 @@ public class MemeAgentProperties {
         private int mysqlHintLimit = 8;
     }
 
-    /**
-     * 运维接口权限（crawl / ingest 手动入口）。
-     */
-    @Data
-    public static class Ops {
-        /** 是否要求管理员（ROLE_ADMIN 或白名单） */
-        private boolean requireAdmin = true;
-        /**
-         * 额外允许的运维用户雪花 ID（逗号分隔配置）。
-         * 便于本地尚无 ROLE_ADMIN 时临时授权。
-         */
-        private java.util.List<Long> adminUserIds = new java.util.ArrayList<>();
-    }
-
-    private Ops ops = new Ops();
-
-    /**
-     * Firecrawl 热梗采集 → 写入 MySQL → 灌库。
-     */
-    @Data
-    public static class Crawl {
-        /** 总开关 */
-        private boolean enabled = true;
-        /** 定时采集开关 */
-        private boolean scheduleEnabled = true;
-        /** cron：默认每月 4 次（每月 1/8/15/22 日 10:00） */
-        private String cron = "0 0 10 1,8,15,22 * *";
-        /** 每次拉取条数（对齐 UP 投稿前 N 条视频） */
-        private int limit = 5;
-        /** 系统发布者用户 ID（须已存在于 user 表） */
-        private long publisherUserId = 0L;
-        /** 首页「实时新梗」条数 */
-        private int liveLimit = 8;
-        /** 实时新梗时间窗（小时） */
-        private int liveHours = 48;
-    }
-
-    private Crawl crawl = new Crawl();
 }

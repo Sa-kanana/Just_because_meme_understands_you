@@ -42,7 +42,7 @@ class MemeReportServiceTest {
 
     @Test
     void rejectsOwnMeme() {
-        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(3L).setStatus(1));
+        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(3L).setStatus(1));
         BizException error = assertThrows(BizException.class,
                 () -> service.submit(7L, 3L, "SPAM", "广告"));
         assertEquals(403, error.getCode());
@@ -51,7 +51,7 @@ class MemeReportServiceTest {
 
     @Test
     void rejectsInvisibleMeme() {
-        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setStatus(3));
+        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setStatus(3));
         BizException error = assertThrows(BizException.class,
                 () -> service.submit(7L, 3L, "SPAM", "广告"));
         assertEquals(404, error.getCode());
@@ -60,7 +60,7 @@ class MemeReportServiceTest {
 
     @Test
     void rejectsUnknownReason() {
-        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setStatus(1));
+        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setStatus(1));
         BizException error = assertThrows(BizException.class,
                 () -> service.submit(7L, 3L, "WRONG", "说明"));
         assertEquals(400, error.getCode());
@@ -69,7 +69,7 @@ class MemeReportServiceTest {
 
     @Test
     void savesValidReportAndReturnsId() {
-        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setStatus(1));
+        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setStatus(1));
         when(reportMapper.insert(any(CommunityReport.class))).thenAnswer(invocation -> {
             CommunityReport row = invocation.getArgument(0);
             row.setId(21L);
@@ -80,7 +80,7 @@ class MemeReportServiceTest {
 
     @Test
     void duplicateReportReturnsBusinessError() {
-        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7).setUserId(9L).setStatus(1));
+        when(memeMapper.selectById(7L)).thenReturn(new Meme().setId(7L).setUserId(9L).setStatus(1));
         when(reportMapper.insert(any(CommunityReport.class))).thenThrow(new DuplicateKeyException("unique"));
         BizException error = assertThrows(BizException.class,
                 () -> service.submit(7L, 3L, "SPAM", "广告"));

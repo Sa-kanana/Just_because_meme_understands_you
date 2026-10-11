@@ -21,7 +21,9 @@ import com.sakana.just_because_meme_understands_you.modules.meme.application.IMe
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeBloomFilterService;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport.ViewAccess;
-import com.sakana.just_because_meme_understands_you.modules.notification.application.NotificationPublisher;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentNotificationEvent;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentNotificationEventPort;
 import com.sakana.just_because_meme_understands_you.modules.user.application.safety.UserSafetyService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentAnchorVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentCreateResponseVO;
@@ -55,13 +57,16 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
     private IMemeService memeService;
 
     @Resource
+    private MemeCatalogPort memeCatalogPort;
+
+    @Resource
     private SensitiveWordFilterService sensitiveWordFilterService;
 
     @Resource
     private MemeCommentAsyncHandler memeCommentAsyncHandler;
 
     @Resource
-    private NotificationPublisher notificationPublisher;
+    private CommentNotificationEventPort commentNotificationEventPort;
 
     @Resource
     private MemeBloomFilterService memeBloomFilterService;
@@ -170,7 +175,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
             throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
         }
         // 布隆过滤器快速预判：false 表示梗一定不存在，直接拦截，避免穿透 DB
-        if (!memeBloomFilterService.mightContain(memeId.intValue())) {
+        if (!memeBloomFilterService.mightContain(memeId)) {
             throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
         }
         Meme meme = memeService.getById(memeId);
@@ -227,6 +232,9 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         }
 
         memeCommentMapper.insert(comment);
+        if (!memeCatalogPort.incrementCommentCount(memeId)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
+        }
         commentSupport.saveImages(comment.getId(), userId, request.getImageUrls());
 
         if (!isRootComment) {
@@ -234,23 +242,29 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
                     .eq(MemeComment::getId, rootId)
                     .setSql("reply_count = reply_count + 1")
                     .set(MemeComment::getUpdateTime, now));
-            // 与评论同事务写入，避免 afterCommit 未触发/进程未热加载导致“没有通知”
-            notificationPublisher.publishCommentReply(
-                    notifyReceiverUserId,
-                    userId,
-                    meme,
-                    memeId,
-                    comment.getId(),
-                    rootId,
-                    comment.getContent());
+            if (notifyReceiverUserId != null) {
+                commentNotificationEventPort.append(new CommentNotificationEvent(
+                        CommentNotificationEvent.Type.COMMENT_REPLIED,
+                        notifyReceiverUserId,
+                        userId,
+                        memeId,
+                        comment.getId(),
+                        rootId,
+                        meme.getName(),
+                        meme.getImage(),
+                        comment.getContent()));
+            }
         } else if (meme.getUserId() != null) {
-            notificationPublisher.publishMemeComment(
+            commentNotificationEventPort.append(new CommentNotificationEvent(
+                    CommentNotificationEvent.Type.MEME_COMMENTED,
                     meme.getUserId(),
                     userId,
-                    meme,
                     memeId,
                     comment.getId(),
-                    comment.getContent());
+                    comment.getId(),
+                    meme.getName(),
+                    meme.getImage(),
+                    comment.getContent()));
         }
 
         scheduleAfterCommentCommitted(memeId, userId);

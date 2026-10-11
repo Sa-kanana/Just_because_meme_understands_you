@@ -1,10 +1,9 @@
 package com.sakana.just_because_meme_understands_you.modules.user.application.favorite.support;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserFavorite;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserFavoriteMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.FavoriteFolderVO;
@@ -27,7 +26,7 @@ public class FavoriteFolderCoverResolver {
     private UserFavoriteMapper favoriteMapper;
 
     @Resource
-    private IMemeService memeService;
+    private MemeCatalogPort memeCatalogPort;
 
     @Resource
     private OssUrlHelper ossUrlHelper;
@@ -54,19 +53,18 @@ public class FavoriteFolderCoverResolver {
         if (folderToMemeId.isEmpty()) {
             return;
         }
-        List<Integer> memeIds = folderToMemeId.values().stream().map(Long::intValue).distinct().toList();
-        List<Meme> memes = memeService.listByIds(memeIds);
-        Map<Integer, String> idToImage = new HashMap<>();
-        for (Meme meme : memes) {
-            if (meme.getId() != null) {
-                idToImage.put(meme.getId(), meme.getImage());
+        List<MemeCatalogPort.MemeCard> memes = memeCatalogPort.findByIds(folderToMemeId.values());
+        Map<Long, String> idToImage = new HashMap<>();
+        for (MemeCatalogPort.MemeCard meme : memes) {
+            if (meme.id() != null) {
+                idToImage.put(meme.id(), meme.image());
             }
         }
         for (FavoriteFolderVO vo : voList) {
             long folderId = vo.getId() == null ? IUserFavoriteFolderService.DEFAULT_FOLDER_ID : vo.getId();
             Long memeId = folderToMemeId.get(folderId);
             if (memeId != null) {
-                vo.setCoverUrl(ossUrlHelper.toPublicUrl(idToImage.get(memeId.intValue())));
+                vo.setCoverUrl(ossUrlHelper.toPublicUrl(idToImage.get(memeId)));
             }
         }
     }

@@ -25,7 +25,7 @@ public class MemePublishAsyncHandler {
 
     /**
      * 对命中的标签 related_quantity 执行 +1。
-     * related_quantity 为 varchar 数字，MySQL 隐式转换支持 +1。
+     * related_quantity 为整数列，数据库执行原子增量。
      *
      * @param tagIds 命中的标签 id
      */
@@ -63,7 +63,7 @@ public class MemePublishAsyncHandler {
             try {
                 memeTagMapper.update(null, new LambdaUpdateWrapper<MemeTag>()
                         .eq(MemeTag::getId, tagId)
-                        .setSql("related_quantity = GREATEST(CAST(related_quantity AS SIGNED) - 1, 0)"));
+                        .setSql("related_quantity = GREATEST(related_quantity - 1, 0)"));
             } catch (Exception e) {
                 log.warn("标签 related_quantity 回滚失败, tagId={}", tagId, e);
             }

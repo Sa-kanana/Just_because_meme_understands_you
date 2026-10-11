@@ -14,11 +14,13 @@ public final class AuthConstants {
     // ---- 角色 ----
     public static final String ROLE_USER = "ROLE_USER";
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
+    public static final String ROLE_SUPER_ADMIN = "ROLE_SUPER_ADMIN";
 
     // ---- JWT claim key ----
     public static final String CLAIM_TOKEN_TYPE = "tokenType";
     public static final String CLAIM_LOGIN_TYPE = "loginType";
     public static final String CLAIM_ROLE = "role";
+    public static final String CLAIM_ROLES = "roles";
     /** 会话版本号：改密 / 全量踢下线时递增，使历史 access/refresh 立即失效 */
     public static final String CLAIM_TOKEN_VERSION = "tv";
 

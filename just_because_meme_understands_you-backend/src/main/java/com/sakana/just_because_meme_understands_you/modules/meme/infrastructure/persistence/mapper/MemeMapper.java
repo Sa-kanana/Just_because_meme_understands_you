@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
@@ -16,6 +17,10 @@ import org.apache.ibatis.annotations.Update;
  */
 @Mapper
 public interface MemeMapper extends BaseMapper<Meme> {
+
+    /** 在当前事务中锁定梗行，串行化审核、下架和恢复等状态变更。 */
+    @Select("SELECT * FROM meme WHERE id = #{memeId} LIMIT 1 FOR UPDATE")
+    Meme selectByIdForUpdate(@Param("memeId") long memeId);
 
     /**
      * 关键字搜索梗（按名称、介绍或标签名模糊匹配），分页，支持排序
@@ -40,6 +45,10 @@ public interface MemeMapper extends BaseMapper<Meme> {
 
     @Update("UPDATE meme SET likes = GREATEST(IFNULL(likes, 0) - 1, 0) WHERE id = #{memeId}")
     int decrementLikes(@Param("memeId") long memeId);
+
+    /** 在创建评论的数据库事务中同步递增累计评论数。 */
+    @Update("UPDATE meme SET comments = IFNULL(comments, 0) + 1 WHERE id = #{memeId}")
+    int incrementComments(@Param("memeId") long memeId);
 
     @Update("UPDATE meme SET page_views = IFNULL(page_views, 0) + 1 WHERE id = #{memeId} AND status = 1")
     int incrementPageViews(@Param("memeId") long memeId);

@@ -14,10 +14,14 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 @Component
 @Slf4j
@@ -62,14 +66,36 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
                 writeUnauthorized(response, "登录已失效，请重新登录");
                 return false;
             }
-            request.setAttribute(AuthContext.ATTR_USER_ID, userId);
-            request.setAttribute(AuthContext.ATTR_ROLE, claims.get(AuthConstants.CLAIM_ROLE));
+            AuthContext.establish(request, userId, extractRoleCodes(claims));
             return true;
         } catch (Exception ignored) {
             log.warn("JWT 校验失败，IP:{}，URI:{}", request.getRemoteAddr(), request.getRequestURI());
             writeUnauthorized(response, "无效的令牌，请重新登录");
             return false;
         }
+    }
+
+    @Override
+    public void afterCompletion(@NonNull HttpServletRequest request,
+                                @NonNull HttpServletResponse response,
+                                @NonNull Object handler,
+                                Exception exception) {
+        SecurityContextHolder.clearContext();
+    }
+
+    private List<String> extractRoleCodes(Claims claims) {
+        Object rolesClaim = claims.get(AuthConstants.CLAIM_ROLES);
+        List<String> roleValues = new ArrayList<>();
+        if (rolesClaim instanceof Collection<?> roles) {
+            roles.forEach(role -> roleValues.add(String.valueOf(role)));
+        }
+        if (roleValues.isEmpty()) {
+            Object legacyRole = claims.get(AuthConstants.CLAIM_ROLE);
+            if (legacyRole != null) {
+                roleValues.add(String.valueOf(legacyRole));
+            }
+        }
+        return roleValues.stream().map(AuthContext::normalizeRoleCode).filter(role -> !role.isEmpty()).distinct().toList();
     }
 
     private void writeUnauthorized(HttpServletResponse response, String message) throws IOException {

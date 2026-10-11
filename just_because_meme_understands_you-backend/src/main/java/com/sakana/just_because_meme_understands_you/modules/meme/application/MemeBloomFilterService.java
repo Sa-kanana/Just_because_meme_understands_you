@@ -60,7 +60,7 @@ public class MemeBloomFilterService {
     /**
      * 将梗 id 加入过滤器，发布成功后调用。
      */
-    public synchronized void add(Integer memeId) {
+    public synchronized void add(Long memeId) {
         if (memeId == null) {
             return;
         }
@@ -74,7 +74,7 @@ public class MemeBloomFilterService {
      * 判断梗 id 是否可能存在。
      * 返回 false 表示一定不存在；返回 true 仍需查 DB 兜底。
      */
-    public synchronized boolean mightContain(Integer memeId) {
+    public synchronized boolean mightContain(Long memeId) {
         if (memeId == null) {
             return false;
         }
@@ -91,7 +91,7 @@ public class MemeBloomFilterService {
         return Math.max(expectedInsertions * 16, 1 << 20);
     }
 
-    private byte[] toBytes(Integer memeId) {
+    private byte[] toBytes(Long memeId) {
         return String.valueOf(memeId).getBytes(StandardCharsets.UTF_8);
     }
 

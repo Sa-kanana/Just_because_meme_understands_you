@@ -9,10 +9,12 @@ def build_chunks(doc: IngestDocument, max_chunk_chars: int = 1200) -> list[str]:
     if len(full) <= max_chunk_chars:
         return [full]
 
-    chunks: list[str] = [header]
+    prefix = f"{header}\n\n"
+    body_chunk_chars = max(1, max_chunk_chars - len(prefix))
+    chunks: list[str] = []
     start = 0
     while start < len(body):
-        end = min(start + max_chunk_chars, len(body))
-        chunks.append(body[start:end])
+        end = min(start + body_chunk_chars, len(body))
+        chunks.append(f"{prefix}{body[start:end]}".strip())
         start = end
     return chunks

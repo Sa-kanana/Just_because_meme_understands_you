@@ -9,7 +9,6 @@ import com.sakana.just_because_meme_understands_you.modules.auth.domain.AuthCons
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,13 +37,15 @@ class RequestSupportTests {
     }
 
     @Test
-    void adminRoleAndConfiguredAllowListKeepExistingAccessRules() {
+    void adminRoleRequiresAnAssignedAdministratorRole() {
         var request = new MockHttpServletRequest();
         request.setAttribute(AuthContext.ATTR_USER_ID, 12L);
         request.setAttribute(AuthContext.ATTR_ROLE, AuthConstants.ROLE_USER);
         assertThrows(BizException.class, () -> AdminAuthSupport.requireAdmin(request));
-        assertEquals(12L, AdminAuthSupport.requireAdmin(request, List.of(12L)));
+        assertThrows(BizException.class, () -> AdminAuthSupport.requireAdmin(request));
         request.setAttribute(AuthContext.ATTR_ROLE, AuthConstants.ROLE_ADMIN);
+        assertEquals(12L, AdminAuthSupport.requireAdmin(request));
+        request.setAttribute(AuthContext.ATTR_ROLE, AuthConstants.ROLE_SUPER_ADMIN);
         assertEquals(12L, AdminAuthSupport.requireAdmin(request));
         request.removeAttribute(AuthContext.ATTR_USER_ID);
         assertThrows(BizException.class, () -> AdminAuthSupport.requireAdmin(request));

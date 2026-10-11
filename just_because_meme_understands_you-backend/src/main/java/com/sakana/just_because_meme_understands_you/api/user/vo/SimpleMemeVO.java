@@ -15,7 +15,7 @@ public class SimpleMemeVO {
     /**
      * id唯一标识
      */
-    private Integer id;
+    private Long id;
 
     /**
      * 名字

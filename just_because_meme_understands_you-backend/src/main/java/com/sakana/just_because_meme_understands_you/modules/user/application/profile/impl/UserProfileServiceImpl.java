@@ -2,27 +2,22 @@ package com.sakana.just_because_meme_understands_you.modules.user.application.pr
 
 import com.aliyun.oss.OSS;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageParamNormalizer;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.projection.MemeTagBindDTO;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.projection.UserFavoriteMemeJoinRow;
 import com.sakana.just_because_meme_understands_you.api.user.dto.UserProfileUpdateRequestDTO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserFavorite;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserRelation;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserStats;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserStatsMapper;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
-import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteFolderService;
@@ -87,10 +82,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
     private AuthorSupport authorSupport;
 
     @Resource
-    private IMemeService memeService;
-
-    @Resource
-    private MemeTagRelationMapper memeTagRelationMapper;
+    private MemeCatalogPort memeCatalogPort;
 
     @Resource
     private UserStatsMapper userStatsMapper;
@@ -147,6 +139,20 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
         UserProfileVO vo = new UserProfileVO();
         vo.setUserId(targetUser.getId());
+        if (UserDisplayPolicy.isDeleted(targetUser)) {
+            vo.setNickname(UserDisplayPolicy.DELETED_USER_NAME);
+            vo.setAvatar("");
+            vo.setSignature("");
+            vo.setGender(0);
+            vo.setIsSelf(false);
+            vo.setIsFollow(false);
+            vo.setStats(buildDeletedUserStats(targetUserId));
+            vo.setMemes(queryLatestUserMemes(targetUserId, 3));
+            vo.setFavorites(Collections.emptyList());
+            writeCache(cacheKey, vo);
+            return vo;
+        }
+
         vo.setNickname(targetUser.getNickname());
         vo.setAvatar(ossUrlHelper.toPublicUrl(targetUser.getAvatar()));
         vo.setSignature(targetUser.getSignature());
@@ -167,7 +173,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
         }
         User user = userService.getById(userId);
-        if (user == null) {
+        if (user == null || UserDisplayPolicy.isDeleted(user)) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
         EditProfileEchoVO vo = new EditProfileEchoVO();
@@ -180,153 +186,106 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size, Integer status) {
+    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size, Integer status, String sort) {
         if (targetUserId == null || targetUserId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
         }
         int pageNo = PageParamNormalizer.normalizePage(page);
         int pageSize = PageParamNormalizer.normalizeSize(size);
 
-        // 状态隔离：本人看所有可见状态（可筛），他人只看 status=1
-        boolean isOwner = currentUserId != null && currentUserId.equals(targetUserId);
-
-        Page<Meme> mpPage = new Page<>(pageNo, pageSize);
-        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, targetUserId)
-                .orderByDesc(Meme::getReleaseTime)
-                .orderByDesc(Meme::getId);
-        if (isOwner) {
-            wrapper.ne(Meme::getStatus, MemeVisibilitySupport.STATUS_PURGED);
-            applyOwnerStatusFilter(wrapper, status);
-        } else {
-            wrapper.eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL);
-        }
-        IPage<Meme> result = memeService.page(mpPage, wrapper);
-
         User targetUser = userService.getById(targetUserId);
         if (targetUser == null) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
+        // 中文注释：已注销账号只展示公开内容，不能再以本人身份查看审核中或下架的梗。
+        boolean isOwner = !UserDisplayPolicy.isDeleted(targetUser)
+                && currentUserId != null && currentUserId.equals(targetUserId);
+
+        MemeCatalogPort.MemePage result = memeCatalogPort.pageByAuthor(
+                targetUserId, isOwner, status, pageNo, pageSize, MemeCatalogPort.MemeSort.fromValue(sort));
+
         AuthorVO author = authorSupport.toAuthorVO(targetUserId, targetUser, true);
 
-        List<Meme> records = result.getRecords();
+        List<MemeCatalogPort.MemeCard> records = result.records();
         List<UserPublishedMemeVO> list = records.isEmpty()
                 ? Collections.emptyList()
-                : buildPublishedMemeVOList(records, author);
+                : buildPublishedMemeVOList(records, author, isOwner);
 
         UserMemePageVO pageVO = new UserMemePageVO();
         pageVO.setAuthor(author);
         pageVO.setList(list);
         pageVO.setPage(pageNo);
         pageVO.setSize(pageSize);
-        pageVO.setTotal(result.getTotal());
+        pageVO.setTotal(result.total());
         pageVO.setOwner(isOwner);
-        pageVO.setHasMore((long) pageNo * pageSize < result.getTotal());
+        pageVO.setHasMore((long) pageNo * pageSize < result.total());
         if (isOwner) {
             pageVO.setStatusCounts(loadOwnerStatusCounts(targetUserId));
         }
         return pageVO;
     }
 
-    private void applyOwnerStatusFilter(LambdaQueryWrapper<Meme> wrapper, Integer status) {
-        if (status == null) {
-            return;
-        }
-        int value = status;
-        if (value == MemeVisibilitySupport.STATUS_REVIEWING) {
-            // 「审核中」筛选含首次审核与恢复审核
-            wrapper.in(Meme::getStatus,
-                    MemeVisibilitySupport.STATUS_REVIEWING,
-                    MemeVisibilitySupport.STATUS_RESTORE_REVIEWING);
-            return;
-        }
-        if (value == MemeVisibilitySupport.STATUS_NORMAL
-                || value == MemeVisibilitySupport.STATUS_OFFLINE
-                || value == MemeVisibilitySupport.STATUS_LOCKED
-                || value == MemeVisibilitySupport.STATUS_RESTORE_REVIEWING) {
-            wrapper.eq(Meme::getStatus, value);
-        }
-    }
-
     private UserMemeStatusCountsVO loadOwnerStatusCounts(Long userId) {
-        long live = memeService.count(new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL));
-        long reviewing = memeService.count(new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .in(Meme::getStatus,
-                        MemeVisibilitySupport.STATUS_REVIEWING,
-                        MemeVisibilitySupport.STATUS_RESTORE_REVIEWING));
-        long offline = memeService.count(new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_OFFLINE));
-        long locked = memeService.count(new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_LOCKED));
+        MemeCatalogPort.MemeStatusCounts source = memeCatalogPort.countByAuthor(userId);
         UserMemeStatusCountsVO counts = new UserMemeStatusCountsVO();
-        counts.setAll(live + reviewing + offline + locked);
-        counts.setLive(live);
-        counts.setReviewing(reviewing);
-        counts.setOffline(offline);
-        counts.setLocked(locked);
+        counts.setAll(source.all());
+        counts.setLive(source.live());
+        counts.setReviewing(source.reviewing());
+        counts.setOffline(source.offline());
+        counts.setLocked(source.locked());
         return counts;
     }
 
     /**
      * 批量组装发布梗 VO：标签通过一次 JOIN 查询按 meme_id 分组，内存组装，避免 N+1 与笛卡尔积。
      */
-    private List<UserPublishedMemeVO> buildPublishedMemeVOList(List<Meme> memes, AuthorVO author) {
-        List<Integer> memeIds = memes.stream().map(Meme::getId).toList();
-        Map<Integer, List<MemeTagBindDTO>> tagMap = loadTagsByMemeIds(memeIds);
+    private List<UserPublishedMemeVO> buildPublishedMemeVOList(
+            List<MemeCatalogPort.MemeCard> memes, AuthorVO author, boolean isOwner) {
+        List<Long> memeIds = memes.stream().map(MemeCatalogPort.MemeCard::id).toList();
+        Map<Long, List<MemeCatalogPort.MemeTagSummary>> tagMap = memeCatalogPort.findTagsByMemeIds(memeIds);
+        Map<Long, MemeCatalogPort.MemeEditRevisionSummary> editRevisionMap = isOwner
+                ? memeCatalogPort.findLatestEditRevisionsByMemeIds(memeIds)
+                : Collections.emptyMap();
 
         List<UserPublishedMemeVO> list = new ArrayList<>(memes.size());
-        for (Meme meme : memes) {
+        for (MemeCatalogPort.MemeCard meme : memes) {
             UserPublishedMemeVO vo = new UserPublishedMemeVO();
-            vo.setId(meme.getId());
-            vo.setMemeId(meme.getId());
-            vo.setName(meme.getName());
-            vo.setIntroduction(meme.getIntroduction());
-            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            vo.setPageViews(meme.getPageViews());
-            vo.setLikes(meme.getLikes());
-            vo.setComments(meme.getComments());
-            vo.setStatus(meme.getStatus());
-            vo.setStatusDesc(MemeVisibilitySupport.statusDesc(meme.getStatus()));
-            vo.setOfflineReason(meme.getOfflineReason());
-            vo.setAppealRejectCount(meme.getAppealRejectCount());
-            vo.setTags(toUserMemeTagVOList(tagMap.get(meme.getId())));
-            vo.setCreateTime(meme.getReleaseTime());
-            vo.setReleaseTime(meme.getReleaseTime());
+            vo.setId(meme.id());
+            vo.setMemeId(meme.id());
+            vo.setName(meme.name());
+            vo.setIntroduction(meme.introduction());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.image()));
+            vo.setPageViews(meme.pageViews());
+            vo.setLikes(meme.likes());
+            vo.setComments(meme.comments());
+            vo.setStatus(meme.status());
+            vo.setStatusDesc(memeCatalogPort.statusDescription(meme.status()));
+            vo.setOfflineReason(meme.offlineReason());
+            vo.setAppealRejectCount(meme.appealRejectCount());
+            vo.setTags(toUserMemeTagVOList(tagMap.get(meme.id())));
+            vo.setCreateTime(meme.releaseTime());
+            vo.setReleaseTime(meme.releaseTime());
             vo.setAuthor(author);
+            MemeCatalogPort.MemeEditRevisionSummary editRevision = editRevisionMap.get(meme.id());
+            if (editRevision != null) {
+                vo.setEditRevisionStatus(editRevision.status());
+                vo.setEditRevisionCreatedAt(editRevision.createdAt());
+                vo.setEditRevisionNote(editRevision.reviewNote());
+            }
             list.add(vo);
         }
         return list;
     }
 
-    private Map<Integer, List<MemeTagBindDTO>> loadTagsByMemeIds(List<Integer> memeIds) {
-        if (memeIds == null || memeIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
-        if (rows == null || rows.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        Map<Integer, List<MemeTagBindDTO>> map = new HashMap<>();
-        for (MemeTagBindDTO row : rows) {
-            map.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(row);
-        }
-        return map;
-    }
-
-    private List<UserMemeTagVO> toUserMemeTagVOList(List<MemeTagBindDTO> tags) {
+    private List<UserMemeTagVO> toUserMemeTagVOList(List<MemeCatalogPort.MemeTagSummary> tags) {
         if (tags == null || tags.isEmpty()) {
             return Collections.emptyList();
         }
         List<UserMemeTagVO> list = new ArrayList<>(tags.size());
-        for (MemeTagBindDTO t : tags) {
+        for (MemeCatalogPort.MemeTagSummary t : tags) {
             UserMemeTagVO vo = new UserMemeTagVO();
-            vo.setTagId(t.getId());
-            vo.setName(t.getName());
+            vo.setTagId(t.id() == null ? null : t.id().intValue());
+            vo.setName(t.name());
             list.add(vo);
         }
         return list;
@@ -353,6 +312,13 @@ public class UserProfileServiceImpl implements IUserProfileService {
     public PageVO<UserFavoriteItemVO> pageUserFavorites(Long targetUserId, Long currentUserId, Long folderId, Integer page, Integer size) {
         if (targetUserId == null || targetUserId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
+        }
+        User targetUser = userService.getById(targetUserId);
+        if (targetUser == null) {
+            throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+        }
+        if (UserDisplayPolicy.isDeleted(targetUser)) {
+            return emptyFavoritesPage(page, size);
         }
         boolean isOwner = currentUserId != null && currentUserId.equals(targetUserId);
         long resolvedFolderId = folderId == null ? IUserFavoriteFolderService.DEFAULT_FOLDER_ID : folderId;
@@ -436,6 +402,10 @@ public class UserProfileServiceImpl implements IUserProfileService {
 
     @Override
     public UploadAvatarVO uploadAvatar(Long userId, MultipartFile file) {
+        User user = userService.getById(userId);
+        if (user == null || UserDisplayPolicy.isDeleted(user)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
+        }
         if (file == null || file.isEmpty()) {
             throw new BizException(Result.CODE_BAD_REQUEST, "请选择头像文件");
         }
@@ -471,7 +441,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             throw new BizException(Result.CODE_BAD_REQUEST, "请求参数不能为空");
         }
         User user = userService.getById(userId);
-        if (user == null) {
+        if (user == null || UserDisplayPolicy.isDeleted(user)) {
             throw new BizException(Result.CODE_NOT_FOUND, "用户不存在");
         }
 
@@ -539,20 +509,41 @@ public class UserProfileServiceImpl implements IUserProfileService {
     private UserProfileStatsVO buildStats(Long userId) {
         UserStats stats = userStatsMapper.selectById(userId);
         UserProfileStatsVO vo = new UserProfileStatsVO();
+        vo.setMemeCount(Math.toIntExact(memeCatalogPort.countPublishedByAuthor(userId)));
         if (stats == null) {
             vo.setFollowCount(0);
             vo.setFansCount(0);
-            vo.setMemeCount(0);
             vo.setLikeReceived(0);
             vo.setFavoriteCount(userFavoriteCountService.getFavoriteCount(userId));
             return vo;
         }
         vo.setFollowCount(defaultInt(stats.getFollowCount()));
         vo.setFansCount(defaultInt(stats.getFansCount()));
-        vo.setMemeCount(defaultInt(stats.getMemeCount()));
         vo.setLikeReceived(defaultInt(stats.getLikeReceived()));
         vo.setFavoriteCount(userFavoriteCountService.getFavoriteCount(userId));
         return vo;
+    }
+
+    /** 中文注释：注销用户资料页仅展示公开梗数量，隐藏关注、收藏和获赞统计。 */
+    private UserProfileStatsVO buildDeletedUserStats(Long userId) {
+        UserProfileStatsVO vo = new UserProfileStatsVO();
+        vo.setFollowCount(0);
+        vo.setFansCount(0);
+        vo.setMemeCount(Math.toIntExact(memeCatalogPort.countPublishedByAuthor(userId)));
+        vo.setLikeReceived(0);
+        vo.setFavoriteCount(0);
+        return vo;
+    }
+
+    /** 中文注释：生成空收藏分页，保持页面分页响应结构稳定。 */
+    private PageVO<UserFavoriteItemVO> emptyFavoritesPage(Integer page, Integer size) {
+        PageVO<UserFavoriteItemVO> empty = new PageVO<>();
+        empty.setList(Collections.emptyList());
+        empty.setPage(normalizePage(page));
+        empty.setSize(normalizeSize(size));
+        empty.setTotal(0L);
+        empty.setHasMore(false);
+        return empty;
     }
 
     private Boolean checkIsFollow(Long currentUserId, Long targetUserId) {
@@ -571,12 +562,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
         if (limit <= 0) {
             return Collections.emptyList();
         }
-        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
-                .eq(Meme::getUserId, userId)
-                .eq(Meme::getStatus, 1)
-                .orderByDesc(Meme::getReleaseTime)
-                .last("LIMIT " + limit);
-        List<Meme> memes = memeService.list(wrapper);
+        List<MemeCatalogPort.MemeCard> memes = memeCatalogPort.findLatestPublishedByAuthor(userId, limit);
         if (memes == null || memes.isEmpty()) {
             return Collections.emptyList();
         }
@@ -595,53 +581,49 @@ public class UserProfileServiceImpl implements IUserProfileService {
         }
 
         List<Long> memeIds = favorites.stream().map(UserFavorite::getMemeId).toList();
-        Map<Long, Meme> memeMap = queryMemeMap(memeIds);
+        Map<Long, MemeCatalogPort.MemeCard> memeMap = queryMemeMap(memeIds);
         List<UserFavoriteItemVO> list = new ArrayList<>();
         for (UserFavorite favorite : favorites) {
-            Meme meme = memeMap.get(favorite.getMemeId());
+            MemeCatalogPort.MemeCard meme = memeMap.get(favorite.getMemeId());
             if (meme == null) {
                 continue;
             }
             UserFavoriteItemVO vo = new UserFavoriteItemVO();
-            vo.setId(meme.getId() == null ? null : meme.getId().longValue());
-            vo.setName(meme.getName());
-            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-            vo.setPageViews(meme.getPageViews());
+            vo.setId(meme.id());
+            vo.setName(meme.name());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.image()));
+            vo.setPageViews(meme.pageViews());
             list.add(vo);
         }
         return list;
     }
 
-    private Map<Long, Meme> queryMemeMap(List<Long> memeIds) {
+    private Map<Long, MemeCatalogPort.MemeCard> queryMemeMap(List<Long> memeIds) {
         if (memeIds == null || memeIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Integer> ids = memeIds.stream().map(Long::intValue).toList();
-        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
-                .in(Meme::getId, ids)
-                .eq(Meme::getStatus, 1);
-        List<Meme> memes = memeService.list(wrapper);
+        List<MemeCatalogPort.MemeCard> memes = memeCatalogPort.findPublishedByIds(memeIds);
         if (memes == null || memes.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<Long, Meme> memeMap = new HashMap<>();
-        for (Meme meme : memes) {
-            if (meme.getId() != null) {
-                memeMap.put(meme.getId().longValue(), meme);
+        Map<Long, MemeCatalogPort.MemeCard> memeMap = new HashMap<>();
+        for (MemeCatalogPort.MemeCard meme : memes) {
+            if (meme.id() != null) {
+                memeMap.put(meme.id(), meme);
             }
         }
         return memeMap;
     }
 
-    private UserMemeItemVO toUserMemeItem(Meme meme) {
+    private UserMemeItemVO toUserMemeItem(MemeCatalogPort.MemeCard meme) {
         UserMemeItemVO vo = new UserMemeItemVO();
-        vo.setId(meme.getId() == null ? null : meme.getId().longValue());
-        vo.setName(meme.getName());
-        vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
-        vo.setPageViews(meme.getPageViews());
-        vo.setLikes(meme.getLikes());
-        vo.setComments(meme.getComments());
-        vo.setReleaseTime(meme.getReleaseTime());
+        vo.setId(meme.id());
+        vo.setName(meme.name());
+        vo.setImage(ossUrlHelper.toPublicUrl(meme.image()));
+        vo.setPageViews(meme.pageViews());
+        vo.setLikes(meme.likes());
+        vo.setComments(meme.comments());
+        vo.setReleaseTime(meme.releaseTime());
         return vo;
     }
 

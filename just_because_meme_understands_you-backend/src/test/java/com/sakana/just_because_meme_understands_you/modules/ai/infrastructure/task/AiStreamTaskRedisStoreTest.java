@@ -73,7 +73,7 @@ class AiStreamTaskRedisStoreTest {
 
         assertFalse(reservation.created());
         assertEquals(TASK_ID, reservation.snapshot().taskId());
-        assertEquals(AiStreamTaskStatus.RUNNING, reservation.snapshot().status());
+        assertEquals(AiStreamTaskStatus.GENERATING, reservation.snapshot().status());
     }
 
     @Test
@@ -98,6 +98,18 @@ class AiStreamTaskRedisStoreTest {
 
         assertEquals(List.of(3L, 4L), events.stream().map(AiStreamTaskEvent::id).toList());
         verify(listOperations).range("meme:ai:stream:task:" + TASK_ID + ":events", 2L, 3L);
+    }
+
+    @Test
+    void reconstructsGeneratedAnswerFromStoredTokenEvents() throws Exception {
+        when(redisTemplate.opsForList()).thenReturn(listOperations);
+        when(listOperations.range("meme:ai:stream:task:" + TASK_ID + ":events", 0L, 127L))
+                .thenReturn(List.of(
+                        objectMapper.writeValueAsString(new AiStreamTaskEvent(1L, "token", "{\"text\":\"已经\"}")),
+                        objectMapper.writeValueAsString(new AiStreamTaskEvent(2L, "cite", "{\"id\":7}")),
+                        objectMapper.writeValueAsString(new AiStreamTaskEvent(3L, "token", "{\"text\":\"生成\"}"))));
+
+        assertEquals("已经生成", store.readGeneratedAnswer(TASK_ID));
     }
 
     @Test
@@ -132,10 +144,11 @@ class AiStreamTaskRedisStoreTest {
         doReturn(0L).when(redisTemplate)
                 .execute(any(RedisScript.class), anyList(), any(Object[].class));
 
-        assertFalse(store.transition(TASK_ID, AiStreamTaskStatus.CANCELLED));
+        assertFalse(store.transition(TASK_ID, AiStreamTaskStatus.STOPPED));
 
         ArgumentCaptor<RedisScript> script = ArgumentCaptor.forClass(RedisScript.class);
         verify(redisTemplate).execute(script.capture(), anyList(), any(Object[].class));
+        assertTrue(script.getValue().getScriptAsString().contains("GENERATING"));
         assertTrue(script.getValue().getScriptAsString().contains("RUNNING"));
     }
 

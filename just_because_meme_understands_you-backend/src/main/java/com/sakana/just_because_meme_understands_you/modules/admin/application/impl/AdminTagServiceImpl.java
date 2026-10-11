@@ -65,7 +65,7 @@ public class AdminTagServiceImpl implements IAdminTagService {
         assertNameUnique(name, null);
         MemeTag tag = new MemeTag();
         tag.setName(name);
-        tag.setRelatedQuantity("0");
+        tag.setRelatedQuantity(0);
         memeTagMapper.insert(tag);
         return toVO(tag);
     }

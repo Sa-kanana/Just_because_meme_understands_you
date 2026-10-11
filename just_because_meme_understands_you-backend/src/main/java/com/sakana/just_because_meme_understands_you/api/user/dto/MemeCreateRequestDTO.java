@@ -18,7 +18,7 @@ public class MemeCreateRequestDTO {
     /** 梗介绍 */
     private String introduction;
 
-    /** 封面图 URL（前端直传 OSS 后回传） */
+    /** 封面图 URL（选填；前端直传 OSS 后回传） */
     private String image;
 
     /** 关联标签 id 列表 */

@@ -11,6 +11,7 @@ from app.agents import meme_agent
 from app.agents import search_agent
 from app.agents.prompts import AGENT_SYSTEM_PROMPT
 from app.core.settings import Settings
+from app.retrieval.knowledge_repository import RetrievedKnowledgeChunk
 from app.schemas.stream import StreamRequest
 
 
@@ -35,7 +36,6 @@ def test_retrieval_tool_output_schemas_constrain_provenance_and_items():
     for schema_name in (
         "MemeRetrievalToolResult",
         "AdminKnowledgeToolResult",
-        "LiveWebToolResult",
     ):
         schema_model = getattr(agent_tools, schema_name, None)
         assert schema_model is not None
@@ -58,11 +58,18 @@ def test_agent_tool_allowlist_stays_fixed_and_read_only():
         {
             "search_meme_knowledge",
             "search_admin_knowledge",
-            "search_live_meme_web",
         }
     )
+    assert not hasattr(agent_tools, "build_search_live_web_tool")
     with pytest.raises(ValueError, match="outside the fixed allowlist"):
         meme_agent.build_meme_search_agent(object(), [SimpleNamespace(name="run_sql")])
+
+
+def test_system_prompt_uses_only_database_retrieval_sources():
+    assert "search_live_meme_web" not in AGENT_SYSTEM_PROMPT
+    assert "live_web_retrieval" not in AGENT_SYSTEM_PROMPT
+    assert "meme_retrieval" in AGENT_SYSTEM_PROMPT
+    assert "admin_knowledge_retrieval" in AGENT_SYSTEM_PROMPT
 
 
 def test_agent_builder_installs_the_canonical_fixed_system_prompt(monkeypatch):
@@ -104,7 +111,7 @@ async def test_search_meme_tool_reuses_initial_retrieval_once(monkeypatch):
     assert calls == ["只因你太美的梗"]
 
 
-async def test_degraded_search_tool_reuses_business_candidates_without_retrying(monkeypatch):
+async def test_degraded_search_tool_does_not_fall_back_to_business_candidates(monkeypatch):
     calls = []
 
     async def retrieve_again(**kwargs):
@@ -112,16 +119,14 @@ async def test_degraded_search_tool_reuses_business_candidates_without_retrying(
         return []
 
     monkeypatch.setattr(agent_tools, "retrieve_meme_chunks", retrieve_again)
-    initial = [RetrievedChunk(meme_id="12", content="标题: Java 候选", score=0.45, title="Java 候选")]
     tool = agent_tools.build_search_meme_tool(
         initial_query="原始问题",
-        initial_chunks=initial,
         retrieval_unavailable=True,
     )
 
     result = await tool.ainvoke({"query": "改写后的检索词"})
 
-    assert [chunk.meme_id for chunk in parse_tool_payload(result)] == ["12"]
+    assert parse_tool_payload(result) == []
     payload = json.loads(result)
     assert payload["source"] == "meme_retrieval"
     assert payload["trust_level"] == "untrusted"
@@ -181,24 +186,80 @@ def _decode_sse(events):
     return decoded
 
 
-def test_build_business_candidate_chunks_uses_only_public_java_snippet_fields():
-    chunks = agent_tools.build_business_candidate_chunks(
-        [
-            {
-                "meme_id": "meme_12",
-                "title": "只因",
-                "tags": ["音乐", "梗"],
-                "introduction": "公开简介",
-                "user_id": "private-user",
-            }
-        ]
+@pytest.fixture(autouse=True)
+def _default_admin_knowledge_retrieval(monkeypatch):
+    async def no_admin_hits(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        search_agent,
+        "retrieve_admin_knowledge_chunks",
+        no_admin_hits,
+        raising=False,
     )
 
-    assert len(chunks) == 1
-    assert chunks[0].meme_id == "meme_12"
-    assert chunks[0].title == "只因"
-    assert "公开简介" in chunks[0].content
-    assert "private-user" not in chunks[0].content
+
+async def test_agent_prefetches_admin_knowledge_into_untrusted_json_context(monkeypatch):
+    retrieved = [
+        RetrievedKnowledgeChunk(
+            doc_id="doc-17",
+            content="标题: 上传规则\n章节: 文件大小\n\n单个文件最大 20 MB。",
+            score=0.91,
+            title="上传规则",
+            section_path="文件大小",
+        )
+    ]
+    captured = {}
+
+    async def retrieve_admin(query, top_k, request_id):
+        captured["admin_query"] = (query, top_k, request_id)
+        return retrieved
+
+    class AnswerExecutor:
+        async def astream_events(self, input_data, **_kwargs):
+            captured["input"] = input_data
+            yield {
+                "event": "on_chat_model_start",
+                "run_id": "answer-run",
+                "data": {},
+            }
+            yield {
+                "event": "on_chat_model_stream",
+                "run_id": "answer-run",
+                "data": {"chunk": SimpleNamespace(content="单个文件最大 20 MB。", tool_call_chunks=[])},
+            }
+            yield {
+                "event": "on_chat_model_end",
+                "run_id": "answer-run",
+                "data": {"output": SimpleNamespace(tool_calls=[])},
+            }
+
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", lambda **_kwargs: _empty_async_list())
+    monkeypatch.setattr(search_agent, "retrieve_admin_knowledge_chunks", retrieve_admin)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: object())
+    monkeypatch.setattr(
+        search_agent,
+        "build_meme_search_agent",
+        lambda _llm, tools, **_kwargs: captured.update(tool_names=[tool.name for tool in tools]) or AnswerExecutor(),
+    )
+
+    events = _decode_sse(
+        [event async for event in search_agent.stream_ai_search(_request(query="上传文件有什么限制？"))]
+    )
+    payload = json.loads(captured["input"]["input"])
+    sources = payload["context"]["retrieval_context"]["sources"]
+
+    assert captured["admin_query"] == ("上传文件有什么限制？", 5, "request-test")
+    assert captured["tool_names"] == ["search_meme_knowledge", "search_admin_knowledge"]
+    assert sources[1]["source"] == "admin_knowledge_retrieval"
+    assert sources[1]["trust_level"] == "untrusted"
+    assert sources[1]["items"][0]["doc_id"] == "doc-17"
+    assert events[-1][0] == "done"
+
+
+async def _empty_async_list():
+    return []
 
 
 async def test_retrieve_meme_chunks_retries_a_transient_failure(monkeypatch):
@@ -212,15 +273,11 @@ async def test_retrieve_meme_chunks_retries_a_transient_failure(monkeypatch):
             raise TimeoutError("transient")
         return expected
 
-    async def no_hints(_ids):
-        return []
-
     async def no_delay(_seconds):
         return None
 
     monkeypatch.setattr(agent_tools, "get_settings", lambda: _settings_for_stream())
     monkeypatch.setattr(agent_tools, "similarity_search", similarity_search)
-    monkeypatch.setattr(agent_tools, "fetch_chunks_by_meme_ids", no_hints)
     monkeypatch.setattr("app.core.resilience._sleep", no_delay)
 
     actual = await agent_tools.retrieve_meme_chunks("q", request_id="request-test")
@@ -229,50 +286,24 @@ async def test_retrieve_meme_chunks_retries_a_transient_failure(monkeypatch):
     assert calls == 2
 
 
-async def test_live_web_timeout_returns_a_safe_degradation_result(monkeypatch):
-    calls = 0
-
-    async def crawl_slowly(*_args, **_kwargs):
-        nonlocal calls
-        calls += 1
-        await asyncio.sleep(0.05)
-
-    monkeypatch.setattr(
-        agent_tools,
-        "get_settings",
-        lambda: _settings_for_stream(LIVE_WEB_TIMEOUT_SECONDS=0.001, FIRECRAWL_ENABLED=True),
-    )
-    monkeypatch.setattr(agent_tools, "crawl_hot_memes", crawl_slowly)
-
-    result = json.loads(await agent_tools.build_search_live_web_tool().ainvoke({"query": "最新热梗"}))
-
-    assert result["source"] == "live_web_retrieval"
-    assert result["trust_level"] == "untrusted"
-    assert result["unavailable"] is True
-    assert result["items"] == []
-    assert calls == 1
-
-
-def test_live_web_tool_query_has_a_bounded_length():
+def test_database_tool_queries_have_bounded_length():
     from pydantic import ValidationError
 
     for input_model, maximum in (
         (agent_tools.SearchMemeInput, 2000),
-        (agent_tools.SearchLiveWebInput, 500),
         (agent_tools.SearchAdminKnowledgeInput, 500),
     ):
         with pytest.raises(ValidationError):
             input_model.model_validate({"query": "x" * (maximum + 1)})
         with pytest.raises(ValidationError):
             input_model.model_validate({"query": "   "})
-    assert agent_tools.SearchLiveWebInput.model_validate({"query": "  最新热梗  "}).query == "最新热梗"
+    assert agent_tools.SearchAdminKnowledgeInput.model_validate({"query": "  管理规则  "}).query == "管理规则"
 
 
 @pytest.mark.parametrize(
     "input_model",
     [
         agent_tools.SearchMemeInput,
-        agent_tools.SearchLiveWebInput,
         agent_tools.SearchAdminKnowledgeInput,
     ],
 )
@@ -289,7 +320,7 @@ def test_tool_argument_json_schema_rejects_undeclared_fields(input_model):
 async def test_admin_knowledge_retrieval_retries_and_hides_provider_errors(monkeypatch):
     calls = 0
 
-    async def search_knowledge(_query, _top_k):
+    async def search_knowledge(_query, _top_k, _min_similarity=None):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -313,7 +344,7 @@ async def test_admin_knowledge_retrieval_retries_and_hides_provider_errors(monke
     }
     assert calls == 2
 
-    async def search_unavailable(_query, _top_k):
+    async def search_unavailable(_query, _top_k, _min_similarity=None):
         raise RuntimeError("provider secret detail")
 
     monkeypatch.setattr(agent_tools, "similarity_search_knowledge", search_unavailable)
@@ -327,7 +358,7 @@ async def test_admin_knowledge_retrieval_retries_and_hides_provider_errors(monke
     }
 
 
-async def test_zero_hits_and_retrieval_outage_have_distinct_complete_fallbacks(monkeypatch):
+async def test_zero_hits_and_retrieval_outage_return_only_unknown_without_evidence(monkeypatch):
     monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
     monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: None)
 
@@ -347,13 +378,45 @@ async def test_zero_hits_and_retrieval_outage_have_distinct_complete_fallbacks(m
     outage_events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
     outage_answer = "".join(payload["text"] for name, payload in outage_events if name == "token")
 
-    assert "暂未检索到" in no_hit_answer
-    assert "暂时无法连接梗库" in outage_answer
+    assert "检索" not in no_hit_answer
+    assert "检索" not in outage_answer
+    assert "梗库" not in outage_answer
+    expected_no_result = (
+        "我这边暂时还没找到和你这个问题特别相关的内容，你可以换个说法，"
+        "或者再补充一点信息，我再帮你找找。"
+    )
+    assert no_hit_answer == expected_no_result
+    assert outage_answer == expected_no_result
     assert no_hit_events[-1][0] == outage_events[-1][0] == "done"
     assert no_hit_events[-1][1]["finish_reason"] != outage_events[-1][1]["finish_reason"]
 
 
-async def test_retrieval_outage_uses_java_candidate_for_deterministic_fallback(monkeypatch):
+async def test_pure_greeting_skips_retrieval_and_returns_empty_related_memes(monkeypatch):
+    retrieval_calls = []
+
+    async def retrieval_should_not_run(**kwargs):
+        retrieval_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", retrieval_should_not_run)
+    monkeypatch.setattr(
+        search_agent,
+        "_build_llm",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("greetings must not call the model")),
+    )
+
+    events = _decode_sse([event async for event in search_agent.stream_ai_search(_request(query="你好！"))])
+    related_meme_ids = next(payload["retrieved"] for name, payload in events if name == "meta")
+    answer = "".join(payload["text"] for name, payload in events if name == "token")
+
+    assert retrieval_calls == []
+    assert related_meme_ids == []
+    assert answer == "你好！"
+    assert events[-1][0] == "done"
+
+
+async def test_retrieval_outage_does_not_use_java_keyword_candidate(monkeypatch):
     from app.core.resilience import UpstreamRetriesExhausted
 
     monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
@@ -374,7 +437,11 @@ async def test_retrieval_outage_uses_java_candidate_for_deterministic_fallback(m
     events = _decode_sse([event async for event in search_agent.stream_ai_search(request)])
     answer = "".join(payload["text"] for name, payload in events if name == "token")
 
-    assert "候选梗" in answer
+    assert answer == (
+        "我这边暂时还没找到和你这个问题特别相关的内容，你可以换个说法，"
+        "或者再补充一点信息，我再帮你找找。"
+    )
+    assert all(name != "cite" for name, _ in events)
     assert events[-1][0] == "done"
     assert events[-1][1]["finish_reason"] == "fallback_retrieval_unavailable"
 
@@ -427,7 +494,7 @@ async def test_agent_tool_does_not_spend_a_second_retrieval_budget_after_outage(
 
     assert retrieval_calls == 1
     assert tool_results[0]["unavailable"] is True
-    assert tool_results[0]["items"][0]["meme_id"] == "meme_12"
+    assert tool_results[0]["items"] == []
     assert events[-1][0] == "done"
 
 
@@ -533,59 +600,49 @@ async def test_stream_drops_intermediate_tool_text_and_forwards_only_final_text(
     assert answer == "最终答案"
 
 
-async def test_stream_buffers_text_until_model_run_is_confirmed_not_a_tool_call(monkeypatch):
+async def test_plain_answer_tokens_are_emitted_before_the_model_run_finishes(monkeypatch):
     async def retrieval(**_kwargs):
         return []
 
-    class TextThenToolCallExecutor:
+    class SlowAnswerExecutor:
+        finished = False
+
         async def astream_events(self, *_args, **_kwargs):
             yield {
                 "event": "on_chat_model_stream",
-                "run_id": "tool-run",
-                "data": {"chunk": SimpleNamespace(content="先到达的工具控制文本", tool_call_chunks=[])},
-            }
-            yield {
-                "event": "on_chat_model_stream",
-                "run_id": "tool-run",
-                "data": {
-                    "chunk": SimpleNamespace(
-                        content="",
-                        tool_call_chunks=[{"name": "search_meme_knowledge"}],
-                    )
-                },
-            }
-            yield {
-                "event": "on_chat_model_end",
-                "run_id": "tool-run",
-                "data": {"output": SimpleNamespace(tool_calls=[{"name": "search_meme_knowledge"}])},
-            }
-            yield {
-                "event": "on_chat_model_stream",
                 "run_id": "answer-run",
-                "data": {"chunk": SimpleNamespace(content="可见答案", tool_call_chunks=[])},
+                "data": {"chunk": SimpleNamespace(content="回答开头", tool_call_chunks=[])},
             }
+            await asyncio.sleep(0.01)
+            self.finished = True
             yield {
                 "event": "on_chat_model_end",
                 "run_id": "answer-run",
                 "data": {"output": SimpleNamespace(tool_calls=[])},
             }
 
+    executor = SlowAnswerExecutor()
     monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
     monkeypatch.setattr(search_agent, "retrieve_meme_chunks", retrieval)
     monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: object())
     monkeypatch.setattr(
         search_agent,
         "build_meme_search_agent",
-        lambda *_args, **_kwargs: TextThenToolCallExecutor(),
+        lambda *_args, **_kwargs: executor,
     )
 
-    events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
-    answer = "".join(payload["text"] for name, payload in events if name == "token")
+    first_token = None
+    async for event in search_agent.stream_ai_search(_request()):
+        name, payload = _decode_sse([event])[0]
+        if name == "token":
+            first_token = payload["text"]
+            break
 
-    assert answer == "可见答案"
+    assert first_token == "回答开头"
+    assert executor.finished is False
 
 
-async def test_stream_discards_text_without_model_completion_confirmation(monkeypatch):
+async def test_stream_preserves_partial_answer_when_model_completion_event_is_missing(monkeypatch):
     chunks = [RetrievedChunk(meme_id="m1", content="标题: 降级候选梗", score=0.8, title="降级候选梗")]
 
     async def retrieval(**_kwargs):
@@ -613,31 +670,96 @@ async def test_stream_discards_text_without_model_completion_confirmation(monkey
     events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
     answer = "".join(payload["text"] for name, payload in events if name == "token")
 
-    assert "不可泄漏的未确认文本" not in answer
-    assert "降级候选梗" in answer
-    assert events[-1][0] == "done"
-    assert events[-1][1]["finish_reason"] == "fallback_llm_error"
+    assert answer == "不可泄漏的未确认文本"
+    assert events[-1][0] == "error"
 
 
-async def test_agent_stream_emits_low_cardinality_latency_telemetry(monkeypatch, caplog):
+async def test_agent_stream_logs_rag_stages_without_logging_user_content(monkeypatch, caplog):
+    query = "日志不得包含的完整用户问题"
+
     async def retrieval(**_kwargs):
-        return []
+        return [RetrievedChunk(meme_id="m1", content="标题: 只因", score=0.9, title="只因")]
 
     monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
     monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: None)
     monkeypatch.setattr(search_agent, "retrieve_meme_chunks", retrieval)
     caplog.set_level("INFO")
 
-    [event async for event in search_agent.stream_ai_search(_request())]
+    events = _decode_sse(
+        [event async for event in search_agent.stream_ai_search(_request(query=query))]
+    )
+    messages = "\n".join(record.getMessage() for record in caplog.records)
 
-    telemetry = next(record.getMessage() for record in caplog.records if "ai_stream_metrics" in record.getMessage())
-    assert "outcome=fallback" in telemetry
-    assert "finish_reason=fallback_no_model" in telemetry
-    assert "retrieval_ms=" in telemetry
-    assert "ttft_ms=" in telemetry
+    assert events[-1][0] == "done"
+    assert "rag_request_started request_id=request-test" in messages
+    assert "rag_stage_started request_id=request-test stage=meme_retrieval" in messages
+    assert "rag_stage_completed request_id=request-test stage=meme_retrieval" in messages
+    assert "hits=1" in messages
+    assert "candidates=m1:0.9000" in messages
+    assert "rag_generation_skipped request_id=request-test reason=model_not_configured" in messages
+    assert "rag_request_finished request_id=request-test outcome=completed" in messages
+    assert query not in messages
 
 
-async def test_python_total_timeout_falls_back_to_java_candidates(monkeypatch):
+async def test_agent_stream_logs_tool_boundaries_without_tool_payload(monkeypatch, caplog):
+    async def retrieval(**_kwargs):
+        return []
+
+    class ToolThenAnswerExecutor:
+        async def astream_events(self, *_args, **_kwargs):
+            yield {
+                "event": "on_tool_start",
+                "run_id": "tool-run",
+                "name": "search_meme_knowledge",
+                "data": {"input": {"query": "工具中的私密查询"}},
+            }
+            yield {
+                "event": "on_tool_end",
+                "run_id": "tool-run",
+                "name": "search_meme_knowledge",
+                "data": {"output": "工具返回的私密正文"},
+            }
+            yield {
+                "event": "on_chat_model_start",
+                "run_id": "answer-run",
+                "data": {},
+            }
+            yield {
+                "event": "on_chat_model_stream",
+                "run_id": "answer-run",
+                "data": {"chunk": SimpleNamespace(content="最终答案", tool_call_chunks=[])},
+            }
+            yield {
+                "event": "on_chat_model_end",
+                "run_id": "answer-run",
+                "data": {"output": SimpleNamespace(tool_calls=[])},
+            }
+
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", retrieval)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: object())
+    monkeypatch.setattr(
+        search_agent,
+        "build_meme_search_agent",
+        lambda *_args, **_kwargs: ToolThenAnswerExecutor(),
+    )
+    caplog.set_level("INFO")
+
+    events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+
+    assert events[-1][0] == "done"
+    assert "rag_tool_started request_id=request-test tool=search_meme_knowledge" in messages
+    assert "rag_tool_completed request_id=request-test tool=search_meme_knowledge" in messages
+    assert "rag_model_call_started request_id=request-test" in messages
+    assert "rag_model_call_completed request_id=request-test" in messages
+    assert "rag_stage_completed request_id=request-test stage=agent_generation" in messages
+    assert "工具中的私密查询" not in messages
+    assert "工具返回的私密正文" not in messages
+    assert "最终答案" not in messages
+
+
+async def test_python_total_timeout_does_not_fall_back_to_java_candidates(monkeypatch):
     async def retrieval_hangs(**_kwargs):
         await asyncio.sleep(0.05)
 
@@ -654,7 +776,11 @@ async def test_python_total_timeout_falls_back_to_java_candidates(monkeypatch):
     events = _decode_sse([event async for event in search_agent.stream_ai_search(request)])
     answer = "".join(payload["text"] for name, payload in events if name == "token")
 
-    assert "降级候选梗" in answer
+    assert answer == (
+        "我这边暂时还没找到和你这个问题特别相关的内容，你可以换个说法，"
+        "或者再补充一点信息，我再帮你找找。"
+    )
+    assert all(name != "cite" for name, _ in events)
     assert events[-1][0] == "done"
     assert events[-1][1]["finish_reason"] == "fallback_total_timeout"
 

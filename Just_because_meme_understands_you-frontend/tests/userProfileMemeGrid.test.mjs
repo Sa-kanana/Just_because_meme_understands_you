@@ -27,9 +27,17 @@ test('keeps profile meme cards left-aligned in a responsive grid', () => {
   const gridRule = findRule(stylesheet, '.meme-grid') // 桌面端梗图网格
 
   assert.equal(findDeclaration(gridRule, 'display'), 'grid')
-  assert.equal(findDeclaration(gridRule, 'grid-template-columns'), 'repeat(3, minmax(0, 1fr))')
-  assert.equal(findDeclaration(gridRule, 'gap'), '16px')
+  assert.equal(findDeclaration(gridRule, 'grid-template-columns'), 'repeat(4, minmax(0, 1fr))')
+  assert.equal(findDeclaration(gridRule, 'gap'), '14px')
   assert.notEqual(findDeclaration(gridRule, 'justify-content'), 'center')
+
+  const wideTabletRule = stylesheet.nodes
+    .find((node) => node.type === 'atrule' && node.params === '(max-width: 1440px)')
+  const wideTabletGridRule = wideTabletRule && findRule(wideTabletRule, '.meme-grid')
+  assert.equal(
+    findDeclaration(wideTabletGridRule, 'grid-template-columns'),
+    'repeat(3, minmax(0, 1fr))',
+  )
 
   const tabletRule = stylesheet.nodes
     .find((node) => node.type === 'atrule' && node.params === '(max-width: 1180px)')

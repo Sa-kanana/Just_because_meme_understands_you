@@ -2,8 +2,7 @@ package com.sakana.just_because_meme_understands_you.modules.user.application.fo
 
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTagVO;
-import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag;
-import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserTagFollowMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,7 +17,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TagFollowServiceTest {
-    @Mock MemeTagMapper tagMapper;
+    @Mock MemeCatalogPort memeCatalogPort;
     @Mock UserTagFollowMapper followMapper;
     @InjectMocks TagFollowService service;
 
@@ -30,7 +29,8 @@ class TagFollowServiceTest {
 
     @Test
     void followIsIdempotent() {
-        when(tagMapper.selectById(4)).thenReturn(new MemeTag().setId(4).setName("热梗"));
+        when(memeCatalogPort.findTagById(4)).thenReturn(
+                new MemeCatalogPort.MemeTagSummary(4L, "热梗", 1));
         service.follow(7L, 4);
         service.follow(7L, 4);
         verify(followMapper, times(2)).insertIfAbsent(7L, 4);
@@ -38,9 +38,10 @@ class TagFollowServiceTest {
 
     @Test
     void listReturnsFollowedTagsInMapperOrder() {
-        when(followMapper.selectFollowedTags(7L)).thenReturn(List.of(
-                new MemeTag().setId(3).setName("甲").setRelatedQuantity("12"),
-                new MemeTag().setId(8).setName("乙").setRelatedQuantity("4")));
+        when(followMapper.selectFollowedTagIds(7L)).thenReturn(List.of(3L, 8L));
+        when(memeCatalogPort.findTagsByIds(List.of(3L, 8L))).thenReturn(List.of(
+                new MemeCatalogPort.MemeTagSummary(3L, "甲", 12),
+                new MemeCatalogPort.MemeTagSummary(8L, "乙", 4)));
         List<MemeTagVO> tags = service.list(7L);
         assertEquals(List.of(3, 8), tags.stream().map(t -> t.getId()).toList());
         assertEquals(List.of("甲", "乙"), tags.stream().map(t -> t.getName()).toList());
