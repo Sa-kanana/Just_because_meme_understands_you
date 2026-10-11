@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -46,6 +47,14 @@ _NOISE_TOPICS = {
     "什么意思",
     "是什么意思",
 }
+
+_BILIBILI_VIDEO_ID_RE = re.compile(r"(?:^|/)video/(BV[0-9A-Z]+)(?:[/?#]|$)", re.I)
+_GENERIC_TOPIC_RE = re.compile(
+    r"^(?:(?:20\d{2}年)?(?:(?:最(?:新|热|火)?)|热门|十大|TOP\d*)?(?:\d+个)?(?:网络)?"
+    r"(?:流行语|热梗|梗)(?:盘点|合集|大全|指南|科普|总结)?|"
+    r"(?:梗指南|网络梗|网络流行语|热梗盘点))$",
+    re.I,
+)
 
 
 def _clean_text(value: str | None, max_len: int) -> str:
@@ -121,6 +130,10 @@ def _normalize_topic(raw: str) -> str | None:
         return None
     if topic.lower() in _NOISE_TOPICS or topic in _NOISE_TOPICS:
         return None
+    if _GENERIC_TOPIC_RE.fullmatch(topic):
+        return None
+    if re.match(r"^(带来|最新一期|本期|本周|一起来|分享|盘点|合集|科普)", topic):
+        return None
     if _UI_NOISE_RE.search(topic):
         return None
     if re.fullmatch(r"\d+", topic):
@@ -131,15 +144,52 @@ def _normalize_topic(raw: str) -> str | None:
     return topic
 
 
+def extract_bilibili_video_id(url: str) -> str | None:
+    """仅从 B 站视频链接中提取 BVID，忽略查询参数。"""
+    parsed = urlparse((url or "").strip())
+    host = (parsed.hostname or "").lower()
+    if host != "bilibili.com" and not host.endswith(".bilibili.com"):
+        return None
+    match = _BILIBILI_VIDEO_ID_RE.search(parsed.path)
+    if not match:
+        return None
+    captured = match.group(1)
+    return "BV" + captured[2:]
+
+
+def _normalize_bilibili_video_id(value: str) -> str | None:
+    match = re.fullmatch(r"BV[0-9A-Z]+", (value or "").strip(), re.I)
+    return "BV" + match.group(0)[2:] if match else None
+
+
+def _canonical_bilibili_video_url(url: str) -> str | None:
+    video_id = extract_bilibili_video_id(url)
+    return f"https://www.bilibili.com/video/{video_id}" if video_id else None
+
+
+async def _await_with_crawl_deadline(awaitable, *, deadline: float):
+    """等待单次异步操作，但不允许越过整次采集的截止时间。"""
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining <= 0:
+        close = getattr(awaitable, "close", None)
+        if callable(close):
+            close()
+        raise TimeoutError("Firecrawl crawl deadline exceeded")
+    return await asyncio.wait_for(awaitable, timeout=remaining)
+
+
 def _split_title_topics(title: str) -> list[str]:
     """从「A、B、C是什么梗【梗指南】」拆出多个梗词。"""
     text = (title or "").strip()
     text = re.sub(r"【[^】]*指南】", "", text)
     text = re.sub(r"[（(][^）)]*[)）]", "", text)
-    m = re.search(r"^(.+?)是什么梗", text)
+    m = re.search(
+        r"^(.+?)(?:是什么梗|什么梗|是什么意思|什么意思|啥意思|什么含义|的含义|的出处|起源|梗指南|梗分享|梗科普|梗盘点)",
+        text,
+    )
     if m:
         text = m.group(1)
-    parts = re.split(r"[、，,/｜|]\s*", text)
+    parts = re.split(r"[、，,:：/｜|]\s*", text)
     out: list[str] = []
     for p in parts:
         t = _normalize_topic(p)
@@ -157,12 +207,14 @@ def extract_top_video_titles(markdown: str, *, limit: int = 5) -> list[tuple[str
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
     for m in re.finditer(
-        r"\[([^\]]{2,100})\]\((https://www\.bilibili\.com/video/BV[\w]+)[^)]*\)",
+        r"\[([^\]]{2,100})\]\((https?://(?:[\w-]+\.)?bilibili\.com/video/BV[0-9A-Z]+)[^)]*\)",
         text,
+        re.I,
     ):
         title = m.group(1).strip().lstrip("!")
-        url = m.group(2).strip()
-        if not title or url in seen:
+        url = _canonical_bilibili_video_url(m.group(2).strip())
+        video_id = extract_bilibili_video_id(m.group(2).strip())
+        if not title or not url or not video_id or video_id in seen:
             continue
         # 过滤导航噪音
         if any(x in title for x in ("首页", "动态", "投稿", "合集和系列", "稍后再看")):
@@ -171,7 +223,7 @@ def extract_top_video_titles(markdown: str, *, limit: int = 5) -> list[tuple[str
             # 投稿页其它视频也收，但优先梗向标题；无梗字则跳过纯导航
             if len(title) < 4:
                 continue
-        seen.add(url)
+        seen.add(video_id)
         out.append((title, url))
         if len(out) >= limit:
             break
@@ -281,64 +333,91 @@ def _bilibili_search_url(topic: str) -> str:
     return f"https://search.bilibili.com/all?keyword={quote(topic)}"
 
 
-def _is_empty_bilibili_video_list(markdown: str) -> bool:
-    text = markdown or ""
-    if "还没投过视频" in text or "什么都没有" in text or "好像没有东西" in text:
-        return True
-    return len(extract_top_video_titles(text, limit=1)) == 0
+def _topic_supported_by_video(topic: str, title: str, source_url: str) -> bool:
+    """只接受标题中有明确出处的视频梗词。"""
+    normalized_topic = _normalize_topic(topic)
+    if not normalized_topic or not extract_bilibili_video_id(source_url):
+        return False
+    title_text = re.sub(r"\s+", "", title or "").casefold()
+    title_markers = (
+        "是什么梗",
+        "什么梗",
+        "梗指南",
+        "梗分享",
+        "梗科普",
+        "梗盘点",
+        "热梗",
+        "流行语",
+        "什么意思",
+        "是什么意思",
+        "含义",
+        "出处",
+        "起源",
+    )
+    if not any(marker in title_text for marker in title_markers):
+        return False
+    if any(
+        word in normalized_topic
+        for word in ("梗盘点", "梗指南", "梗分享", "梗科普", "热梗", "流行语", "合集", "大全")
+    ):
+        return False
+    normalized_title = title_text
+    return normalized_topic.casefold() in normalized_title
 
 
 async def _discover_topics_from_bilibili(
     settings: Settings,
     *,
     limit: int,
-) -> tuple[list[str], list[str], dict[str, str], dict[str, str]]:
+    excluded_video_ids: set[str],
+    deadline: float,
+) -> tuple[list[str], list[str], dict[str, str], dict[str, str], set[str]]:
     """投稿页交互抓取前 N 条视频 → 总结梗词。
 
-    返回 (topics, query_used, topic_sources, topic_titles)。
+    返回 (topics, query_used, topic_sources, topic_titles, visited_video_ids)。
     """
     video_limit = max(1, min(limit, settings.firecrawl_bilibili_top_videos))
     upload_url = (settings.firecrawl_bilibili_upload_url or "").strip()
     query_used: list[str] = []
     topics: list[str] = []
     seen: set[str] = set()
-    video_titles: list[str] = []
+    seen_video_ids = set(excluded_video_ids)
     topic_sources: dict[str, str] = {}
     topic_titles: dict[str, str] = {}
     proxy = (settings.firecrawl_scrape_proxy or "stealth").strip() or "stealth"
 
+    def _result():
+        return (
+            topics[: max(limit * 2, video_limit)],
+            query_used,
+            topic_sources,
+            topic_titles,
+            seen_video_ids,
+        )
+
     def _absorb_markdown(markdown: str) -> None:
-        nonlocal topics, video_titles
         videos = extract_top_video_titles(markdown, limit=video_limit)
         for title, url in videos:
-            video_titles.append(title)
-            parts = _split_title_topics(title)
-            if not parts:
-                t = _normalize_topic(re.sub(r"【[^】]*】", "", title))
-                parts = [t] if t else []
-            for t in parts:
+            video_id = extract_bilibili_video_id(url)
+            if not video_id or video_id in seen_video_ids:
+                continue
+            seen_video_ids.add(video_id)
+            for t in _split_title_topics(title):
+                if not _topic_supported_by_video(t, title, url):
+                    continue
                 key = t.lower()
                 if key in seen:
                     continue
                 seen.add(key)
                 topics.append(t)
-                if url:
-                    topic_sources[t] = url
+                topic_sources[t] = url
                 topic_titles[t] = title
-        if not topics:
-            for t in extract_topics_from_markdown(markdown, limit=max(limit * 3, 15)):
-                key = t.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                topics.append(t)
 
     async def _interact_absorb(url: str, label: str) -> str:
         query_used.append(f"{label}:{url}")
-        doc = await firecrawl_scrape_with_interact(
-            settings,
-            url=url,
-            proxy=proxy,
+        doc = await _await_with_crawl_deadline(
+            firecrawl_scrape_with_interact(settings, url=url, proxy=proxy),
+            deadline=deadline,
         )
         md = ""
         if isinstance(doc.get("markdown"), str):
@@ -350,18 +429,23 @@ async def _discover_topics_from_bilibili(
         return md
 
     # 1) 投稿视频页 + Firecrawl actions
-    upload_md = ""
     if upload_url:
         try:
-            upload_md = await _interact_absorb(upload_url, "interact-scrape")
+            await _interact_absorb(upload_url, "interact-scrape")
+        except TimeoutError:
+            logger.warning("Firecrawl crawl deadline reached stage=upload")
+            return _result()
         except Exception:
             logger.exception("Firecrawl interact scrape upload page failed url=%s", upload_url)
 
-    # 2) 投稿页空壳 → 主页交互抓「代表作/视频卡」
+    # 2) 投稿候选不足时，再交互抓主页代表作。
     home = (settings.firecrawl_bilibili_dynamic_url or "").strip()
-    if (len(topics) < limit or _is_empty_bilibili_video_list(upload_md)) and home:
+    if len(topics) < limit and home:
         try:
             await _interact_absorb(home, "interact-scrape-home")
+        except TimeoutError:
+            logger.warning("Firecrawl crawl deadline reached stage=home")
+            return _result()
         except Exception:
             logger.exception("Firecrawl interact scrape home failed url=%s", home)
 
@@ -373,7 +457,13 @@ async def _discover_topics_from_bilibili(
                 continue
             query_used.append(f"scrape:{u}")
             try:
-                doc = await firecrawl_scrape(settings, url=u, wait_for_ms=4000)
+                doc = await _await_with_crawl_deadline(
+                    firecrawl_scrape(settings, url=u, wait_for_ms=4000),
+                    deadline=deadline,
+                )
+            except TimeoutError:
+                logger.warning("Firecrawl crawl deadline reached stage=extra-url")
+                return _result()
             except Exception:
                 logger.exception("Firecrawl scrape bilibili failed url=%s", u)
                 continue
@@ -386,35 +476,45 @@ async def _discover_topics_from_bilibili(
                 break
 
     if topics:
-        return topics[: max(limit * 2, video_limit)], query_used, topic_sources, topic_titles
+        return _result()
 
     # 4) 搜索兜底（仍限 B 站，不查百科）
     fallback_q = "梗指南 site:bilibili.com/video"
     query_used.append(f"search:{fallback_q}")
     try:
-        items = await firecrawl_search(
-            settings, query=fallback_q, limit=min(video_limit, 8), include_markdown=True
+        items = await _await_with_crawl_deadline(
+            firecrawl_search(
+                settings, query=fallback_q, limit=min(video_limit, 8), include_markdown=True
+            ),
+            deadline=deadline,
         )
+    except TimeoutError:
+        logger.warning("Firecrawl crawl deadline reached stage=video-search")
+        return _result()
     except Exception:
         logger.exception("Firecrawl bilibili search fallback failed")
-        return [], query_used, topic_sources, topic_titles
+        return _result()
 
     for item in items:
         title = _title_from_item(item)
-        url = _url_from_item(item)
-        video_titles.append(title)
-        for t in extract_topics_from_markdown(title + "\n" + _intro_from_item(item), limit=8):
+        url = _canonical_bilibili_video_url(_url_from_item(item))
+        video_id = extract_bilibili_video_id(url or "")
+        if not url or not video_id or video_id in seen_video_ids:
+            continue
+        seen_video_ids.add(video_id)
+        for t in _split_title_topics(title):
+            if not _topic_supported_by_video(t, title, url):
+                continue
             key = t.lower()
             if key in seen:
                 continue
             seen.add(key)
             topics.append(t)
-            if url:
-                topic_sources[t] = url
+            topic_sources[t] = url
             topic_titles[t] = title
         if len(topics) >= limit:
             break
-    return topics[: max(limit * 2, video_limit)], query_used, topic_sources, topic_titles
+    return _result()
 
 
 _BLOCKED_HOST_FRAGMENTS = (
@@ -512,8 +612,12 @@ async def _search_meme_details(
             items = await firecrawl_search(
                 settings, query=q, limit=4, include_markdown=include_markdown
             )
-        except Exception:
-            logger.exception("Firecrawl detail search failed query=%s", q)
+        except Exception as error:
+            logger.error(
+                "Firecrawl detail search failed query_chars=%s error_type=%s",
+                len(q),
+                type(error).__name__,
+            )
             continue
         for item in items:
             url = _url_from_item(item)
@@ -627,8 +731,12 @@ async def _enrich_topic(
             source_url=bilibili_url,
             detail_url=detail_url or "",
         )
-    except Exception:
-        logger.exception("Finalize intro failed topic=%s", topic)
+    except Exception as error:
+        logger.error(
+            "Finalize intro failed topic_chars=%s error_type=%s",
+            len(topic),
+            type(error).__name__,
+        )
         intro = bilibili_summary or fallback_intro(topic)
 
     if detail_url and detail_url == bilibili_url:
@@ -651,6 +759,16 @@ async def crawl_hot_memes(
     settings: Settings | None = None,
 ) -> CrawlHotMemesResponse:
     cfg = settings or get_settings()
+    loop = asyncio.get_running_loop()
+    started_at = loop.time()
+    deadline = started_at + cfg.firecrawl_crawl_total_timeout_seconds
+    excluded_video_ids = {
+        video_id
+        for raw_id in request.excluded_bilibili_video_ids
+        if (video_id := _normalize_bilibili_video_id(raw_id)) is not None
+    }
+    discovered_video_ids = set(excluded_video_ids)
+    candidate_video_ids = set(excluded_video_ids)
     query_used: list[str] = []
     topics: list[str] = []
     topic_sources: dict[str, str] = {}
@@ -663,8 +781,17 @@ async def crawl_hot_memes(
         topic_sources[topic] = _bilibili_search_url(topic)
         topic_titles[topic] = topic
     else:
-        topics, query_used, topic_sources, topic_titles = await _discover_topics_from_bilibili(
-            cfg, limit=request.limit
+        (
+            topics,
+            query_used,
+            topic_sources,
+            topic_titles,
+            discovered_video_ids,
+        ) = await _discover_topics_from_bilibili(
+            cfg,
+            limit=request.limit,
+            excluded_video_ids=excluded_video_ids,
+            deadline=deadline,
         )
         if not topics:
             # 兜底：B 站站内关键词搜索（不查百科）
@@ -677,22 +804,31 @@ async def crawl_hot_memes(
                 sq = f"{q} site:bilibili.com/video"
                 query_used.append(f"search:{sq}")
                 try:
-                    items = await firecrawl_search(
-                        cfg, query=sq, limit=3, include_markdown=request.include_markdown
+                    items = await _await_with_crawl_deadline(
+                        firecrawl_search(
+                            cfg, query=sq, limit=3, include_markdown=request.include_markdown
+                        ),
+                        deadline=deadline,
                     )
+                except TimeoutError:
+                    logger.warning("Firecrawl crawl deadline reached stage=query-fallback")
+                    break
                 except Exception:
                     logger.exception("Fallback bilibili search failed")
                     continue
                 for item in items:
                     title = _title_from_item(item)
-                    url = _url_from_item(item)
-                    for t in extract_topics_from_markdown(
-                        title + "\n" + _intro_from_item(item), limit=3
-                    ):
+                    url = _canonical_bilibili_video_url(_url_from_item(item))
+                    video_id = extract_bilibili_video_id(url or "")
+                    if not url or not video_id or video_id in discovered_video_ids:
+                        continue
+                    discovered_video_ids.add(video_id)
+                    for t in _split_title_topics(title):
+                        if not _topic_supported_by_video(t, title, url):
+                            continue
                         if t not in topics:
                             topics.append(t)
-                            if url:
-                                topic_sources[t] = url
+                            topic_sources[t] = url
                             topic_titles[t] = title
 
     seen_topics: set[str] = set()
@@ -705,18 +841,44 @@ async def crawl_hot_memes(
         if key in seen_topics:
             continue
         seen_topics.add(key)
+        source_url = topic_sources.get(topic)
+        source_video_id = extract_bilibili_video_id(source_url or "")
+        if not (request.query and request.query.strip()):
+            if not source_video_id or not _topic_supported_by_video(
+                topic,
+                topic_titles.get(topic, ""),
+                source_url or "",
+            ):
+                logger.info("Skip meme candidate without video evidence topic_chars=%s", len(topic))
+                continue
+            if source_video_id in candidate_video_ids:
+                continue
+            candidate_video_ids.add(source_video_id)
         try:
-            cand, extra_queries = await _enrich_topic(
-                cfg,
-                topic=topic,
-                score=100.0 - i,
-                source_url=topic_sources.get(topic),
-                source_title=topic_titles.get(topic),
-                include_markdown=request.include_markdown,
+            cand, extra_queries = await _await_with_crawl_deadline(
+                _enrich_topic(
+                    cfg,
+                    topic=topic,
+                    score=100.0 - i,
+                    source_url=source_url,
+                    source_title=topic_titles.get(topic),
+                    include_markdown=request.include_markdown,
+                ),
+                deadline=deadline,
             )
             query_used.extend(extra_queries)
-        except Exception:
-            logger.exception("Enrich topic failed topic=%s", topic)
+        except TimeoutError:
+            logger.warning(
+                "Firecrawl crawl deadline reached stage=enrichment completed_candidates=%s",
+                len(candidates),
+            )
+            break
+        except Exception as error:
+            logger.error(
+                "Enrich topic failed topic_chars=%s error_type=%s",
+                len(topic),
+                type(error).__name__,
+            )
             continue
         url_key = hashlib.sha1(cand.source_url.encode("utf-8")).hexdigest()
         if url_key in seen_urls:
@@ -725,6 +887,11 @@ async def crawl_hot_memes(
         candidates.append(cand)
 
     candidates.sort(key=lambda c: c.score, reverse=True)
+    logger.info(
+        "Firecrawl crawl finished candidates=%s elapsed_ms=%s",
+        len(candidates[: request.limit]),
+        int((loop.time() - started_at) * 1000),
+    )
     return CrawlHotMemesResponse(
         query_used=query_used,
         candidates=candidates[: request.limit],

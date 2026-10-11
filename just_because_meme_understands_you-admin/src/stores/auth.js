@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { logout as apiLogout, renewLogin as apiRenewLogin } from '@/api/auth'
+import { resetSessionExpiredHandler } from '@/utils/authSession'
 
 const STORAGE_KEY = 'meme_admin_auth'
 const STORAGE_MODE_KEY = 'meme_admin_auth_mode'
@@ -57,13 +58,17 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isLoggedIn: (state) => !!state.user && !!state.token,
     isAdmin: (state) =>
-      !!(state.user && String(state.user.role || '') === 'ROLE_ADMIN'),
+      !!(state.user && (
+        ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'].includes(String(state.user.role || '')) ||
+        (Array.isArray(state.user.roles) && state.user.roles.some((role) => ['ADMIN', 'SUPER_ADMIN'].includes(String(role).replace(/^ROLE_/, ''))))
+      )),
   },
   actions: {
     setAuth(payload) {
       if (!payload || !payload.token || !payload.user) return
       const token = String(payload.token).trim()
       if (!token) return
+      resetSessionExpiredHandler()
       this.token = token
       this.user = payload.user
       this.rememberMe = payload.rememberMe !== false

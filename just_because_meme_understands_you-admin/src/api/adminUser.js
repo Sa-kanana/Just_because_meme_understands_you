@@ -24,6 +24,7 @@ export function fetchAdminUsers(params = {}) {
   if (params.status != null && params.status !== '') query.set('status', String(params.status))
   if (params.role) query.set('role', String(params.role).trim())
   if (params.keyword) query.set('keyword', String(params.keyword).trim())
+  if (typeof params.deleted === 'boolean') query.set('deleted', String(params.deleted))
   const qs = query.toString()
   return request(`/admin/users${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) =>
     normalizePage(assertData(res, '获取用户列表失败'))
@@ -33,7 +34,7 @@ export function fetchAdminUsers(params = {}) {
 export function updateAdminUserStatus(id, status) {
   const userId = id != null ? String(id).trim() : ''
   if (!userId) return Promise.reject(new Error('缺少 userId'))
-  return request(`/admin/users/${encodeURIComponent(userId)}/status`, {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   }).then((res) => assertData(res, '更新用户状态失败'))
@@ -42,8 +43,24 @@ export function updateAdminUserStatus(id, status) {
 export function updateAdminUserRole(id, role) {
   const userId = id != null ? String(id).trim() : ''
   if (!userId) return Promise.reject(new Error('缺少 userId'))
-  return request(`/admin/users/${encodeURIComponent(userId)}/role`, {
+  return request(`/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ role }),
   }).then((res) => assertData(res, '更新用户角色失败'))
+}
+
+export function deleteAdminUser(id) {
+  const userId = id != null ? String(id).trim() : ''
+  if (!userId) return Promise.reject(new Error('缺少 userId'))
+  return request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' }).then((res) =>
+    assertData(res, '删除用户失败')
+  )
+}
+
+export function restoreAdminUser(id) {
+  const userId = id != null ? String(id).trim() : ''
+  if (!userId) return Promise.reject(new Error('缺少 userId'))
+  return request(`/admin/users/${encodeURIComponent(userId)}/restore`, { method: 'POST' }).then((res) =>
+    assertData(res, '恢复用户失败')
+  )
 }

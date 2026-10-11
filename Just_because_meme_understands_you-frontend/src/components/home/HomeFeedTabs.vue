@@ -26,6 +26,16 @@
       >
         关注
       </button>
+      <button
+        v-if="isLoggedIn"
+        type="button"
+        role="tab"
+        class="home-feed-tabs__tab"
+        :class="{ 'is-active': modelValue === 'tags' }"
+        :aria-selected="modelValue === 'tags'"
+        :disabled="disabled"
+        @click="selectTab('tags')"
+      >关注标签</button>
     </div>
     <span v-if="!isLoggedIn" class="home-feed-tabs__login-hint">登录后可看关注动态</span>
   </div>

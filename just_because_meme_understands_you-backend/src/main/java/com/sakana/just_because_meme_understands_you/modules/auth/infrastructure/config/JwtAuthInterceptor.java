@@ -1,0 +1,109 @@
+package com.sakana.just_because_meme_understands_you.modules.auth.infrastructure.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.modules.auth.domain.AuthConstants;
+import com.sakana.just_because_meme_understands_you.common.security.AuthContext;
+import com.sakana.just_because_meme_understands_you.modules.auth.application.UserSessionRevoker;
+import com.sakana.just_because_meme_understands_you.common.util.DigestUtil;
+import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
+import org.springframework.lang.NonNull;
+import org.springframework.stereotype.Component;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.servlet.HandlerInterceptor;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
+@Component
+@Slf4j
+public class JwtAuthInterceptor implements HandlerInterceptor {
+
+    private final JwtUtil jwtUtil;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
+    private final UserSessionRevoker userSessionRevoker;
+
+    public JwtAuthInterceptor(JwtUtil jwtUtil,
+                              StringRedisTemplate stringRedisTemplate,
+                              ObjectMapper objectMapper,
+                              UserSessionRevoker userSessionRevoker) {
+        this.jwtUtil = jwtUtil;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
+        this.userSessionRevoker = userSessionRevoker;
+    }
+
+    @Override
+    public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            writeUnauthorized(response, "未登录或登录已过期");
+            return false;
+        }
+        String token = authHeader.substring(7);
+        String blacklistKey = AuthConstants.ACCESS_BLACKLIST_PREFIX + DigestUtil.md5Hex(token);
+        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(blacklistKey))) {
+            writeUnauthorized(response, "登录已失效，请重新登录");
+            return false;
+        }
+        try {
+            Claims claims = jwtUtil.parseToken(token);
+            if (!AuthConstants.TOKEN_TYPE_ACCESS.equals(String.valueOf(claims.get(AuthConstants.CLAIM_TOKEN_TYPE)))) {
+                writeUnauthorized(response, "无效的访问令牌");
+                return false;
+            }
+            String userId = claims.getSubject();
+            if (!userSessionRevoker.isTokenVersionValid(userId, claims.get(AuthConstants.CLAIM_TOKEN_VERSION))) {
+                writeUnauthorized(response, "登录已失效，请重新登录");
+                return false;
+            }
+            AuthContext.establish(request, userId, extractRoleCodes(claims));
+            return true;
+        } catch (Exception ignored) {
+            log.warn("JWT 校验失败，IP:{}，URI:{}", request.getRemoteAddr(), request.getRequestURI());
+            writeUnauthorized(response, "无效的令牌，请重新登录");
+            return false;
+        }
+    }
+
+    @Override
+    public void afterCompletion(@NonNull HttpServletRequest request,
+                                @NonNull HttpServletResponse response,
+                                @NonNull Object handler,
+                                Exception exception) {
+        SecurityContextHolder.clearContext();
+    }
+
+    private List<String> extractRoleCodes(Claims claims) {
+        Object rolesClaim = claims.get(AuthConstants.CLAIM_ROLES);
+        List<String> roleValues = new ArrayList<>();
+        if (rolesClaim instanceof Collection<?> roles) {
+            roles.forEach(role -> roleValues.add(String.valueOf(role)));
+        }
+        if (roleValues.isEmpty()) {
+            Object legacyRole = claims.get(AuthConstants.CLAIM_ROLE);
+            if (legacyRole != null) {
+                roleValues.add(String.valueOf(legacyRole));
+            }
+        }
+        return roleValues.stream().map(AuthContext::normalizeRoleCode).filter(role -> !role.isEmpty()).distinct().toList();
+    }
+
+    private void writeUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setContentType("application/json;charset=UTF-8");
+        Result<Void> body = Result.fail(Result.CODE_UNAUTHORIZED, message);
+        String json = objectMapper.writeValueAsString(body);
+        response.getOutputStream().write(json.getBytes(StandardCharsets.UTF_8));
+    }
+}
+

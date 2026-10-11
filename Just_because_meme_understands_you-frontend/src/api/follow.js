@@ -64,36 +64,36 @@ function normalizeListPage(data = {}) {
   }
 }
 
-/** 关注用户 POST /user/{userId}/follow */
+/** 关注用户 PUT /users/{userId}/followers/me */
 export function followUser(userId, token) {
   const id = assertUserId(userId)
-  return request(`/user/${encodeURIComponent(id)}/follow`, {
-    method: 'POST',
+  return request(`/users/${encodeURIComponent(id)}/followers/me`, {
+    method: 'PUT',
     headers: withAuthHeader(token),
     body: JSON.stringify({}),
   }).then((res) => normalizeFollowed(unwrap(res, '关注失败')))
 }
 
-/** 取消关注 DELETE /user/{userId}/follow */
+/** 取消关注 DELETE /users/{userId}/followers/me */
 export function unfollowUser(userId, token) {
   const id = assertUserId(userId)
-  return request(`/user/${encodeURIComponent(id)}/follow`, {
+  return request(`/users/${encodeURIComponent(id)}/followers/me`, {
     method: 'DELETE',
     headers: withAuthHeader(token),
   }).then((res) => normalizeFollowed(unwrap(res, '取消关注失败')))
 }
 
-/** 单人关注状态 GET /user/{userId}/follow/status */
+/** 单人关注状态 GET /users/{userId}/followers/me */
 export function getFollowStatus(userId, token) {
   const id = assertUserId(userId)
-  return request(`/user/${encodeURIComponent(id)}/follow/status`, {
+  return request(`/users/${encodeURIComponent(id)}/followers/me`, {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => normalizeFollowed(unwrap(res, '获取关注状态失败')))
 }
 
 /**
- * 批量关注状态 GET /user/follow/status?userIds=1,2,3
+ * 批量关注状态 GET /users/me/following?userIds=1,2,3
  * @returns {Map<string, boolean>} userId -> followed
  */
 export function batchFollowStatus(userIds, token) {
@@ -105,7 +105,7 @@ export function batchFollowStatus(userIds, token) {
   }
   const unique = [...new Set(ids)].slice(0, 50)
   const query = new URLSearchParams({ userIds: unique.join(',') })
-  return request(`/user/follow/status?${query}`, {
+  return request(`/users/me/following?${query}`, {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => {
@@ -120,7 +120,7 @@ export function batchFollowStatus(userIds, token) {
   })
 }
 
-/** 关注列表 GET /user/{userId}/following */
+/** 关注列表 GET /users/{userId}/following */
 export function pageFollowing(userId, params = {}, token) {
   const id = assertUserId(userId)
   const page = params.page != null ? Number(params.page) : 1
@@ -129,13 +129,13 @@ export function pageFollowing(userId, params = {}, token) {
     page: String(Number.isFinite(page) && page > 0 ? page : 1),
     size: String(Number.isFinite(size) && size > 0 ? Math.min(size, 50) : 20),
   })
-  return request(`/user/${encodeURIComponent(id)}/following?${query}`, {
+  return request(`/users/${encodeURIComponent(id)}/following?${query}`, {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => normalizeListPage(unwrap(res, '获取关注列表失败')))
 }
 
-/** 粉丝列表 GET /user/{userId}/followers */
+/** 粉丝列表 GET /users/{userId}/followers */
 export function pageFollowers(userId, params = {}, token) {
   const id = assertUserId(userId)
   const page = params.page != null ? Number(params.page) : 1
@@ -144,7 +144,7 @@ export function pageFollowers(userId, params = {}, token) {
     page: String(Number.isFinite(page) && page > 0 ? page : 1),
     size: String(Number.isFinite(size) && size > 0 ? Math.min(size, 50) : 20),
   })
-  return request(`/user/${encodeURIComponent(id)}/followers?${query}`, {
+  return request(`/users/${encodeURIComponent(id)}/followers?${query}`, {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => normalizeListPage(unwrap(res, '获取粉丝列表失败')))

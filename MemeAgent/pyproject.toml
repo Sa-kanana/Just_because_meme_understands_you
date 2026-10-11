@@ -9,7 +9,7 @@ dependencies = [
   "uvicorn[standard]>=0.32,<0.33",
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.6,<3",
-  "httpx>=0.28,<0.29",
+  "httpx[socks]>=0.28,<0.29",
   "asyncpg>=0.30,<0.31",
   "pgvector>=0.3,<0.4",
   # 与本地 conda memeagent 对齐：AgentExecutor 仍在 langchain.agents（1.x 已迁走）
@@ -28,3 +28,11 @@ dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+# 仅将服务代码作为发行包，避免把运行报告目录自动识别为顶层 Python 包。
+[tool.setuptools.packages.find]
+include = ["app*"] # 发布 app 及其子包，不包含 reports 等辅助目录
+
+# 将可独立维护的 Markdown 系统提示作为 app.agents 包资源发布。
+[tool.setuptools.package-data]
+"app.agents" = ["prompt_files/*.md"]

@@ -1,0 +1,372 @@
+package com.sakana.just_because_meme_understands_you.modules.comment.application.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sakana.just_because_meme_understands_you.common.exception.BizException;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCommentCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeComment;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
+import com.sakana.just_because_meme_understands_you.modules.comment.application.IMemeCommentService;
+import com.sakana.just_because_meme_understands_you.modules.comment.application.IUserCommentLikeService;
+import com.sakana.just_because_meme_understands_you.modules.comment.application.MemeCommentAsyncHandler;
+import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.common.pagination.PageParamNormalizer;
+import com.sakana.just_because_meme_understands_you.modules.comment.application.support.MemeCommentSupport;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.MemeBloomFilterService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport.ViewAccess;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentNotificationEvent;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentNotificationEventPort;
+import com.sakana.just_because_meme_understands_you.modules.user.application.safety.UserSafetyService;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentAnchorVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentCreateResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentPageVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeReplyCommentVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeRootCommentVO;
+import jakarta.annotation.Resource;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+@Service
+public class MemeCommentServiceImpl implements IMemeCommentService {
+
+    private static final String SORT_HOT = "hot";
+
+    @Resource
+    private MemeCommentMapper memeCommentMapper;
+
+    @Resource
+    private IMemeService memeService;
+
+    @Resource
+    private MemeCatalogPort memeCatalogPort;
+
+    @Resource
+    private SensitiveWordFilterService sensitiveWordFilterService;
+
+    @Resource
+    private MemeCommentAsyncHandler memeCommentAsyncHandler;
+
+    @Resource
+    private CommentNotificationEventPort commentNotificationEventPort;
+
+    @Resource
+    private MemeBloomFilterService memeBloomFilterService;
+
+    @Resource
+    private MemeCommentSupport commentSupport;
+
+    @Resource
+    private IUserCommentLikeService userCommentLikeService;
+
+    @Resource
+    private UserSafetyService userSafetyService;
+
+    @Override
+    public MemeCommentPageVO pageRootComments(Long memeId, Integer page, Integer size, String sortType, Long currentUserId) {
+        if (memeId == null || memeId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
+        }
+        Meme meme = memeService.getById(memeId);
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可查看评论");
+        }
+        if (access == ViewAccess.OWNER_PREVIEW) {
+            return emptyCommentPage();
+        }
+
+        int pageNo = PageParamNormalizer.normalizePage(page);
+        int pageSize = PageParamNormalizer.normalizeSize(size);
+        Page<MemeComment> mpPage = new Page<>(pageNo, pageSize);
+        LambdaQueryWrapper<MemeComment> wrapper = new LambdaQueryWrapper<MemeComment>()
+                .eq(MemeComment::getMemeId, memeId)
+                .eq(MemeComment::getRootId, 0L)
+                .eq(MemeComment::getIsDeleted, MemeCommentSupport.NOT_DELETED);
+        if (SORT_HOT.equalsIgnoreCase(StringUtils.hasText(sortType) ? sortType.trim() : "")) {
+            wrapper.orderByDesc(MemeComment::getLikes).orderByDesc(MemeComment::getCreateTime);
+        } else {
+            wrapper.orderByDesc(MemeComment::getCreateTime);
+        }
+
+        IPage<MemeComment> result = memeCommentMapper.selectPage(mpPage, wrapper);
+        List<MemeComment> records = result.getRecords();
+        Map<Long, User> userMap = commentSupport.loadUserMap(records.stream().map(MemeComment::getUserId).toList());
+        Map<Long, List<String>> imageMap = commentSupport.loadImageMap(records.stream().map(MemeComment::getId).toList());
+
+        List<MemeRootCommentVO> list = new ArrayList<>();
+        if (records != null) {
+            for (MemeComment comment : records) {
+                list.add(commentSupport.toRootVO(comment, userMap, imageMap));
+            }
+        }
+        enrichRootInteraction(list, currentUserId);
+
+        MemeCommentPageVO pageVO = new MemeCommentPageVO();
+        pageVO.setList(list);
+        pageVO.setTotal(result.getTotal());
+        pageVO.setHasMore(result.getCurrent() * result.getSize() < result.getTotal());
+        return pageVO;
+    }
+
+    @Override
+    public List<MemeReplyCommentVO> pageReplies(Long rootId, Integer page, Integer size, Long currentUserId) {
+        if (rootId == null || rootId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "rootId 不合法");
+        }
+        MemeComment root = memeCommentMapper.selectById(rootId);
+        if (root == null || !Objects.equals(root.getRootId(), 0L)
+                || !Objects.equals(root.getIsDeleted(), MemeCommentSupport.NOT_DELETED)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "根评论不存在");
+        }
+
+        int pageNo = PageParamNormalizer.normalizePage(page);
+        int pageSize = PageParamNormalizer.normalizeSize(size);
+        Page<MemeComment> mpPage = new Page<>(pageNo, pageSize);
+        LambdaQueryWrapper<MemeComment> wrapper = new LambdaQueryWrapper<MemeComment>()
+                .eq(MemeComment::getRootId, rootId)
+                .ne(MemeComment::getId, rootId)
+                .eq(MemeComment::getIsDeleted, MemeCommentSupport.NOT_DELETED)
+                .orderByAsc(MemeComment::getCreateTime);
+        IPage<MemeComment> result = memeCommentMapper.selectPage(mpPage, wrapper);
+        List<MemeComment> records = result.getRecords();
+        if (records == null || records.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, User> userMap = commentSupport.loadUserMap(records.stream().map(MemeComment::getUserId).toList());
+        Map<Long, MemeComment> parentMap = commentSupport.loadCommentMap(records.stream().map(MemeComment::getParentId).toList());
+        Map<Long, List<String>> imageMap = commentSupport.loadImageMap(records.stream().map(MemeComment::getId).toList());
+
+        List<MemeReplyCommentVO> list = new ArrayList<>(records.size());
+        for (MemeComment comment : records) {
+            list.add(commentSupport.toReplyVO(comment, userMap, parentMap, imageMap));
+        }
+        enrichReplyInteraction(list, currentUserId);
+        return list;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MemeCommentCreateResponseVO createComment(Long userId, MemeCommentCreateRequestDTO request) {
+        commentSupport.validateUser(userId);
+        commentSupport.validateCreateRequest(request);
+
+        Long memeId = request.getMemeId();
+        if (memeId == null || memeId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "memeId 不合法");
+        }
+        // 布隆过滤器快速预判：false 表示梗一定不存在，直接拦截，避免穿透 DB
+        if (!memeBloomFilterService.mightContain(memeId)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
+        }
+        Meme meme = memeService.getById(memeId);
+        if (!MemeVisibilitySupport.isCommentsEnabled(meme, userId)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
+        }
+        if (meme.getUserId() != null) {
+            userSafetyService.assertInteractionAllowed(userId, meme.getUserId());
+        }
+
+        long rootId = commentSupport.parseCommentRefId(request.getRootId(), "rootId");
+        long parentId = commentSupport.parseCommentRefId(request.getParentId(), "parentId");
+        boolean isRootComment = rootId == 0L && parentId == 0L;
+
+        String filteredContent = sensitiveWordFilterService.filterForInsert(request.getContent().trim());
+        LocalDateTime now = LocalDateTime.now();
+        MemeComment comment = new MemeComment();
+        comment.setMemeId(memeId);
+        comment.setUserId(userId);
+        comment.setContent(filteredContent);
+        comment.setReplyCount(0);
+        comment.setLikes(0);
+        comment.setIsDeleted(MemeCommentSupport.NOT_DELETED);
+        comment.setCreateTime(now);
+        comment.setUpdateTime(now);
+
+        Long notifyReceiverUserId = null;
+        if (isRootComment) {
+            comment.setRootId(0L);
+            comment.setParentId(0L);
+        } else {
+            if (rootId <= 0) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "rootId 不合法");
+            }
+            MemeComment root = memeCommentMapper.selectById(rootId);
+            if (root == null || !Objects.equals(root.getRootId(), 0L)
+                    || !Objects.equals(root.getIsDeleted(), MemeCommentSupport.NOT_DELETED)) {
+                throw new BizException(Result.CODE_NOT_FOUND, "根评论不存在");
+            }
+            if (!Objects.equals(root.getMemeId(), memeId)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "评论与梗不匹配");
+            }
+            long resolvedParentId = parentId > 0 ? parentId : rootId;
+            MemeComment parent = memeCommentMapper.selectById(resolvedParentId);
+            if (!commentSupport.isValidReplyParent(parent, rootId) || !Objects.equals(parent.getMemeId(), memeId)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "父评论不存在");
+            }
+            if (parent.getUserId() != null) {
+                userSafetyService.assertInteractionAllowed(userId, parent.getUserId());
+            }
+            comment.setRootId(rootId);
+            comment.setParentId(resolvedParentId);
+            notifyReceiverUserId = parent.getUserId();
+        }
+
+        memeCommentMapper.insert(comment);
+        if (!memeCatalogPort.incrementCommentCount(memeId)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可评论");
+        }
+        commentSupport.saveImages(comment.getId(), userId, request.getImageUrls());
+
+        if (!isRootComment) {
+            memeCommentMapper.update(null, new LambdaUpdateWrapper<MemeComment>()
+                    .eq(MemeComment::getId, rootId)
+                    .setSql("reply_count = reply_count + 1")
+                    .set(MemeComment::getUpdateTime, now));
+            if (notifyReceiverUserId != null) {
+                commentNotificationEventPort.append(new CommentNotificationEvent(
+                        CommentNotificationEvent.Type.COMMENT_REPLIED,
+                        notifyReceiverUserId,
+                        userId,
+                        memeId,
+                        comment.getId(),
+                        rootId,
+                        meme.getName(),
+                        meme.getImage(),
+                        comment.getContent()));
+            }
+        } else if (meme.getUserId() != null) {
+            commentNotificationEventPort.append(new CommentNotificationEvent(
+                    CommentNotificationEvent.Type.MEME_COMMENTED,
+                    meme.getUserId(),
+                    userId,
+                    memeId,
+                    comment.getId(),
+                    comment.getId(),
+                    meme.getName(),
+                    meme.getImage(),
+                    comment.getContent()));
+        }
+
+        scheduleAfterCommentCommitted(memeId, userId);
+        return commentSupport.toCreateResponseVO(comment);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteComment(Long userId, Long commentId) {
+        commentSupport.validateUser(userId);
+        if (commentId == null || commentId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "评论 id 不合法");
+        }
+        MemeComment comment = memeCommentMapper.selectById(commentId);
+        if (comment == null || !Objects.equals(comment.getIsDeleted(), MemeCommentSupport.NOT_DELETED)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+        if (!Objects.equals(comment.getUserId(), userId)) {
+            throw new BizException(Result.CODE_FORBIDDEN, "只能删除自己的评论");
+        }
+        if (memeCommentMapper.hideById(commentId) != 1) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+    }
+
+    @Override
+    public MemeCommentAnchorVO locateComment(Long commentId, Long currentUserId) {
+        if (commentId == null || commentId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "评论 id 不合法");
+        }
+        MemeComment comment = memeCommentMapper.selectById(commentId);
+        if (comment == null || !Objects.equals(comment.getIsDeleted(), MemeCommentSupport.NOT_DELETED)) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+        Long memeId = comment.getMemeId();
+        if (memeId == null || memeId <= 0) {
+            throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
+        }
+        Meme meme = memeService.getById(memeId);
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
+            throw new BizException(Result.CODE_NOT_FOUND, "梗不存在或不可查看评论");
+        }
+
+        boolean isRoot = comment.getRootId() == null || Objects.equals(comment.getRootId(), 0L);
+        Long rootId = isRoot ? comment.getId() : comment.getRootId();
+        Long parentId = comment.getParentId() == null ? 0L : comment.getParentId();
+
+        MemeCommentAnchorVO vo = new MemeCommentAnchorVO();
+        vo.setMemeId(memeId);
+        vo.setCommentId(comment.getId());
+        vo.setRootId(rootId);
+        vo.setParentId(parentId);
+        vo.setRoot(isRoot);
+        return vo;
+    }
+
+    private void scheduleAfterCommentCommitted(Long memeId, Long userId) {
+        Runnable task = () -> memeCommentAsyncHandler.afterCommentCreated(memeId, userId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        } else {
+            task.run();
+        }
+    }
+
+    private void enrichRootInteraction(List<MemeRootCommentVO> list, Long currentUserId) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        Set<Long> likedIds = userCommentLikeService.findLikedCommentIds(
+                currentUserId,
+                list.stream().map(MemeRootCommentVO::getId).toList());
+        for (MemeRootCommentVO vo : list) {
+            vo.setLiked(likedIds.contains(vo.getId()));
+            vo.setOwner(currentUserId != null && currentUserId > 0 && Objects.equals(currentUserId, vo.getUserId()));
+        }
+    }
+
+    private void enrichReplyInteraction(List<MemeReplyCommentVO> list, Long currentUserId) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        Set<Long> likedIds = userCommentLikeService.findLikedCommentIds(
+                currentUserId,
+                list.stream().map(MemeReplyCommentVO::getId).toList());
+        for (MemeReplyCommentVO vo : list) {
+            vo.setLiked(likedIds.contains(vo.getId()));
+            vo.setOwner(currentUserId != null && currentUserId > 0 && Objects.equals(currentUserId, vo.getUserId()));
+        }
+    }
+
+    private MemeCommentPageVO emptyCommentPage() {
+        MemeCommentPageVO pageVO = new MemeCommentPageVO();
+        pageVO.setList(Collections.emptyList());
+        pageVO.setTotal(0L);
+        pageVO.setHasMore(false);
+        return pageVO;
+    }
+}

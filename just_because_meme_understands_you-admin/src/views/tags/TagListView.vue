@@ -11,8 +11,22 @@
       <a-button type="primary" @click="reload">查询</a-button>
       <a-button @click="openCreate">新增标签</a-button>
     </div>
+    <div v-if="selectedKeys.length" class="batch-toolbar">
+      <span class="batch-selection">已选 {{ selectedRecords.length }} 条</span>
+      <a-popconfirm
+        :content="`删除选中的 ${selectedRecords.length} 个标签，并清理关联关系，确认继续？`"
+        @ok="removeSelected"
+      >
+        <a-button size="small" status="danger" :disabled="batching || !selectedRecords.length">
+          批量删除 {{ selectedRecords.length }}
+        </a-button>
+      </a-popconfirm>
+      <a-button size="small" type="text" :disabled="batching" @click="selectedKeys = []">清除选择</a-button>
+    </div>
     <a-table
       row-key="id"
+      v-model:selectedKeys="selectedKeys"
+      :row-selection="rowSelection"
       :loading="loading"
       :columns="columns"
       :data="list"
@@ -46,7 +60,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   createAdminTag,
   deleteAdminTag,
@@ -55,10 +69,13 @@ import {
 } from '@/api/adminTag'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import { toastError, toastSuccess } from '@/utils/uiFeedback'
+import { runBatchOperations } from '@/utils/batchOperations.mjs'
 
 const loading = ref(false)
 const saving = ref(false)
 const list = ref([])
+const selectedKeys = ref([])
+const batching = ref(false)
 const keyword = ref('')
 const modalVisible = ref(false)
 const editingId = ref('')
@@ -71,6 +88,12 @@ const pagination = reactive({
   showPageSize: true,
 })
 
+const rowSelection = { type: 'checkbox', showCheckedAll: true, onlyCurrent: true }
+const selectedRecords = computed(() => {
+  const selectedIds = new Set(selectedKeys.value.map(String))
+  return list.value.filter((record) => selectedIds.has(String(record.id)))
+})
+
 const columns = [
   { title: 'ID', dataIndex: 'id', width: 90 },
   { title: '名称', dataIndex: 'name' },
@@ -79,6 +102,7 @@ const columns = [
 ]
 
 async function load() {
+  selectedKeys.value = []
   loading.value = true
   try {
     const data = await fetchAdminTags({
@@ -155,6 +179,24 @@ async function remove(record) {
   }
 }
 
+async function removeSelected() {
+  if (batching.value || !selectedRecords.value.length) return
+  batching.value = true
+  try {
+    const result = await runBatchOperations(selectedRecords.value, (record) => deleteAdminTag(record.id))
+    if (result.failed.length === 0) {
+      toastSuccess(`已删除 ${result.succeeded.length} 个标签`)
+    } else {
+      const reason = result.failed[0].error && result.failed[0].error.message
+      const message = `批量删除完成：成功 ${result.succeeded.length} 个，失败 ${result.failed.length} 个${reason ? `（${reason}）` : ''}`
+      if (!isAuthErrorHandled(result.failed[0].error)) toastError(message)
+    }
+    await load()
+  } finally {
+    batching.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -165,4 +207,16 @@ onMounted(load)
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 8px;
+  background: var(--color-fill-1);
+}
+.batch-selection { margin-right: 4px; color: var(--color-text-2); font-size: 13px; }
 </style>

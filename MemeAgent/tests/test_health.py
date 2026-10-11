@@ -16,3 +16,10 @@ def test_health_without_vector_db():
     body = response.json()
     assert body["service"] == "meme-agent"
     assert "status" in body
+
+
+def test_rag_log_routes_are_removed():
+    route_paths = {route.path for route in app.routes}
+
+    assert "/ops/rag-logs" not in route_paths
+    assert "/ops/rag-logs/{event_id}" not in route_paths

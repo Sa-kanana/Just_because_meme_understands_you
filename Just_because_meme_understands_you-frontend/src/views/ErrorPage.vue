@@ -1,8 +1,13 @@
 <template>
   <div class="error-page">
     <div class="error-card">
-      <div class="error-left">
-        <div class="error-tag">只因“梗”懂你 · 异常页面</div>
+      <div class="error-copy">
+        <div class="error-brand">
+          <img src="/icon.svg" alt="" />
+          <span class="brand-name">只因“梗”懂你</span>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <span class="brand-context">页面状态提示</span>
+        </div>
         <div class="error-code-wrap">
           <span class="error-code-main">{{ displayCode }}</span>
           <span v-if="codeLabel" class="error-code-label">{{ codeLabel }}</span>
@@ -14,15 +19,16 @@
           {{ displaySubtitle }}
         </p>
 
-        <div v-if="displayTips.length" class="error-tips">
-          <p
+        <ul v-if="displayTips.length" class="error-tips">
+          <li
             v-for="(item, index) in displayTips"
             :key="index"
             class="error-tip-item"
           >
-            · {{ item }}
-          </p>
-        </div>
+            <span class="tip-index">0{{ index + 1 }}</span>
+            <span>{{ item }}</span>
+          </li>
+        </ul>
 
         <div class="error-actions">
           <vs-button
@@ -40,20 +46,24 @@
         </div>
       </div>
 
-      <div class="error-right">
-        <div class="meme-badge">梗图宇宙出现了一个小 Bug</div>
+      <div class="error-visual" aria-hidden="true">
         <div class="meme-illustration">
-          <div class="meme-face">
-            <span class="meme-eye left"></span>
-            <span class="meme-eye right"></span>
-            <span class="meme-mouth">_</span>
+          <div class="illustration-header">
+            <span class="illustration-kicker">梗图宇宙</span>
+            <span class="illustration-status"><i></i>暂时离线</span>
           </div>
+
+          <div class="illustration-orbit illustration-orbit--outer"></div>
+          <div class="illustration-orbit illustration-orbit--inner"></div>
+          <div class="illustration-code">{{ displayCode }}</div>
+          <div class="illustration-logo">
+            <img src="/icon.svg" alt="" />
+          </div>
+
           <div class="meme-text-bubble">
-            <p>
-              {{ bubbleText }}
-            </p>
+            <span class="bubble-quote">“</span>
+            <p>{{ bubbleText }}</p>
           </div>
-          <div class="meme-glow"></div>
         </div>
       </div>
     </div>
@@ -252,97 +262,132 @@ export default {
 <style scoped>
 .error-page {
   min-height: calc(100vh - 56px);
-  padding: 40px 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-sizing: border-box;
+  padding: clamp(24px, 5vw, 72px);
+  display: grid;
+  place-items: center;
   background: var(--meme-gradient-page);
 }
 
 .error-card {
-  width: 100%;
-  max-width: 980px;
-  border-radius: var(--meme-radius-xl);
+  width: min(100%, 1160px);
+  box-sizing: border-box;
+  border: 1px solid var(--meme-border);
+  border-radius: 30px;
   background: var(--meme-bg-card);
-  box-shadow: var(--meme-shadow-dialog);
-  padding: 32px 36px;
+  box-shadow: var(--meme-shadow-soft);
+  padding: clamp(28px, 5vw, 64px);
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 32px;
-  position: relative;
-  overflow: hidden;
-}
-
-.error-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--meme-gradient-dialog);
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-.error-left,
-.error-right {
-  position: relative;
-  z-index: 1;
-}
-
-.error-tag {
-  display: inline-flex;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--meme-bg-muted);
+  gap: clamp(32px, 5vw, 72px);
+}
+
+.error-copy {
+  min-width: 0;
+}
+
+.error-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
   color: var(--meme-text-secondary);
-  font-size: 12px;
-  margin-bottom: 12px;
-  backdrop-filter: blur(6px);
+}
+
+.error-brand img {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.brand-name {
+  color: var(--meme-text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.brand-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--meme-border-strong);
+}
+
+.brand-context {
+  font-size: 13px;
 }
 
 .error-code-wrap {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 18px;
 }
 
 .error-code-main {
-  font-size: 44px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: clamp(68px, 8vw, 92px);
+  line-height: 0.92;
+  font-weight: 780;
+  letter-spacing: -0.075em;
   color: var(--meme-text);
 }
 
 .error-code-label {
   font-size: 13px;
-  padding: 4px 10px;
+  padding: 8px 13px;
   border-radius: 999px;
   background: var(--meme-primary-soft);
   color: var(--meme-accent-text);
+  font-weight: 600;
 }
 
 .error-title {
-  margin: 8px 0 12px;
-  font-size: 26px;
-  line-height: 1.32;
+  max-width: 600px;
+  margin: 0 0 14px;
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.035em;
   color: var(--meme-text);
 }
 
 .error-subtitle {
-  margin: 0 0 16px;
-  font-size: 14px;
+  max-width: 560px;
+  margin: 0 0 26px;
+  font-size: 15px;
+  line-height: 1.8;
   color: var(--meme-text-secondary);
 }
 
 .error-tips {
-  margin-bottom: 24px;
+  display: grid;
+  gap: 12px;
+  max-width: 580px;
+  padding: 0;
+  margin: 0 0 30px;
+  list-style: none;
 }
 
 .error-tip-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.7;
   color: var(--meme-text-secondary);
+}
+
+.tip-index {
+  padding-top: 1px;
+  color: var(--meme-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .error-actions {
@@ -351,118 +396,255 @@ export default {
   gap: 12px;
 }
 
-.error-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-}
-
-.meme-badge {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--meme-bg-muted);
-  color: var(--meme-text-secondary);
-  margin-bottom: 10px;
-  backdrop-filter: blur(6px);
+.error-visual {
+  min-width: 0;
 }
 
 .meme-illustration {
   width: 100%;
-  max-width: 320px;
-  aspect-ratio: 4 / 3;
-  border-radius: var(--meme-radius-xl);
-  background: radial-gradient(circle at 20% 0%, #38bdf8, #1d4ed8 45%, #020617 100%);
-  box-shadow: var(--meme-shadow-dialog);
+  min-height: 390px;
+  box-sizing: border-box;
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(108, 196, 255, 0.42), transparent 38%),
+    linear-gradient(145deg, #279edb 0%, #286ce0 48%, #172a70 100%);
+  box-shadow: 0 26px 56px rgba(30, 83, 180, 0.23);
   position: relative;
   overflow: hidden;
-  padding: 18px 18px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 
-.meme-face {
+.meme-illustration::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 36px 36px;
+  opacity: 0.3;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 88%);
+  pointer-events: none;
+}
+
+.illustration-header,
+.illustration-logo,
+.meme-text-bubble {
   position: relative;
-  align-self: center;
-  width: 112px;
-  height: 72px;
-  border-radius: 999px;
-  background: radial-gradient(circle at top, #fefce8, #fbbf24);
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+
+.illustration-header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.meme-eye {
-  position: absolute;
-  top: 24px;
-  width: 14px;
-  height: 14px;
+.illustration-kicker {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.illustration-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 999px;
-  background: #020617;
-  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.7);
+  background: rgba(9, 26, 78, 0.18);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
 }
 
-.meme-eye.left {
-  left: 26px;
+.illustration-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9ae6c7;
+  box-shadow: 0 0 10px rgba(154, 230, 199, 0.8);
 }
 
-.meme-eye.right {
-  right: 26px;
-}
-
-.meme-mouth {
+.illustration-orbit {
   position: absolute;
-  bottom: 18px;
-  font-size: 20px;
-  color: #111827;
+  top: 50%;
+  left: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.illustration-orbit--outer {
+  width: min(76%, 286px);
+  aspect-ratio: 1;
+  border-style: dashed;
+  transform: translate(-50%, -43%) rotate(-16deg);
+}
+
+.illustration-orbit--inner {
+  width: min(58%, 218px);
+  aspect-ratio: 1;
+  opacity: 0.55;
+}
+
+.illustration-code {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  top: 49%;
+  color: rgba(255, 255, 255, 0.14);
+  font-size: clamp(94px, 11vw, 138px);
+  font-weight: 800;
+  letter-spacing: -0.09em;
+  line-height: 0.85;
+  transform: translate(-50%, -40%);
+  white-space: nowrap;
+}
+
+.illustration-logo {
+  width: 124px;
+  height: 124px;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 36px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 22px 42px rgba(10, 30, 85, 0.28);
+  transform: rotate(-5deg);
+}
+
+.illustration-logo img {
+  width: 94px;
+  height: 94px;
 }
 
 .meme-text-bubble {
+  width: min(100%, 300px);
+  box-sizing: border-box;
   align-self: flex-end;
-  max-width: 180px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.86);
-  color: var(--meme-text-inverse);
-  font-size: 12px;
-  padding: 8px 10px;
-  line-height: 1.5;
-  position: relative;
+  padding: 13px 16px 13px 42px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 17px;
+  background: rgba(10, 24, 68, 0.42);
+  color: #fff;
+  backdrop-filter: blur(12px);
 }
 
-.meme-text-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  right: 24px;
-  border-width: 8px 8px 0 0;
-  border-style: solid;
-  border-color: rgba(15, 23, 42, 0.86) transparent transparent transparent;
+.meme-text-bubble p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
 }
 
-.meme-glow {
+.bubble-quote {
   position: absolute;
-  inset: auto 0 0;
-  height: 60px;
-  background: radial-gradient(circle at 50% 0%, rgba(248, 250, 252, 0.3), transparent 70%);
-  pointer-events: none;
+  top: 7px;
+  left: 15px;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: Georgia, serif;
+  font-size: 30px;
+  line-height: 1;
 }
 
 @media (max-width: 900px) {
   .error-card {
     grid-template-columns: minmax(0, 1fr);
-    padding: 24px 20px;
+    gap: 34px;
   }
 
-  .error-right {
-    align-items: flex-start;
+  .meme-illustration {
+    min-height: 340px;
   }
+}
 
+@media (max-width: 560px) {
   .error-page {
-    padding: 24px 16px;
+    min-height: calc(100vh - 56px);
+    padding: 18px 14px 28px;
+  }
+
+  .error-card {
+    padding: 26px 21px;
+    border-radius: 23px;
+    gap: 28px;
+  }
+
+  .error-brand {
+    gap: 8px;
+    margin-bottom: 27px;
+  }
+
+  .error-brand img {
+    width: 30px;
+    height: 30px;
+  }
+
+  .brand-name {
+    font-size: 14px;
+  }
+
+  .brand-context {
+    font-size: 12px;
+  }
+
+  .error-code-wrap {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .error-code-main {
+    font-size: 66px;
+  }
+
+  .error-title {
+    font-size: 27px;
+  }
+
+  .error-subtitle {
+    font-size: 14px;
+    margin-bottom: 22px;
+  }
+
+  .error-tip-item {
+    font-size: 13px;
+  }
+
+  .error-actions {
+    gap: 9px;
+  }
+
+  .meme-illustration {
+    min-height: 286px;
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .illustration-logo {
+    width: 100px;
+    height: 100px;
+    border-radius: 29px;
+  }
+
+  .illustration-logo img {
+    width: 76px;
+    height: 76px;
+  }
+
+  .meme-text-bubble {
+    width: 100%;
+  }
+
+  .illustration-code {
+    font-size: 96px;
   }
 }
 </style>

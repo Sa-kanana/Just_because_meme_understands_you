@@ -23,13 +23,13 @@ export function fetchAdminKnowledge(params = {}) {
   if (params.keyword) query.set('keyword', String(params.keyword).trim())
   if (params.category) query.set('category', String(params.category).trim())
   const qs = query.toString()
-  return request(`/admin/knowledge${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) =>
+  return request(`/admin/knowledge-documents${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) =>
     normalizePage(assertData(res, '获取知识库失败'))
   )
 }
 
 export function createAdminKnowledge(payload) {
-  return request('/admin/knowledge', {
+  return request('/admin/knowledge-documents', {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   }).then((res) => assertData(res, '创建知识失败'))
@@ -37,7 +37,7 @@ export function createAdminKnowledge(payload) {
 
 /**
  * 上传 Markdown / PDF，服务端提取文本后入库并灌库。
- * POST /admin/knowledge/upload multipart: file, title?, category?, tags?
+ * POST /admin/knowledge-documents/uploads multipart: file, title?, category?, tags?
  */
 export function uploadAdminKnowledgeFile({
   file,
@@ -60,17 +60,18 @@ export function uploadAdminKnowledgeFile({
     ? tags.filter(Boolean).join(',')
     : String(tags || '').trim()
   if (tagText) form.append('tags', tagText)
-  return request('/admin/knowledge/upload', {
+  return request('/admin/knowledge-documents/uploads', {
     method: 'POST',
     body: form,
-    timeout: 120000,
+    // 中文注释：25 MB PDF 需要同步完成内存解析与 MySQL/outbox 写入，允许最长 5 分钟。
+    timeout: 300000,
   }).then((res) => assertData(res, '上传知识文件失败'))
 }
 
 export function updateAdminKnowledge(id, payload) {
   const docId = id != null ? String(id).trim() : ''
   if (!docId) return Promise.reject(new Error('缺少 id'))
-  return request(`/admin/knowledge/${encodeURIComponent(docId)}`, {
+  return request(`/admin/knowledge-documents/${encodeURIComponent(docId)}`, {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
   }).then((res) => assertData(res, '更新知识失败'))
@@ -79,7 +80,7 @@ export function updateAdminKnowledge(id, payload) {
 export function deleteAdminKnowledge(id) {
   const docId = id != null ? String(id).trim() : ''
   if (!docId) return Promise.reject(new Error('缺少 id'))
-  return request(`/admin/knowledge/${encodeURIComponent(docId)}`, { method: 'DELETE' }).then(
+  return request(`/admin/knowledge-documents/${encodeURIComponent(docId)}`, { method: 'DELETE' }).then(
     (res) => assertData(res, '删除知识失败')
   )
 }
@@ -87,7 +88,18 @@ export function deleteAdminKnowledge(id) {
 export function reindexAdminKnowledge(id) {
   const docId = id != null ? String(id).trim() : ''
   if (!docId) return Promise.reject(new Error('缺少 id'))
-  return request(`/admin/knowledge/${encodeURIComponent(docId)}/reindex`, {
+  return request(`/admin/knowledge-documents/${encodeURIComponent(docId)}/indexing-jobs`, {
     method: 'POST',
   }).then((res) => assertData(res, '重新灌库失败'))
+}
+
+/** 查询指定向量任务的持久化状态。 */
+export function fetchAdminKnowledgeTask(id, taskId) {
+  const docId = id != null ? String(id).trim() : ''
+  const jobId = taskId != null ? String(taskId).trim() : ''
+  if (!docId || !jobId) return Promise.reject(new Error('缺少文档或任务 id'))
+  return request(
+    `/admin/knowledge-documents/${encodeURIComponent(docId)}/indexing-jobs/${encodeURIComponent(jobId)}`,
+    { method: 'GET' }
+  ).then((res) => assertData(res, '获取向量任务状态失败'))
 }

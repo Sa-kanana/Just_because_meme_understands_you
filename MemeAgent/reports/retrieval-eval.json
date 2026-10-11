@@ -1,0 +1,312 @@
+{
+  "summary": {
+    "query_count": 10,
+    "labeled_relevance_queries": 6,
+    "unlabeled_queries": 0,
+    "empty_query_count": 4,
+    "empty_query_accuracy": 1.0,
+    "recall_at_5": 1.0,
+    "recall_at_10": 1.0,
+    "mrr": 1.0,
+    "latency_p50_ms": 85.51,
+    "latency_p95_ms": 913.2,
+    "answer_evidence_alignment_rate": null,
+    "answer_fact_coverage": null,
+    "time_to_first_token_p50_ms": null,
+    "time_to_first_token_p95_ms": null,
+    "estimated_cost_usd_total": null,
+    "estimated_cost_usd_average": null,
+    "cost_estimate_available_queries": 0
+  },
+  "queries": [
+    {
+      "query": "背手负鼠是什么梗？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "背手负鼠"
+      ],
+      "expected_answer_fact_groups": [
+        [
+          "负鼠",
+          "背爪站立"
+        ]
+      ],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "126"
+      ],
+      "retrieved_meme_names": [
+        "背手负鼠"
+      ],
+      "latency_ms": 913.2,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "哭哭马一般用来表达什么？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "哭哭马"
+      ],
+      "expected_answer_fact_groups": [
+        [
+          "委屈",
+          "疲惫",
+          "强颜欢笑"
+        ]
+      ],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "127",
+        "130"
+      ],
+      "retrieved_meme_names": [
+        "哭哭马",
+        "哭笑马"
+      ],
+      "latency_ms": 119.08,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "SBTI 是什么类型的测试？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "SBTI"
+      ],
+      "expected_answer_fact_groups": [
+        [
+          "娱乐型",
+          "娱乐"
+        ],
+        [
+          "人格测试",
+          "性格测试"
+        ]
+      ],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "131"
+      ],
+      "retrieved_meme_names": [
+        "SBTI"
+      ],
+      "latency_ms": 93.46,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "AI 水果短剧有什么特点？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "AI水果"
+      ],
+      "expected_answer_fact_groups": [
+        [
+          "水果拟人",
+          "水果角色"
+        ],
+        [
+          "狗血剧情",
+          "反转"
+        ]
+      ],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "133"
+      ],
+      "retrieved_meme_names": [
+        "AI水果"
+      ],
+      "latency_ms": 171.03,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "网络上说养龙虾指的是什么？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "养龙虾"
+      ],
+      "expected_answer_fact_groups": [
+        [
+          "OpenClaw"
+        ],
+        [
+          "龙虾标志",
+          "龙虾 logo"
+        ]
+      ],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "134"
+      ],
+      "retrieved_meme_names": [
+        "养龙虾"
+      ],
+      "latency_ms": 76.42,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "不明觉厉是什么意思？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [
+        "不明觉厉"
+      ],
+      "expected_answer_fact_groups": [],
+      "expected_empty": false,
+      "retrieved_meme_ids": [
+        "60"
+      ],
+      "retrieved_meme_names": [
+        "不明觉厉"
+      ],
+      "latency_ms": 78.38,
+      "metrics": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0
+      },
+      "empty_query_correct": null,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "你好",
+      "expected_meme_ids": [],
+      "expected_meme_names": [],
+      "expected_answer_fact_groups": [],
+      "expected_empty": true,
+      "retrieved_meme_ids": [],
+      "retrieved_meme_names": [],
+      "latency_ms": 0.21,
+      "metrics": null,
+      "empty_query_correct": true,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "谢谢",
+      "expected_meme_ids": [],
+      "expected_meme_names": [],
+      "expected_answer_fact_groups": [],
+      "expected_empty": true,
+      "retrieved_meme_ids": [],
+      "retrieved_meme_names": [],
+      "latency_ms": 0.01,
+      "metrics": null,
+      "empty_query_correct": true,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "帮我写一个 Java 快速排序算法",
+      "expected_meme_ids": [],
+      "expected_meme_names": [],
+      "expected_answer_fact_groups": [],
+      "expected_empty": true,
+      "retrieved_meme_ids": [],
+      "retrieved_meme_names": [],
+      "latency_ms": 273.53,
+      "metrics": null,
+      "empty_query_correct": true,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    },
+    {
+      "query": "太阳系有几颗行星？",
+      "expected_meme_ids": [],
+      "expected_meme_names": [],
+      "expected_answer_fact_groups": [],
+      "expected_empty": true,
+      "retrieved_meme_ids": [],
+      "retrieved_meme_names": [],
+      "latency_ms": 85.51,
+      "metrics": null,
+      "empty_query_correct": true,
+      "answer": null,
+      "evidence": [],
+      "errors": [],
+      "time_to_first_token_ms": null,
+      "usage": null,
+      "estimated_cost_usd": null,
+      "answer_grounding": null
+    }
+  ]
+}

@@ -2,9 +2,16 @@
   <div class="publish-page">
     <header class="publish-hero">
       <p class="publish-hero-kicker">PUBLISH</p>
-      <h1 class="publish-hero-title">发布梗</h1>
+      <h1 class="publish-hero-title">
+        {{ isEditMode ? '修改梗内容' : '发布梗' }}
+        <svg class="publish-hero-underline" viewBox="0 0 72 14" aria-hidden="true">
+          <path d="M2 10c12-7 22-7 30-3 6 3 6 6 12 4 7-2 14-8 26-9" />
+        </svg>
+      </h1>
       <p class="publish-hero-sub">
-        分享你知道的梗，填写基础信息并附上延伸阅读，帮助更多人快速 get 到点。
+        {{ isEditMode
+          ? '提交后将进入独立审核；审核期间，其他用户仍看到当前版本。审核通过后，修改内容才会生效。'
+          : '分享你知道的梗，填写基础信息并附上延伸阅读，帮助更多人快速 get 到点。' }}
       </p>
     </header>
 
@@ -39,7 +46,7 @@
                 type="textarea"
                 block
                 :rows="4"
-                maxlength="500"
+                maxlength="255"
                 placeholder="介绍一下这个梗的来源、出处、怎么用…（选填）"
                 class="publish-field publish-field--textarea"
               />
@@ -53,11 +60,11 @@
               </span>
               <div>
                 <h3 class="section-title">封面与标签</h3>
-                <p class="section-hint">封面用于列表展示，标签帮助用户发现你的梗</p>
+                <p class="section-hint">封面用于列表展示；不上传时会根据梗名称生成默认封面</p>
               </div>
             </div>
 
-            <ui-form-item label="封面图" required>
+            <ui-form-item label="封面图（选填）">
               <div class="cover-uploader">
                 <div
                   v-if="form.image"
@@ -91,8 +98,8 @@
                     @change="onCoverChange"
                   />
                   <i class="ri-image-add-line upload-icon" aria-hidden="true" />
-                  <span class="upload-label">{{ coverUploading ? '上传中…' : '点击上传封面' }}</span>
-                  <span class="upload-tip">JPG / PNG / WebP / GIF，≤ 10MB</span>
+                  <span class="upload-label">{{ coverUploading ? '上传中…' : '点击上传封面（选填）' }}</span>
+                  <span class="upload-tip">可跳过，系统将生成默认封面</span>
                 </label>
               </div>
             </ui-form-item>
@@ -246,9 +253,21 @@
           <footer class="publish-footer">
             <p class="publish-footer-hint">
               <i class="ri-shield-check-line" aria-hidden="true" />
-              提交后将进入审核，通过后会在首页展示
+              {{ isEditMode
+                ? '修改稿审核通过后替换当前内容；审核驳回时原内容保持不变'
+                : (draftSaved ? '草稿已自动保存到此浏览器' : '提交后将进入审核，通过后会在首页展示') }}
             </p>
             <div class="publish-actions">
+              <vs-button
+                v-if="!isEditMode && hasDraftContent"
+                type="border"
+                color="primary"
+                class="publish-cancel-btn"
+                :disabled="submitting"
+                @click="discardDraft"
+              >
+                清空草稿
+              </vs-button>
               <vs-button
                 type="border"
                 color="primary"
@@ -267,7 +286,7 @@
               >
                 <span class="publish-submit-inner">
                   <i v-if="!submitting" class="ri-send-plane-2-line" aria-hidden="true" />
-                  发布梗
+                  {{ isEditMode ? '提交修改审核' : '发布梗' }}
                 </span>
               </vs-button>
             </div>
@@ -305,16 +324,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/utils/uiFeedback'
-import { getMemeTags, publishMeme } from '@/api/meme'
+import { getMemeDetail, getMemeTags, publishMeme, submitMemeEdit } from '@/api/meme'
 import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
 import { isAuthErrorHandled } from '@/utils/authSession'
+import { readPublishDraft, savePublishDraft, clearPublishDraft } from '@/utils/publishDraft.mjs'
+import { buildMemeEditPayload, mapMemeDetailToEditForm } from '@/utils/memeEditForm.mjs'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const editMemeId = computed(() => String(route.query.edit || '').trim())
+const isEditMode = computed(() => route.query.edit != null)
 
 const tags = ref([])
 const submitting = ref(false)
@@ -322,20 +346,69 @@ const coverUploading = ref(false)
 const resourceUploading = ref(false)
 const imagePreviewVisible = ref(false)
 const imagePreviewSrc = ref('')
+const draftReady = ref(false)
+const draftSaved = ref(false)
 
-const form = reactive({
-  name: '',
-  introduction: '',
-  image: '',
-  tagIds: [],
-  resources: [],
-  resourceUrls: [],
-})
+function emptyForm() {
+  return {
+    name: '',
+    introduction: '',
+    image: '',
+    tagIds: [],
+    resources: [],
+    resourceUrls: [],
+  }
+}
+
+const form = reactive(emptyForm())
+
+const hasDraftContent = computed(() => Boolean(
+  form.name.trim() || form.introduction.trim() || form.image ||
+  form.tagIds.length || form.resources.length || form.resourceUrls.length
+))
+
+function draftStorage() {
+  try {
+    return window.localStorage
+  } catch (_) {
+    return null
+  }
+}
+
+watch(
+  () => authStore.isLoggedIn ? (authStore.currentUser?.id ?? authStore.currentUser?.userId) : null,
+  (id) => {
+    draftReady.value = false
+    Object.assign(form, emptyForm())
+    if (isEditMode.value) {
+      draftSaved.value = false
+      return
+    }
+    const restored = id != null ? readPublishDraft(draftStorage(), authStore.currentUser) : null
+    if (restored) Object.assign(form, restored)
+    draftSaved.value = Boolean(restored)
+    draftReady.value = id != null
+  },
+  { immediate: true, flush: 'sync' }
+)
+
+watch(form, () => {
+  if (isEditMode.value || !draftReady.value) return
+  draftSaved.value = savePublishDraft(draftStorage(), authStore.currentUser, form) && hasDraftContent.value
+}, { deep: true, flush: 'sync' })
+
+function discardDraft() {
+  draftReady.value = false
+  Object.assign(form, emptyForm())
+  clearPublishDraft(draftStorage(), authStore.currentUser)
+  draftSaved.value = false
+  draftReady.value = true
+}
 
 const canSubmit = computed(
   () =>
     form.name.trim() &&
-    form.image
+    !coverUploading.value
 )
 
 function openImagePreview(url) {
@@ -357,10 +430,42 @@ onMounted(async () => {
   }
   try {
     tags.value = await getMemeTags()
+    await loadEditContent()
   } catch (e) {
     toast.error(e.message || '加载标签失败')
   }
 })
+
+watch(editMemeId, async (id) => {
+  if (!id) {
+    draftReady.value = false
+    Object.assign(form, emptyForm())
+    const currentUserId = authStore.isLoggedIn
+      ? (authStore.currentUser?.id ?? authStore.currentUser?.userId)
+      : null
+    const restored = currentUserId != null ? readPublishDraft(draftStorage(), authStore.currentUser) : null
+    if (restored) Object.assign(form, restored)
+    draftSaved.value = Boolean(restored)
+    draftReady.value = currentUserId != null
+    return
+  }
+  if (!authStore.isLoggedIn) return
+  try {
+    await loadEditContent()
+  } catch (e) {
+    toast.error(e.message || '加载梗内容失败')
+  }
+})
+
+/** 中文注释：读取作者本人可编辑的正式梗内容，并拒绝非本人或不允许修改的状态。 */
+async function loadEditContent() {
+  if (!isEditMode.value) return
+  if (!/^\d+$/.test(editMemeId.value) || Number(editMemeId.value) <= 0) throw new Error('修改链接无效，请从个人主页重新进入')
+  const detail = await getMemeDetail(editMemeId.value)
+  if (detail.owner !== true) throw new Error('只能修改自己发布的梗')
+  if (![1, 3].includes(Number(detail.status))) throw new Error('当前状态暂不支持修改')
+  Object.assign(form, emptyForm(), mapMemeDetailToEditForm(detail))
+}
 
 async function onCoverChange(event) {
   const file = event.target.files && event.target.files[0]
@@ -454,24 +559,16 @@ async function handleSubmit() {
   if (!validateLinks()) return
   submitting.value = true
   try {
-    const resources = form.resources
-      .map((item, index) => ({
-        type: item.type || 'link',
-        title: String(item.title || '').trim(),
-        url: String(item.url || '').trim(),
-        sortOrder: index,
-      }))
-      .filter((item) => item.title && item.url)
-
-    const data = await publishMeme({
-      name: form.name,
-      introduction: form.introduction,
-      image: form.image,
-      tagIds: form.tagIds,
-      resources,
-      resourceUrls: form.resourceUrls,
-    })
-    toast.success(`发布成功，当前状态：${data.statusDesc || '审核中'}`)
+    const payload = buildMemeEditPayload(form)
+    const data = isEditMode.value
+      ? await submitMemeEdit(editMemeId.value, payload)
+      : await publishMeme(payload)
+    if (!isEditMode.value) {
+      draftReady.value = false
+      clearPublishDraft(draftStorage(), authStore.currentUser)
+      draftSaved.value = false
+    }
+    toast.success(isEditMode.value ? '修改稿已提交，审核通过后生效' : `发布成功，当前状态：${data.statusDesc || '审核中'}`)
     const user = authStore.currentUser
     const rawId = user?.id ?? user?.userId
     const userId = rawId != null ? String(rawId).trim() : ''
@@ -499,13 +596,15 @@ function goBack() {
 
 <style scoped>
 .publish-page {
-  max-width: 820px;
+  position: relative;
+  width: min(1020px, 100%);
   margin: 0 auto;
-  padding: 12px 8px 40px;
+  padding: 18px 0 40px;
 }
 
 .publish-hero {
-  margin-bottom: 18px;
+  position: relative;
+  margin-bottom: 20px;
   text-align: center;
 }
 
@@ -518,11 +617,28 @@ function goBack() {
 }
 
 .publish-hero-title {
+  position: relative;
+  display: inline-block;
   margin: 0 0 8px;
-  font-size: 26px;
-  font-weight: 750;
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--meme-text);
+}
+
+.publish-hero-underline {
+  position: absolute;
+  right: -17px;
+  bottom: -3px;
+  width: 38px;
+  height: 9px;
+  overflow: visible;
+  fill: none;
+  stroke: #8c69ed;
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .publish-hero-sub {
@@ -534,11 +650,15 @@ function goBack() {
 }
 
 .publish-card {
-  border-radius: var(--meme-radius-lg) !important;
+  border: 1px solid color-mix(in srgb, var(--meme-border) 72%, transparent) !important;
+  border-radius: 22px !important;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 94%, transparent) !important;
+  box-shadow: 0 18px 56px rgba(36, 82, 148, 0.065) !important;
+  backdrop-filter: blur(14px);
 }
 
 .publish-card :deep(.vs-card__text) {
-  padding: 8px 28px 24px;
+  padding: 8px 24px 24px;
 }
 
 .publish-form :deep(.ui-form-item) {
@@ -549,6 +669,30 @@ function goBack() {
   font-weight: 600;
   color: var(--meme-text-secondary);
   padding-bottom: 6px;
+}
+
+.publish-form :deep(.vs-input__wrapper),
+.publish-form :deep(.vs-select__input-wrapper) {
+  border-radius: 11px !important;
+  background: linear-gradient(135deg, var(--meme-bg-muted), color-mix(in srgb, var(--meme-bg-elevated) 72%, var(--meme-primary-soft))) !important;
+  box-shadow: inset 0 0 0 1px var(--meme-border) !important;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.publish-form :deep(.vs-input__wrapper:focus-within),
+.publish-form :deep(.vs-select__input-wrapper:focus-within) {
+  background: var(--meme-bg-elevated) !important;
+  box-shadow: inset 0 0 0 1px var(--meme-primary), 0 0 0 3px var(--meme-focus-ring) !important;
+}
+
+.publish-form :deep(.vs-input__original) {
+  color: var(--meme-text) !important;
+  background: transparent !important;
+}
+
+.publish-form :deep(.vs-input__original::placeholder) {
+  color: var(--meme-text-muted) !important;
+  opacity: 0.86;
 }
 
 .publish-field {
@@ -571,7 +715,7 @@ function goBack() {
 }
 
 .form-section {
-  padding: 20px 0;
+  padding: 18px 0;
   border-bottom: 1px solid var(--meme-border);
 }
 
@@ -621,7 +765,7 @@ function goBack() {
 .section-title {
   margin: 0 0 2px;
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 700;
   color: var(--meme-text);
 }
 
@@ -899,14 +1043,24 @@ function goBack() {
 }
 
 .publish-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   margin-top: 8px;
-  padding-top: 20px;
+  margin-right: -24px;
+  margin-bottom: -24px;
+  margin-left: -24px;
+  padding: 15px 24px 18px;
   border-top: 1px solid var(--meme-border);
+  border-radius: 0 0 22px 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 91%, transparent);
+  box-shadow: 0 -10px 26px rgba(39, 76, 129, 0.045);
+  backdrop-filter: blur(16px);
 }
 
 .publish-footer-hint {
@@ -997,7 +1151,7 @@ function goBack() {
 
 @media (max-width: 640px) {
   .publish-page {
-    padding: 8px 0 28px;
+    padding: 14px 0 28px;
   }
 
   .publish-card :deep(.vs-card__text) {
@@ -1019,6 +1173,10 @@ function goBack() {
   .publish-footer {
     flex-direction: column;
     align-items: stretch;
+    margin-right: -16px;
+    margin-bottom: -20px;
+    margin-left: -16px;
+    padding: 13px 16px max(14px, env(safe-area-inset-bottom));
   }
 
   .publish-actions {

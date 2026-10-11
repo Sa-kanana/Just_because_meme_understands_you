@@ -1,6 +1,6 @@
 /**
  * 关键字搜索接口
- * GET /search?keyword=xxx&mostViews=1|mostLikes=1|mostComments=1
+ * GET /meme-searches?keyword=xxx&mostViews=1|mostLikes=1|mostComments=1
  * @see https://api.apifox.com/temp-links/api/424411854
  */
 import { request } from './request'
@@ -51,7 +51,7 @@ export function searchMeme(params = {}) {
   if (mostLikes) query.set('mostLikes', mostLikes)
   if (mostComments) query.set('mostComments', mostComments)
   const qs = query.toString()
-  return request(`/search?${qs}`, { method: 'GET' }).then((res) => {
+  return request(`/meme-searches?${qs}`, { method: 'GET' }).then((res) => {
     if (res && Array.isArray(res.data)) {
       // 只展示 status 为 1 的梗，并兼容 memeTag / label 字段
       return res.data

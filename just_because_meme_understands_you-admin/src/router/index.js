@@ -26,6 +26,18 @@ const routes = [
         meta: { title: '梗管理' },
       },
       {
+        path: 'meme-edit-revisions',
+        name: 'meme-edit-revisions',
+        component: () => import('@/views/memes/MemeEditRevisionQueue.vue'),
+        meta: { title: '修改稿审核' },
+      },
+      {
+        path: 'reports',
+        name: 'reports',
+        component: () => import('@/views/reports/ReportsView.vue'),
+        meta: { title: '举报处理' },
+      },
+      {
         path: 'users',
         name: 'users',
         component: () => import('@/views/users/UserListView.vue'),

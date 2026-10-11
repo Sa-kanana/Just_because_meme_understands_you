@@ -14,8 +14,9 @@ function assertSuccess(res, fallbackMessage) {
 }
 
 export function fetchCaptcha() {
-  return request('/captcha', {
+  return request('/captchas', {
     method: 'GET',
+    apiSurface: 'user',
     skipAuthRefresh: true,
     skipAuthHeader: true,
   }).then((res) => {
@@ -44,7 +45,7 @@ export function login(payload = {}) {
   if (!captchaId || !captchaCode) {
     return Promise.reject(new Error('请完成人机验证'))
   }
-  return request('/login', {
+  return request('/auth/login', {
     method: 'POST',
     body: JSON.stringify({
       email,
@@ -73,10 +74,12 @@ export function login(payload = {}) {
 }
 
 export function renewLogin() {
-  return request('/login/refresh', {
-    method: 'POST',
+  return request('/auth/sessions/current', {
+    method: 'PUT',
     body: JSON.stringify({}),
     withCredentials: true,
+    // 登录刷新请求不能再次进入同一刷新队列，避免 401 时等待自身完成。
+    skipAuthRefresh: true,
   }).then((res) => {
     const data = assertSuccess(res, '刷新登录态失败') || {}
     const accessToken =
@@ -95,5 +98,5 @@ export function renewLogin() {
 }
 
 export function logout() {
-  return request('/logout', { method: 'POST', body: JSON.stringify({}) }).catch(() => null)
+  return request('/auth/sessions/current', { method: 'DELETE' }).catch(() => null)
 }

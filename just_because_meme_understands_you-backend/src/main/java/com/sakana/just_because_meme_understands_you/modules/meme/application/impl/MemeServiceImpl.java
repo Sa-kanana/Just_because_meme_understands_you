@@ -1,0 +1,551 @@
+package com.sakana.just_because_meme_understands_you.modules.meme.application.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.projection.MemeTagBindDTO;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.MemeResourceType;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeResource;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.UserRelation;
+import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
+import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserRelationMapper;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeResourceService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.IMemeService;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.assembler.MemeViewMapper;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport.ViewAccess;
+import com.sakana.just_because_meme_understands_you.modules.user.application.profile.support.AuthorSupport;
+import com.sakana.just_because_meme_understands_you.api.user.vo.AuthorVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDetailVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeResourceVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTagVO;
+import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.SimpleMemeVO;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * 梗服务实现：分页列表、搜索、详细页等；详细页使用 Redis 缓存。
+ *
+ * @author sakana
+ * @since 2026-03-06
+ */
+@Slf4j
+@Service
+public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IMemeService {
+
+    /** 梗详情 Redis key 前缀，key: meme:detail:{memeId}，TTL 10 分钟 */
+    private static final String DETAIL_CACHE_KEY_PREFIX = "meme:detail:";
+    private static final long DETAIL_CACHE_MINUTES = 10;
+    private static final int STATUS_NORMAL = 1;
+
+    @Resource
+    private MemeViewMapper memeViewMapper;
+
+    @Resource
+    private MemeTagRelationMapper memeTagRelationMapper;
+
+    @Resource
+    private IMemeResourceService memeResourceService;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private ObjectMapper objectMapper;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private UserRelationMapper userRelationMapper;
+
+    @Resource
+    private AuthorSupport authorSupport;
+
+    @Override
+    public List<MemeListItemVO> pageMemeList(int page) {
+        PageVO<MemeListItemVO> pageVO = pageMemeFeed(page, IMemeService.PAGE_SIZE, "hot", null);
+        return pageVO.getList() != null ? pageVO.getList() : Collections.emptyList();
+    }
+
+    @Override
+    public PageVO<MemeListItemVO> pageMemeFeed(int page, int size, String sort, Long followingUserId) {
+        if (page <= 0) {
+            page = 1;
+        }
+        if (size <= 0) {
+            size = IMemeService.PAGE_SIZE;
+        }
+        size = Math.min(size, 32);
+
+        String normalizedSort = normalizeSort(sort);
+        Page<Meme> mpPage = new Page<>(page, size);
+        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getStatus, STATUS_NORMAL);
+        applyFeedSort(wrapper, normalizedSort, followingUserId);
+
+        Page<Meme> resultPage = this.page(mpPage, wrapper);
+        List<Meme> memeList = resultPage.getRecords();
+        List<MemeListItemVO> voList = toMemeListItemVOs(memeList);
+
+        PageVO<MemeListItemVO> pageVO = new PageVO<>();
+        pageVO.setList(voList);
+        pageVO.setPage(page);
+        pageVO.setSize(size);
+        pageVO.setTotal(resultPage.getTotal());
+        pageVO.setHasMore(resultPage.getCurrent() * resultPage.getSize() < resultPage.getTotal());
+        return pageVO;
+    }
+
+    @Override
+    public PageVO<MemeListItemVO> pageFollowedTagFeed(int page, int size, Long userId) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(32, size > 0 ? size : IMemeService.PAGE_SIZE);
+        IPage<Meme> result = baseMapper.selectFollowedTagPage(new Page<>(safePage, safeSize), userId);
+        PageVO<MemeListItemVO> vo = new PageVO<>();
+        vo.setList(toMemeListItemVOs(result.getRecords()));
+        vo.setPage(safePage);
+        vo.setSize(safeSize);
+        vo.setTotal(result.getTotal());
+        vo.setHasMore(result.getCurrent() * result.getSize() < result.getTotal());
+        return vo;
+    }
+
+    @Override
+    public List<MemeListItemVO> listHotMemes(int limit) {
+        if (limit <= 0) {
+            limit = 6;
+        }
+        limit = Math.min(limit, 12);
+
+        Page<Meme> mpPage = new Page<>(1, limit);
+        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getStatus, STATUS_NORMAL)
+                .orderByDesc(Meme::getLikes)
+                .orderByDesc(Meme::getComments)
+                .orderByDesc(Meme::getPageViews)
+                .orderByDesc(Meme::getId);
+        Page<Meme> resultPage = this.page(mpPage, wrapper);
+        return toMemeListItemVOs(resultPage.getRecords());
+    }
+
+    @Override
+    public List<MemeListItemVO> listLiveMemes(long publisherUserId, int hours, int limit) {
+        if (limit <= 0) {
+            limit = 8;
+        }
+        limit = Math.min(limit, 16);
+        int safeHours = hours > 0 ? Math.min(hours, 168) : 48;
+        LocalDateTime since = LocalDateTime.now().minusHours(safeHours);
+
+        Page<Meme> mpPage = new Page<>(1, limit);
+        LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>()
+                .eq(Meme::getStatus, STATUS_NORMAL)
+                .ge(Meme::getReleaseTime, since)
+                .orderByDesc(Meme::getReleaseTime)
+                .orderByDesc(Meme::getId);
+        if (publisherUserId > 0L) {
+            wrapper.eq(Meme::getUserId, publisherUserId);
+        }
+        Page<Meme> resultPage = this.page(mpPage, wrapper);
+        return toMemeListItemVOs(resultPage.getRecords());
+    }
+
+    @Override
+    public List<MemeListItemVO> searchByKeyword(String keyword, int page) {
+        if (keyword == null || keyword.isBlank()) {
+            return Collections.emptyList();
+        }
+        if (page <= 0) {
+            page = 1;
+        }
+        String trimmed = keyword.trim();
+        int pageSize = IMemeService.PAGE_SIZE;
+        Page<Meme> mpPage = new Page<>(page, pageSize);
+        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, null, null, null);
+        List<Meme> memeList = resultPage.getRecords();
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return toMemeListItemVOs(memeList);
+    }
+
+    @Override
+    public List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews, String mostComments) {
+        if (keyword == null || keyword.isBlank()) {
+            return Collections.emptyList();
+        }
+        String trimmed = keyword.trim();
+        Page<Meme> mpPage = new Page<>(1, IMemeService.PAGE_SIZE);
+        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, mostLikes, mostViews, mostComments);
+        List<Meme> memeList = resultPage.getRecords();
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> memeIds = memeList.stream().map(Meme::getId).toList();
+        Map<Long, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        Map<Long, User> authorMap = loadAuthorMap(memeList);
+
+        List<SimpleMemeVO> voList = new ArrayList<>(memeList.size());
+        for (Meme meme : memeList) {
+            SimpleMemeVO vo = memeViewMapper.toSimpleMemeVOBase(meme);
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
+            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, true));
+            List<MemeTag> tags = memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList());
+            vo.setMemeTag(toMemeTagVOList(tags));
+            voList.add(vo);
+        }
+        return voList;
+    }
+
+    @Override
+    public MemeDetailVO getMemeDetail(Long memeId, Long currentUserId) {
+        if (memeId == null || memeId <= 0) {
+            return null;
+        }
+
+        Meme meme = this.getById(memeId);
+        if (meme == null) {
+            return null;
+        }
+        ViewAccess access = MemeVisibilitySupport.resolveViewAccess(meme, currentUserId);
+        if (access == ViewAccess.FORBIDDEN) {
+            return null;
+        }
+
+        String cacheKey = DETAIL_CACHE_KEY_PREFIX + memeId;
+        if (access == ViewAccess.PUBLIC) {
+            try {
+                String json = stringRedisTemplate.opsForValue().get(cacheKey);
+                if (json != null && !json.isEmpty()) {
+                    MemeDetailVO cached = objectMapper.readValue(json, new TypeReference<>() {});
+                    if (cached != null && Objects.equals(cached.getStatus(), STATUS_NORMAL)) {
+                        applyViewMeta(cached, meme, currentUserId, access);
+                        ensureDetailAuthor(cached, meme);
+                        ossUrlHelper.refreshMemeDetailUrls(cached);
+                        return cached;
+                    }
+                    stringRedisTemplate.delete(cacheKey);
+                }
+            } catch (Exception e) {
+                log.warn("读取梗详情缓存失败, memeId={}", memeId, e);
+            }
+        }
+
+        List<MemeTag> tags = getTagsByMemeId(memeId);
+        boolean includeOfflineResources = access == ViewAccess.OWNER_PREVIEW
+                && Objects.equals(meme.getStatus(), MemeVisibilitySupport.STATUS_OFFLINE);
+        List<MemeResource> links = getLinksByMemeId(memeId, includeOfflineResources);
+        MemeDetailVO detailVO = buildDetailVO(meme, tags, links);
+        applyViewMeta(detailVO, meme, currentUserId, access);
+
+        if (access == ViewAccess.PUBLIC) {
+            try {
+                String jsonValue = objectMapper.writeValueAsString(detailVO);
+                if (jsonValue != null) {
+                    stringRedisTemplate.opsForValue().set(cacheKey, jsonValue, DETAIL_CACHE_MINUTES, TimeUnit.MINUTES);
+                }
+            } catch (Exception e) {
+                log.warn("写入梗详情缓存失败, memeId={}", memeId, e);
+            }
+        }
+        return detailVO;
+    }
+
+    private void applyViewMeta(MemeDetailVO vo, Meme meme, Long currentUserId, ViewAccess access) {
+        if (vo == null || meme == null) {
+            return;
+        }
+        vo.setStatus(meme.getStatus());
+        vo.setStatusDesc(MemeVisibilitySupport.statusDesc(meme.getStatus()));
+        vo.setOwner(MemeVisibilitySupport.isOwner(meme, currentUserId));
+        vo.setOwnerPreview(access == ViewAccess.OWNER_PREVIEW);
+        vo.setCommentsEnabled(access == ViewAccess.PUBLIC);
+        vo.setViewMode(access == ViewAccess.PUBLIC ? "public" : "owner_preview");
+        vo.setFavoriteEnabled(access == ViewAccess.PUBLIC);
+    }
+
+    /**
+     * 根据梗 id 查询关联的标签列表（一次 JOIN 查询）
+     */
+    private List<MemeTag> getTagsByMemeId(Long memeId) {
+        return buildMemeIdToTags(java.util.Collections.singletonList(memeId))
+                .getOrDefault(memeId, java.util.Collections.emptyList());
+    }
+
+    /**
+     * 根据梗 id 查询关联的相关链接（meme_resource）
+     */
+    private List<MemeResource> getLinksByMemeId(Long memeId, boolean includeOfflineResources) {
+        LambdaQueryWrapper<MemeResource> query = new LambdaQueryWrapper<MemeResource>()
+                .eq(MemeResource::getMemeId, memeId)
+                .eq(MemeResource::getStatus, includeOfflineResources ? 0 : 1)
+                .orderByAsc(MemeResource::getSortOrder)
+                .orderByAsc(MemeResource::getId);
+        List<MemeResource> resources = memeResourceService.list(query);
+        return resources != null ? resources : Collections.emptyList();
+    }
+
+    /**
+     * 根据梗实体、标签与链接列表组装详细页 VO（符合接口 Meme）
+     */
+    private MemeDetailVO buildDetailVO(Meme meme, List<MemeTag> tags, List<MemeResource> links) {
+        MemeDetailVO vo = memeViewMapper.toMemeDetailVOBase(meme);
+        vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
+        vo.setComments(meme.getComments() == null ? 0 : meme.getComments());
+        vo.setAuthor(buildAuthor(meme.getUserId(), true));
+        vo.setMemeTag(toMemeTagVOList(tags));
+        vo.setLinks(toMemeResourceVOList(links));
+        return vo;
+    }
+
+    private void ensureDetailAuthor(MemeDetailVO vo, Meme meme) {
+        if (vo == null || meme == null) {
+            return;
+        }
+        // 中文注释：缓存命中时仍实时刷新作者，确保账号注销后的匿名化立即生效。
+        vo.setAuthor(buildAuthor(meme.getUserId(), true));
+    }
+
+    private AuthorVO buildAuthor(Long userId, boolean includeSignature) {
+        Map<Long, User> map = authorSupport.loadUserMap(
+                userId == null ? Collections.emptyList() : Collections.singletonList(userId));
+        return authorSupport.toAuthorVO(userId, map, includeSignature);
+    }
+
+    private Map<Long, User> loadAuthorMap(List<Meme> memeList) {
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> userIds = memeList.stream()
+                .map(Meme::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        return authorSupport.loadUserMap(userIds);
+    }
+
+    /**
+     * 一次 JOIN 查询批量取回多个梗的标签，按梗 id 分组。
+     * 替代原先「查关系表 + 批量查标签表」两次查询。
+     */
+    private Map<Long, List<MemeTag>> buildMemeIdToTags(List<Long> memeIds) {
+        if (memeIds == null || memeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeTagBindDTO> rows = memeTagRelationMapper.selectTagsByMemeIds(memeIds);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<MemeTag>> memeIdToTags = new HashMap<>();
+        for (MemeTagBindDTO row : rows) {
+            MemeTag tag = new MemeTag();
+            tag.setId(row.getId());
+            tag.setName(row.getName());
+            tag.setRelatedQuantity(row.getRelatedQuantity());
+            memeIdToTags.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(tag);
+        }
+        return memeIdToTags;
+    }
+
+    private List<MemeTagVO> toMemeTagVOList(List<MemeTag> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MemeTagVO> list = new ArrayList<>(tags.size());
+        for (MemeTag t : tags) {
+            MemeTagVO vo = memeViewMapper.toMemeTagVO(t);
+            vo.setRelatedQuantity(t.getRelatedQuantity());
+            list.add(vo);
+        }
+        return list;
+    }
+
+    private List<MemeResourceVO> toMemeResourceVOList(List<MemeResource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MemeResourceVO> list = new ArrayList<>(resources.size());
+        for (MemeResource resource : resources) {
+            String url = resource.getResourceUrl();
+            if (url == null || url.isBlank()) {
+                continue;
+            }
+            MemeResourceVO vo = new MemeResourceVO();
+            if (resource.getId() != null) {
+                vo.setId(resource.getId().intValue());
+            }
+            MemeResourceType type = MemeResourceType.fromCode(resource.getResourceType());
+            String storedUrl = url.trim();
+            if (type == MemeResourceType.LINK && !StringUtils.hasText(resource.getTitle())) {
+                String key = ossUrlHelper.normalizeForStorage(storedUrl);
+                if (!key.toLowerCase().startsWith("http")) {
+                    type = MemeResourceType.MEDIA;
+                }
+            }
+            vo.setType(type.getApiType());
+            vo.setTitle(resource.getTitle());
+            vo.setUrl(ossUrlHelper.toPublicUrl(storedUrl));
+            vo.setSortOrder(resource.getSortOrder() != null ? resource.getSortOrder() : 0);
+            list.add(vo);
+        }
+        return list;
+    }
+
+    @Override
+    public void evictMemeDetailCache(Long memeId) {
+        if (memeId == null || memeId <= 0) {
+            return;
+        }
+        try {
+            stringRedisTemplate.delete(DETAIL_CACHE_KEY_PREFIX + memeId);
+        } catch (Exception e) {
+            log.warn("清理梗详情缓存失败, memeId={}", memeId, e);
+        }
+    }
+
+    private List<MemeListItemVO> toMemeListItemVOs(List<Meme> memeList) {
+        if (memeList == null || memeList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> memeIds = memeList.stream().map(Meme::getId).toList();
+        Map<Long, List<MemeTag>> memeIdToTags = buildMemeIdToTags(memeIds);
+        Map<Long, User> authorMap = loadAuthorMap(memeList);
+        Map<Long, MemeResource> sourceByMemeId = loadFirstSourceLinkByMemeIds(memeIds);
+
+        List<MemeListItemVO> voList = new ArrayList<>(memeList.size());
+        for (Meme meme : memeList) {
+            MemeListItemVO vo = new MemeListItemVO();
+            vo.setId(meme.getId());
+            vo.setName(meme.getName());
+            vo.setImage(ossUrlHelper.toPublicUrl(meme.getImage()));
+            vo.setPageViews(meme.getPageViews());
+            vo.setLikes(meme.getLikes());
+            vo.setComments(meme.getComments());
+            vo.setReleaseTime(meme.getReleaseTime());
+            vo.setUpdateTime(meme.getUpdateTime());
+            vo.setStatus(meme.getStatus());
+            vo.setAuthor(authorSupport.toAuthorVO(meme.getUserId(), authorMap, false));
+            List<MemeTagVO> tagVos = toMemeTagVOList(
+                    memeIdToTags.getOrDefault(meme.getId(), Collections.emptyList()));
+            vo.setMemeTag(tagVos);
+            vo.setLabel(tagVos);
+            MemeResource source = sourceByMemeId.get(meme.getId());
+            if (source != null && StringUtils.hasText(source.getResourceUrl())) {
+                vo.setSourceUrl(source.getResourceUrl().trim());
+                String sourceTitle = StringUtils.hasText(source.getTitle())
+                        ? source.getTitle().trim()
+                        : "查看来源";
+                vo.setSourceTitle(sourceTitle);
+            }
+            voList.add(vo);
+        }
+        return voList;
+    }
+
+    /**
+     * 批量取每个梗的首条外链（link / video / article），供列表卡片展示来源。
+     */
+    private Map<Long, MemeResource> loadFirstSourceLinkByMemeIds(List<Long> memeIds) {
+        if (memeIds == null || memeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeResource> resources = memeResourceService.list(new LambdaQueryWrapper<MemeResource>()
+                .in(MemeResource::getMemeId, memeIds)
+                .eq(MemeResource::getStatus, 1)
+                .in(MemeResource::getResourceType, List.of(
+                        MemeResourceType.LINK.getCode(),
+                        MemeResourceType.VIDEO.getCode(),
+                        MemeResourceType.ARTICLE.getCode()))
+                .orderByAsc(MemeResource::getSortOrder)
+                .orderByAsc(MemeResource::getId));
+        if (resources == null || resources.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, MemeResource> firstByMeme = new HashMap<>();
+        for (MemeResource resource : resources) {
+            if (resource.getMemeId() == null || !StringUtils.hasText(resource.getResourceUrl())) {
+                continue;
+            }
+            String url = resource.getResourceUrl().trim();
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                continue;
+            }
+            Long memeId = resource.getMemeId();
+            firstByMeme.putIfAbsent(memeId, resource);
+        }
+        return firstByMeme;
+    }
+
+    private void applyFeedSort(LambdaQueryWrapper<Meme> wrapper, String sort, Long followingUserId) {
+        if ("following".equals(sort)) {
+            List<Long> followingIds = listFollowingUserIds(followingUserId);
+            if (followingIds.isEmpty()) {
+                wrapper.eq(Meme::getId, -1L);
+            } else {
+                wrapper.in(Meme::getUserId, followingIds);
+            }
+            wrapper.orderByDesc(Meme::getReleaseTime).orderByDesc(Meme::getId);
+            return;
+        }
+        switch (sort) {
+            case "new" -> wrapper.orderByDesc(Meme::getReleaseTime).orderByDesc(Meme::getId);
+            case "comments" -> wrapper.orderByDesc(Meme::getComments).orderByDesc(Meme::getId);
+            case "views" -> wrapper.orderByDesc(Meme::getPageViews).orderByDesc(Meme::getId);
+            default -> wrapper.orderByDesc(Meme::getLikes).orderByDesc(Meme::getId);
+        }
+    }
+
+    private List<Long> listFollowingUserIds(Long userId) {
+        if (userId == null || userId <= 0) {
+            return Collections.emptyList();
+        }
+        List<UserRelation> relations = userRelationMapper.selectList(new LambdaQueryWrapper<UserRelation>()
+                .eq(UserRelation::getFromUserId, userId)
+                .eq(UserRelation::getIsDeleted, 0)
+                .select(UserRelation::getToUserId));
+        if (relations == null || relations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return relations.stream()
+                .map(UserRelation::getToUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private static String normalizeSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return "hot";
+        }
+        String normalized = sort.trim().toLowerCase();
+        return switch (normalized) {
+            case "hot", "new", "comments", "views", "following" -> normalized;
+            default -> "hot";
+        };
+    }
+}

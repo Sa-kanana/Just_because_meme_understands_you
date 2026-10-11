@@ -319,6 +319,20 @@ function appendToolOrigin(items, query, authStore) {
  * @returns {BreadcrumbItem[]}
  */
 export function resolveRouteBreadcrumbs(route, context = {}) {
+  const currentItems = resolveCurrentRouteBreadcrumbs(route, context)
+  const trail = Array.isArray(context.trail) ? context.trail : []
+  if (!trail.length || !currentItems.length) return currentItems
+
+  const historyItems = trail.slice(0, -1).map((entry) => ({
+    label: entry.label,
+    to: entry.to,
+    isHome: !!entry.isHome,
+  }))
+  historyItems.push(currentItems[currentItems.length - 1])
+  return markCurrent(historyItems)
+}
+
+function resolveCurrentRouteBreadcrumbs(route, context = {}) {
   if (!route || route.meta?.hideBreadcrumb === true) return []
   const name = route.name != null ? String(route.name) : ''
   if (!name || HIDDEN_ROUTE_NAMES.has(name)) return []

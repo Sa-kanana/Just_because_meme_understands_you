@@ -10,6 +10,11 @@ module.exports = defineConfig({
     allowedHosts: 'all',
     client: {
       webSocketURL: 'auto://0.0.0.0:0/ws',
+      overlay: {
+        warnings: false, // 开发时保持只展示编译错误和运行时错误的默认体验。
+        errors: true, // 编译错误仍显示在页面覆盖层中。
+        runtimeErrors: (error) => error.message !== 'ResizeObserver loop completed with undelivered notifications.', // 仅忽略浏览器的 ResizeObserver 布局通知警告。
+      },
     },
     proxy: {
       '/api': {

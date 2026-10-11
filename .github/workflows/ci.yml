@@ -1,0 +1,155 @@
+# 自动验证后端、两个前端与 MemeAgent，尽早发现跨模块回归。
+name: 项目质量检查 # 工作流在 GitHub Actions 页面显示的名称
+
+# 需要验证的代码变更和手动重跑入口。
+on:
+  push: # 每次推送提交后运行
+  pull_request: # 每个拉取请求创建或更新时运行
+  workflow_dispatch: # 允许维护者从 Actions 页面手动运行
+
+# 工作流仅需读取仓库内容，不申请额外写权限。
+permissions:
+  contents: read # 拉取源码与锁文件
+
+jobs:
+  backend:
+    name: Java 后端测试与迁移 # 后端检查任务名称
+    runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux runner
+    services:
+      mysql:
+        image: mysql:8.4 # 使用与项目兼容的 MySQL LTS 服务
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password # 一次性测试库 root 密码
+          MYSQL_DATABASE: meme # 启动时创建业务测试 schema
+        ports:
+          - 3306:3306 # 将 MySQL 暴露给 runner 上的测试进程
+        options: >- # 等待 MySQL 健康检查通过后才启动步骤
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7 # 为 Spring Boot 应用上下文提供临时 Redis
+        ports:
+          - 6379:6379 # 将 Redis 暴露给 runner 上的测试进程
+        options: >- # 等待 Redis 响应 PING
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_URL: "jdbc:mysql://127.0.0.1:3306/meme?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true" # Spring Boot 业务数据库地址
+      DB_USERNAME: root # Spring Boot 业务数据库用户名
+      DB_PASSWORD: ci-root-password # Spring Boot 业务数据库密码
+      MYSQL_ROOT_PASSWORD: ci-root-password # 初始化 schema 时使用的一次性数据库密码
+      REDIS_HOST: 127.0.0.1 # Spring Boot Redis 服务地址
+      REDIS_PORT: "6379" # Spring Boot Redis 服务端口
+      SPRING_PROFILES_ACTIVE: ci # 禁用开发机专用 profile
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-32-bytes # 测试环境 JWT 签名密钥
+      OSS_ACCESS_KEY_ID: ci-only-access-key # 满足测试上下文的 OSS 占位凭证
+      OSS_ACCESS_KEY_SECRET: ci-only-secret # 满足测试上下文的 OSS 占位凭证
+      OSS_BUCKET_NAME: ci-only-bucket # 满足测试上下文的 OSS 占位桶名
+      MEME_CRAWL_ENABLED: "false" # 防止测试上下文触发外部热梗采集
+      MEME_CRAWL_SCHEDULE_ENABLED: "false" # 显式关闭 Firecrawl 定时任务
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7 # 拉取当前提交源码
+
+      - name: 配置 Java 17 与 Maven 缓存
+        uses: actions/setup-java@v6 # 安装指定 Java 运行时
+        with:
+          distribution: temurin # 使用 Eclipse Temurin 发行版
+          java-version: "17" # 与后端编译目标版本一致
+          cache: maven # 缓存 Maven 依赖以缩短后续构建
+
+      - name: 安装 MySQL 客户端
+        run: | # 安装 runner 导入基础 schema 所需的命令行客户端
+          sudo apt-get update
+          sudo apt-get install --yes default-mysql-client
+
+      - name: 初始化业务 schema 基线
+        run: | # 用项目基础建表文件初始化本次运行的临时 MySQL
+          # 先建立项目约定的完整基础结构，再验证后续增量迁移。
+          mysql --protocol=TCP --host=127.0.0.1 --port=3306 --user=root --password="${MYSQL_ROOT_PASSWORD}" meme < just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql
+
+      - name: 验证 Flyway 迁移与重复执行
+        run: sh ./mvnw --batch-mode --no-transfer-progress -Dtest=FlywayMigrationIntegrationTest test # 在应用上下文之前运行真实 MySQL 迁移测试
+        env:
+          MIGRATION_TEST_MYSQL_URL: "jdbc:mysql://127.0.0.1:3306/meme?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true" # 仅连接本次任务的临时测试库
+          MIGRATION_TEST_MYSQL_USERNAME: root # 迁移集成测试数据库用户名
+          MIGRATION_TEST_MYSQL_PASSWORD: ci-root-password # 迁移集成测试数据库密码
+        working-directory: just_because_meme_understands_you-backend # 使用 Maven 模块目录
+
+      - name: 运行 Java 后端完整测试
+        run: sh ./mvnw --batch-mode --no-transfer-progress test # 跑完整后端测试；不再设置专用迁移测试库变量
+        working-directory: just_because_meme_understands_you-backend # 使用 Maven 模块目录
+
+  user-frontend:
+    name: 用户端测试与构建 # 用户前端检查任务名称
+    runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux runner
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7 # 拉取当前提交源码
+
+      - name: 配置 Node.js 22
+        uses: actions/setup-node@v7 # 安装指定 Node.js 运行时
+        with:
+          node-version: "22" # 使用当前维护的 Node.js LTS 主版本
+
+      - name: 安装锁定的 npm 依赖
+        run: npm ci # 根据 package-lock.json 可重复安装依赖
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
+
+      - name: 运行用户端 Node 测试
+        run: node --test tests/*.test.mjs # 执行用户端内置 Node 测试
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
+
+      - name: 构建用户端
+        run: npm run build # 验证生产环境前端构建
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
+
+  admin-frontend:
+    name: 管理端测试与构建 # 管理后台检查任务名称
+    runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux runner
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7 # 拉取当前提交源码
+
+      - name: 配置 Node.js 22
+        uses: actions/setup-node@v7 # 安装指定 Node.js 运行时
+        with:
+          node-version: "22" # 使用当前维护的 Node.js LTS 主版本
+
+      - name: 安装锁定的 npm 依赖
+        run: npm ci # 根据 package-lock.json 可重复安装依赖
+        working-directory: just_because_meme_understands_you-admin # 使用管理端模块目录
+
+      - name: 运行管理端 Node 测试
+        run: node --test tests/*.test.mjs # 执行管理端内置 Node 测试
+        working-directory: just_because_meme_understands_you-admin # 使用管理端模块目录
+
+      - name: 构建管理端
+        run: npm run build # 验证生产环境管理后台构建
+        working-directory: just_because_meme_understands_you-admin # 使用管理端模块目录
+
+  meme-agent:
+    name: MemeAgent 测试 # Python AI 服务检查任务名称
+    runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux runner
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7 # 拉取当前提交源码
+
+      - name: 配置 Python 3.11 与 pip 缓存
+        uses: actions/setup-python@v6 # 安装指定 Python 运行时
+        with:
+          python-version: "3.11" # 与 MemeAgent 项目声明的最低版本一致
+          cache: pip # 缓存项目安装依赖
+          cache-dependency-path: MemeAgent/pyproject.toml # 用项目依赖配置生成缓存键
+
+      - name: 安装 MemeAgent 与测试依赖
+        run: python -m pip install --editable ".[dev]" # 安装服务及 pytest 测试依赖
+        working-directory: MemeAgent # 使用 Python 模块目录
+
+      - name: 运行 MemeAgent pytest
+        run: python -m pytest --quiet # 运行无需数据库和模型密钥的自动化测试
+        working-directory: MemeAgent # 使用 Python 模块目录

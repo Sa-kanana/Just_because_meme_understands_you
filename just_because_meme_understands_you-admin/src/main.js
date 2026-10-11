@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import ArcoVue from '@arco-design/web-vue'
+import ArcoVue, { Modal } from '@arco-design/web-vue'
 import ArcoVueIcon from '@arco-design/web-vue/es/icon'
 import '@arco-design/web-vue/dist/arco.css'
 import { createPinia } from 'pinia'
@@ -8,7 +8,6 @@ import router from './router'
 import { setupRequestAuthLifecycle } from './api/request'
 import { useAuthStore } from './stores/auth'
 import { createSessionExpiredHandler } from './utils/authSession'
-import { toastError } from './utils/uiFeedback'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -20,11 +19,18 @@ app.use(ArcoVueIcon)
 const authStore = useAuthStore()
 setupRequestAuthLifecycle({
   getAccessToken: () => authStore.token,
-  refreshAccessToken: () => authStore.renewAccessToken(),
   handleFinalLogout: createSessionExpiredHandler({
     authStore,
     router,
-    notify: (msg) => toastError(msg),
+    notify: (message) => Modal.warning({
+      title: '登录状态已过期',
+      content: message,
+      okText: '重新登录',
+      hideCancel: true,
+      closable: false,
+      maskClosable: false,
+      escToClose: false,
+    }, app._context),
   }),
 })
 

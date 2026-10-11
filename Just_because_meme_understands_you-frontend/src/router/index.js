@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
+import { resolveRouteBreadcrumbs } from '@/utils/pageBreadcrumb'
 
 const GUEST_AUTH_PATHS = new Set(['/login', '/register', '/forgot-password', '/login/oauth/callback'])
 const guestOnlyMeta = { guestOnly: true }
@@ -16,6 +17,12 @@ const routes = [
     path: '/search',
     name: 'search',
     component: () => import('@/views/Search.vue'),
+  },
+  {
+    path: '/trends',
+    name: 'trends',
+    component: () => import('@/views/TrendPage.vue'),
+    meta: { breadcrumbLabel: '热梗趋势' },
   },
   {
     path: '/detail/:id',
@@ -57,6 +64,12 @@ const routes = [
     name: 'accountSettings',
     component: () => import('@/views/AccountSettings.vue'),
     meta: { requiresAuth: true, breadcrumbLabel: '账号设置' },
+  },
+  {
+    path: '/settings/community-safety',
+    name: 'userSafetySettings',
+    component: () => import('@/views/UserSafetySettings.vue'),
+    meta: { requiresAuth: true, breadcrumbLabel: '社区安全' },
   },
   {
     path: '/login',
@@ -138,12 +151,21 @@ function dispatchRouteLoading(loading) {
 
 router.beforeEach((to, from, next) => {
   const routeIdentity = (r) => `${String(r.name || '')}::${JSON.stringify(r.params || {})}`
-  if (routeIdentity(to) !== routeIdentity(from)) {
-    try {
-      useBreadcrumbStore().clearPatch()
-    } catch (_) {
-      // Pinia 尚未挂载时忽略
+  try {
+    const breadcrumbStore = useBreadcrumbStore()
+    if (from.name) {
+      const currentItems = resolveRouteBreadcrumbs(from, {
+        authStore: useAuthStore(),
+        patch: breadcrumbStore.patch,
+        trail: breadcrumbStore.trail,
+      })
+      breadcrumbStore.updateCurrentVisit(from, currentItems.at(-1))
     }
+    if (routeIdentity(to) !== routeIdentity(from)) {
+      breadcrumbStore.clearPatch()
+    }
+  } catch (_) {
+    // Pinia 尚未挂载时忽略面包屑状态更新
   }
   const authStore = useAuthStore()
   if (to.meta?.requiresAuth && !authStore.isLoggedIn) {
@@ -161,8 +183,19 @@ router.beforeEach((to, from, next) => {
   next()
 })
 
-router.afterEach(() => {
+router.afterEach((to, _from, failure) => {
   dispatchRouteLoading(false)
+  if (failure) return
+  try {
+    const breadcrumbStore = useBreadcrumbStore()
+    const currentItems = resolveRouteBreadcrumbs(to, {
+      authStore: useAuthStore(),
+      patch: breadcrumbStore.patch,
+    })
+    breadcrumbStore.recordVisit(to, currentItems.at(-1))
+  } catch (_) {
+    // Pinia 尚未挂载时忽略面包屑状态更新
+  }
 })
 
 export default router

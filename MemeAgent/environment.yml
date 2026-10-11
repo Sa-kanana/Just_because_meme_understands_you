@@ -11,7 +11,7 @@ dependencies:
       - uvicorn[standard]>=0.32,<0.33
       - pydantic>=2.10,<3
       - pydantic-settings>=2.6,<3
-      - httpx>=0.28,<0.29
+      - httpx[socks]>=0.28,<0.29
       - asyncpg>=0.30,<0.31
       - pgvector>=0.3,<0.4
       - langchain>=0.3.25,<0.4

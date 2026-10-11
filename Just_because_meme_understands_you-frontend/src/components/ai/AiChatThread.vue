@@ -64,8 +64,8 @@
           </div>
           <template v-else>
             <p class="ai-bubble__text">{{ displayContent(msg) }}</p>
-            <span v-if="msg.streaming" class="ai-bubble__cursor" aria-hidden="true" />
           </template>
+          <p v-if="msg.paused" class="ai-bubble__status" role="status">已停止生成</p>
         </div>
 
         <div v-if="msg.cites && msg.cites.length" class="ai-bubble__cites">
@@ -89,6 +89,14 @@
 <script>
 import { sanitizeAiDisplayText } from '@/utils/aiDisplayText'
 import { getFallbackHints, loadRandomMemeHints } from '@/utils/aiQuickHints'
+import {
+  createTypewriterState,
+  finishTypewriter,
+  markTypewriterComplete,
+  revealTypewriter,
+  typewriterText,
+  updateTypewriterTarget,
+} from '@/utils/aiTypewriter.mjs'
 
 const THINKING_LABELS = ['正在检索站内梗库…', '正在整理相关内容…', '正在生成回答…']
 
@@ -108,6 +116,9 @@ export default {
       hintsLoading: false,
       thinkingPhase: 0,
       thinkingTimer: null,
+      typewriterStates: Object.create(null),
+      typewriterTimer: null,
+      typewriterCompletedIds: new Set(),
     }
   },
   computed: {
@@ -127,7 +138,9 @@ export default {
     },
     messages: {
       deep: true,
+      immediate: true,
       handler() {
+        this.syncTypewriterMessages()
         this.$nextTick(() => this.scrollToBottom())
       },
     },
@@ -147,6 +160,7 @@ export default {
   },
   beforeUnmount() {
     this.clearThinkingTimer()
+    this.clearTypewriterTimer()
   },
   methods: {
     async refreshHints() {
@@ -164,6 +178,92 @@ export default {
         this.thinkingTimer = null
       }
     },
+    syncTypewriterMessages() {
+      const messageIds = new Set()
+      let hasPendingText = false
+      const reduceMotion = typeof window !== 'undefined'
+        && window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      this.messages.forEach((msg) => {
+        if (!msg || msg.role !== 'assistant' || msg.id == null) return
+        const id = String(msg.id)
+        messageIds.add(id)
+        let state = this.typewriterStates[id]
+        if (!state && (!msg.streaming && !msg.typewriter)) return
+        if (!state && this.typewriterCompletedIds.has(id)) return
+        if (!state) {
+          state = createTypewriterState(sanitizeAiDisplayText(msg.displayedContent || ''))
+          this.typewriterStates[id] = state
+        }
+
+        updateTypewriterTarget(state, sanitizeAiDisplayText(msg.content))
+        if (reduceMotion) {
+          finishTypewriter(state)
+          msg.displayedContent = typewriterText(state)
+          delete this.typewriterStates[id]
+          this.typewriterCompletedIds.add(id)
+        } else if (!msg.streaming) {
+          markTypewriterComplete(state)
+          if (state.visible.length < state.target.length) {
+            hasPendingText = true
+          } else {
+            delete this.typewriterStates[id]
+            this.typewriterCompletedIds.add(id)
+          }
+        } else if (state.visible.length < state.target.length) {
+          hasPendingText = true
+        }
+      })
+
+      Object.keys(this.typewriterStates).forEach((id) => {
+        if (!messageIds.has(id)) delete this.typewriterStates[id]
+      })
+      this.typewriterCompletedIds.forEach((id) => {
+        if (!messageIds.has(id)) this.typewriterCompletedIds.delete(id)
+      })
+
+      if (hasPendingText) this.startTypewriterTimer()
+      else this.clearTypewriterTimer()
+    },
+    startTypewriterTimer() {
+      if (this.typewriterTimer != null) return
+      this.typewriterTimer = window.setInterval(() => {
+        let hasPendingText = false
+        let revealedText = false
+        Object.entries(this.typewriterStates).forEach(([id, state]) => {
+          const remaining = state.target.length - state.visible.length
+          if (remaining <= 0) {
+            if (state.finished) {
+              delete this.typewriterStates[id]
+              this.typewriterCompletedIds.add(id)
+            }
+            return
+          }
+          const batchSize = remaining > 48 ? 6 : remaining > 18 ? 3 : 1
+          if (revealTypewriter(state, batchSize) > 0) {
+            revealedText = true
+            const message = this.messages.find((item) => String(item.id) === id)
+            if (message) message.displayedContent = typewriterText(state)
+          }
+          if (state.visible.length < state.target.length) {
+            hasPendingText = true
+          } else if (state.finished) {
+            delete this.typewriterStates[id]
+            this.typewriterCompletedIds.add(id)
+          }
+        })
+
+        if (revealedText) this.$nextTick(() => this.scrollToBottom())
+        if (!hasPendingText) this.clearTypewriterTimer()
+      }, 28)
+    },
+    clearTypewriterTimer() {
+      if (this.typewriterTimer != null) {
+        window.clearInterval(this.typewriterTimer)
+        this.typewriterTimer = null
+      }
+    },
     hasContent(msg) {
       return !!(msg && String(msg.content || '').trim())
     },
@@ -173,8 +273,11 @@ export default {
     displayContent(msg) {
       if (!msg) return ''
       const raw = msg.content != null ? String(msg.content) : ''
-      if (!raw.trim()) return msg.streaming ? '' : '…'
-      if (msg.role === 'assistant') return sanitizeAiDisplayText(raw)
+      if (!raw.trim()) return msg.streaming || msg.paused ? '' : '…'
+      if (msg.role === 'assistant') {
+        const state = msg.id != null ? this.typewriterStates[String(msg.id)] : null
+        return state ? typewriterText(state) : sanitizeAiDisplayText(msg.displayedContent || raw)
+      }
       return raw
     },
     citeLabel(cite) {
@@ -428,15 +531,11 @@ export default {
   font-size: 14px;
 }
 
-.ai-bubble__cursor {
-  display: inline-block;
-  width: 6px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: var(--meme-primary);
-  border-radius: 1px;
-  animation: ai-cursor-blink 1s steps(1) infinite;
+.ai-bubble__status {
+  margin: 7px 0 0;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .ai-thinking {
@@ -552,17 +651,6 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-@keyframes ai-cursor-blink {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  51%,
-  100% {
-    opacity: 0;
-  }
 }
 
 @keyframes ai-avatar-pulse {

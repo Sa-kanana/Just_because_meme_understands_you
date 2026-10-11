@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.sakana.just_because_meme_understands_you.mapper.MemeMapper">
+<mapper namespace="com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeMapper">
+
+    <select id="selectFollowedTagPage" resultType="com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme">
+        SELECT m.* FROM meme m
+        WHERE m.status = 1
+          AND EXISTS (
+              SELECT 1 FROM meme_tag_relation r
+              JOIN user_tag_follow f ON f.tag_id = r.meme_tag_id
+              WHERE r.meme_id = m.id AND f.user_id = #{userId}
+          )
+        ORDER BY m.release_time DESC, m.id DESC
+    </select>
 
     <!-- 关键字搜索：梗名称、介绍或关联标签名模糊匹配，只展示 status = 1，支持 mostLikes/mostViews/mostComments 排序 -->
-    <select id="searchByKeyword" resultType="com.sakana.just_because_meme_understands_you.entity.Meme">
+    <select id="searchByKeyword" resultType="com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme">
         SELECT m.id,
                m.introduction,
                m.name,

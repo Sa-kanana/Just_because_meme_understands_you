@@ -101,7 +101,7 @@ export default {
   position: relative;
   z-index: 2;
   flex-shrink: 0;
-  padding: 6px 18px 16px;
+  padding: 4px 16px 12px;
   background: linear-gradient(
     180deg,
     transparent 0%,
@@ -113,24 +113,22 @@ export default {
 .ai-composer__dock {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--meme-primary) 14%, var(--meme-border));
-  background: color-mix(in srgb, var(--meme-bg-elevated) 94%, transparent);
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--meme-border);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--meme-bg-elevated) 88%, var(--meme-bg-muted));
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 14px 36px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+    0 1px 2px rgba(15, 23, 42, 0.025),
+    0 5px 16px rgba(15, 23, 42, 0.035);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ai-composer__dock.is-focused {
-  border-color: var(--meme-primary);
+  border-color: color-mix(in srgb, var(--meme-primary) 42%, var(--meme-border));
   box-shadow:
-    0 0 0 3px var(--meme-focus-ring),
-    0 12px 28px rgba(15, 23, 42, 0.08);
+    0 0 0 2px color-mix(in srgb, var(--meme-primary) 9%, transparent),
+    0 4px 12px rgba(15, 23, 42, 0.04);
 }
 
 .ai-composer__input {
@@ -146,8 +144,8 @@ export default {
   box-shadow: none !important;
   background: transparent !important;
   padding: 2px 0 !important;
-  min-height: 52px;
-  max-height: 128px;
+  min-height: 42px;
+  max-height: 112px;
   resize: none;
   font-size: 14px;
   line-height: 1.6;
@@ -175,8 +173,8 @@ export default {
 }
 
 .ai-composer__stop {
-  height: 36px;
-  padding: 0 14px;
+  height: 34px;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -194,9 +192,9 @@ export default {
 }
 
 .ai-composer__send {
-  min-width: 92px;
-  height: 36px;
-  padding: 0 16px;
+  min-width: 82px;
+  height: 34px;
+  padding: 0 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -207,7 +205,7 @@ export default {
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, var(--meme-primary), var(--meme-primary-dark));
-  box-shadow: 0 6px 16px var(--meme-focus-ring);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--meme-primary) 22%, transparent);
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }

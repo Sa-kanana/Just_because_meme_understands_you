@@ -32,10 +32,25 @@ export function fetchAdminMemes(params = {}) {
   )
 }
 
+export function fetchAdminMemeDetail(id) {
+  const memeId = id != null ? String(id).trim() : ''
+  if (!memeId) return Promise.reject(new Error('缺少 memeId'))
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'GET' }).then((res) =>
+    assertData(res, '获取梗详情失败')
+  )
+}
+
+export function createAdminMeme(payload) {
+  return request('/admin/memes', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }).then((res) => assertData(res, '新增梗失败'))
+}
+
 export function approveAdminMeme(id) {
   const memeId = id != null ? String(id).trim() : ''
   if (!memeId) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/memes/${encodeURIComponent(memeId)}/approve`, { method: 'POST' }).then(
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'PATCH', body: JSON.stringify({ status: 'APPROVED' }) }).then(
     (res) => assertData(res, '审核通过失败')
   )
 }
@@ -43,7 +58,7 @@ export function approveAdminMeme(id) {
 export function rejectAdminMeme(id) {
   const memeId = id != null ? String(id).trim() : ''
   if (!memeId) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/memes/${encodeURIComponent(memeId)}/reject`, { method: 'POST' }).then(
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'PATCH', body: JSON.stringify({ status: 'REJECTED' }) }).then(
     (res) => assertData(res, '拒绝失败')
   )
 }
@@ -51,7 +66,7 @@ export function rejectAdminMeme(id) {
 export function offlineAdminMeme(id) {
   const memeId = id != null ? String(id).trim() : ''
   if (!memeId) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/memes/${encodeURIComponent(memeId)}/offline`, { method: 'POST' }).then(
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'PATCH', body: JSON.stringify({ status: 'OFFLINE' }) }).then(
     (res) => assertData(res, '下架失败')
   )
 }
@@ -59,7 +74,15 @@ export function offlineAdminMeme(id) {
 export function onlineAdminMeme(id) {
   const memeId = id != null ? String(id).trim() : ''
   if (!memeId) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/memes/${encodeURIComponent(memeId)}/online`, { method: 'POST' }).then(
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'PATCH', body: JSON.stringify({ status: 'ONLINE' }) }).then(
     (res) => assertData(res, '提交审核失败')
+  )
+}
+
+export function deleteAdminMeme(id) {
+  const memeId = id != null ? String(id).trim() : ''
+  if (!memeId) return Promise.reject(new Error('缺少 memeId'))
+  return request(`/admin/memes/${encodeURIComponent(memeId)}`, { method: 'DELETE' }).then(
+    (res) => assertData(res, '删除梗失败')
   )
 }

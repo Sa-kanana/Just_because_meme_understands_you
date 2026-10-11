@@ -23,6 +23,10 @@
     <div v-else-if="!meme" class="detail-empty">
       <ui-empty description="没有找到这个梗，可能被时光吃掉了～" />
     </div>
+    <div v-else-if="isMemeAuthorSuppressed" class="detail-empty">
+      <ui-empty description="该用户的内容已根据你的社区安全设置隐藏。" />
+      <vs-button type="border" @click="router.push({ name: 'userSafetySettings' })">管理安全设置</vs-button>
+    </div>
     <div v-else class="detail-content" :class="{ 'detail-content--preview': ownerPreview }">
       <MemeDetailPreviewBanner
         v-if="ownerPreview"
@@ -114,6 +118,10 @@
                     :disabled="ownerPreview"
                     :preview="ownerPreview"
                     @click="handleFavoriteClick"
+                  />
+                  <MemeReportButton
+                    v-if="!ownerPreview && !isAuthorSelf"
+                    :meme-id="meme.id"
                   />
                 </div>
               </div>
@@ -363,12 +371,12 @@
         <div v-if="commentsLoading" class="comment-loading">
           <ui-skeleton :rows="3" animated />
         </div>
-        <div v-else-if="!rootComments.length" class="comment-empty">
+        <div v-else-if="!visibleRootComments.length" class="comment-empty">
           <ui-empty description="还没有评论，来做第一个吧" :image-size="72" />
         </div>
         <div v-else class="comment-list">
           <article
-            v-for="item in rootComments"
+            v-for="item in visibleRootComments"
             :key="item.id"
             :id="`comment-${item.id}`"
             class="comment-item"
@@ -442,6 +450,7 @@
                   >
                     删除
                   </button>
+                  <ContentReportButton v-if="!isCurrentUser(item.userId)" :comment-id="item.id" />
                 </div>
 
                 <div
@@ -454,7 +463,7 @@
                     </div>
                     <template v-else>
                       <div
-                        v-for="reply in repliesMap[String(item.id)] || []"
+                        v-for="reply in visibleReplies(item.id)"
                         :key="reply.id"
                         :id="`comment-${reply.id}`"
                         class="reply-item"
@@ -503,6 +512,7 @@
                             >
                               删除
                             </button>
+                            <ContentReportButton v-if="!isCurrentUser(reply.userId)" :comment-id="reply.id" />
                           </div>
                         </div>
                       </div>
@@ -803,6 +813,7 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useMemeDetailStore } from '@/stores/memeDetail'
 import { useAuthStore } from '@/stores/auth'
+import { useUserSafetyStore } from '@/stores/userSafety'
 import { addMemeFavorite, removeMemeFavorite, moveMemeFavorite, getMemeFavoriteStatus, addMemeLike, removeMemeLike, reportMemeView, getMemeRootComments, getMemeCommentReplies, addMemeComment, deleteMemeComment, likeMemeComment, unlikeMemeComment, getMemeCommentAnchor, restorePublishedMeme, purgePublishedMeme } from '@/api/meme'
 import { getMyFavoriteFolders, createFavoriteFolder, normalizeFolderId, sameFolderId } from '@/api/favoriteFolder'
 import { uploadToOss } from '@/api/oss'
@@ -810,6 +821,8 @@ import { isAuthErrorHandled } from '@/utils/authSession'
 import MemeDetailPreviewBanner from '@/components/meme/MemeDetailPreviewBanner.vue'
 import MemeDetailFavoriteBtn from '@/components/meme/MemeDetailFavoriteBtn.vue'
 import MemeDetailLikeBtn from '@/components/meme/MemeDetailLikeBtn.vue'
+import MemeReportButton from '@/components/meme/MemeReportButton.vue'
+import ContentReportButton from '@/components/meme/ContentReportButton.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
 import { watch, computed, ref, onUnmounted, reactive, nextTick } from 'vue'
@@ -821,6 +834,7 @@ const route = useRoute()
 const router = useRouter()
 const memeDetailStore = useMemeDetailStore()
 const authStore = useAuthStore()
+const userSafetyStore = useUserSafetyStore()
 const breadcrumbStore = useBreadcrumbStore()
 
 const { meme, loading, error, isFavorited, isLiked } = storeToRefs(memeDetailStore)
@@ -870,6 +884,7 @@ const authorAvatar = computed(() => {
   const avatar = authorInfo.value?.avatar
   return avatar != null ? String(avatar).trim() : ''
 })
+const isMemeAuthorSuppressed = computed(() => !!authorUserId.value && userSafetyStore.isHidden(authorUserId.value))
 
 const authorFollowed = ref(false)
 const authorMutual = ref(false)
@@ -1003,6 +1018,7 @@ const createFolderForm = ref({ name: '', isPublic: 1 })
 
 const commentSortType = ref('new')
 const rootComments = ref([])
+const visibleRootComments = computed(() => rootComments.value.filter((item) => !userSafetyStore.isHidden(item.userId)))
 const commentTotal = ref(0)
 const commentHasMore = ref(false)
 const commentPage = ref(1)
@@ -1011,6 +1027,9 @@ const commentDraft = ref('')
 const commentSubmitting = ref(false)
 const expandedRoots = ref(new Set())
 const repliesMap = reactive({})
+function visibleReplies(rootId) {
+  return (repliesMap[String(rootId)] || []).filter((reply) => !userSafetyStore.isHidden(reply.userId))
+}
 const repliesLoadingMap = reactive({})
 const commentLikeLoadingMap = reactive({})
 const commentDeleteLoadingMap = reactive({})
@@ -1024,6 +1043,10 @@ const commentImages = ref([])
 const commentImageUploading = ref(false)
 /** 消息跳转高亮的目标评论 id */
 const focusedCommentId = ref('')
+function isCurrentUser(userId) {
+  const currentId = authStore.currentUser?.id ?? authStore.currentUser?.userId
+  return currentId != null && String(currentId) === String(userId)
+}
 let commentFocusSeq = 0
 let commentFocusClearTimer = null
 

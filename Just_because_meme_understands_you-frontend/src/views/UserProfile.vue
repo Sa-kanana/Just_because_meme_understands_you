@@ -53,15 +53,29 @@
               <i class="ri-edit-line" aria-hidden="true" />
               编辑信息
             </vs-button>
-            <FollowButton
-              v-else-if="profile.userId"
-              v-model="profile.isFollow"
-              :user-id="profile.userId"
-              :mutual="followMutual"
-              size="lg"
-              class="profile-hero__follow-btn"
-              @change="onProfileFollowChange"
-            />
+            <div v-else-if="profile.userId" class="profile-hero__social-actions">
+              <FollowButton
+                v-if="!safetyStatus.blocked || profile.isFollow"
+                v-model="profile.isFollow"
+                :user-id="profile.userId"
+                :mutual="followMutual"
+                :disabled="safetyStatus.blocked && !profile.isFollow"
+                size="lg"
+                class="profile-hero__follow-btn"
+                @change="onProfileFollowChange"
+              />
+              <span v-else class="profile-safety-note">{{ safetyStatus.blockedByTarget ? '对方已屏蔽你' : '已屏蔽该用户' }}</span>
+              <template v-if="isLoggedIn">
+                <vs-button type="border" size="small" :disabled="safetyBusy" @click="toggleMute">
+                  <i :class="safetyStatus.muted ? 'ri-volume-up-line' : 'ri-volume-mute-line'" aria-hidden="true" />
+                  {{ safetyStatus.muted ? '取消静音' : '静音' }}
+                </vs-button>
+                <vs-button type="border" size="small" color="danger" :disabled="safetyBusy || (safetyStatus.blockedByTarget && !safetyStatus.blockedByMe)" @click="toggleBlock">
+                  <i :class="safetyStatus.blockedByMe ? 'ri-user-unfollow-line' : 'ri-forbid-line'" aria-hidden="true" />
+                  {{ safetyStatus.blockedByMe ? '取消屏蔽' : '屏蔽' }}
+                </vs-button>
+              </template>
+            </div>
           </div>
         </div>
       </header>
@@ -93,7 +107,7 @@
         <template #text>
           <ui-tabs v-model="activeTab" class="profile-tabs">
             <ui-tab-pane :label="`发布梗图 (${publishedDisplayTotal})`" name="published">
-              <div class="published-panel">
+              <div ref="publishedPanel" class="published-panel">
                 <div v-if="isOwnProfile" class="published-panel-header">
                   <div class="published-panel-head">
                     <p class="meme-section-kicker">MY MEMES</p>
@@ -110,21 +124,63 @@
                   </vs-button>
                 </div>
 
-                <div v-if="isOwnProfile" class="published-filter-bar">
-                  <button
-                    v-for="opt in publishedFilterOptions"
-                    :key="`pub-filter-${opt.key}`"
-                    type="button"
-                    class="published-filter-chip"
-                    :class="[
-                      `published-filter-chip--${opt.tone}`,
-                      { 'is-active': String(publishedStatusFilter) === String(opt.key) },
-                    ]"
-                    @click="setPublishedStatusFilter(opt.key)"
+                <div class="published-list-toolbar" :class="{ 'has-status-filter': isOwnProfile }">
+                  <div v-if="isOwnProfile" class="published-filter-bar">
+                    <button
+                      v-for="opt in publishedFilterOptions"
+                      :key="`pub-filter-${opt.key}`"
+                      type="button"
+                      class="published-filter-chip"
+                      :class="[
+                        `published-filter-chip--${opt.tone}`,
+                        { 'is-active': String(publishedStatusFilter) === String(opt.key) },
+                      ]"
+                      @click="setPublishedStatusFilter(opt.key)"
+                    >
+                      <span class="published-filter-label">{{ opt.label }}</span>
+                      <span class="published-filter-count">{{ opt.count }}</span>
+                    </button>
+                  </div>
+                  <ui-dropdown
+                    trigger="click"
+                    placement="bottom-end"
+                    class="published-sort-dropdown"
+                    @command="setPublishedSort"
                   >
-                    <span class="published-filter-label">{{ opt.label }}</span>
-                    <span class="published-filter-count">{{ opt.count }}</span>
-                  </button>
+                    <button
+                      ref="publishedSortTrigger"
+                      type="button"
+                      class="published-sort-trigger"
+                      :aria-label="`排序方式：${publishedSortLabel}`"
+                      aria-haspopup="listbox"
+                    >
+                      <span class="published-sort-trigger__icon"><i class="ri-sort-desc" aria-hidden="true" /></span>
+                      <span class="published-sort-trigger__label">排序</span>
+                      <span class="published-sort-trigger__value">{{ publishedSortLabel }}</span>
+                      <i class="ri-arrow-down-s-line published-sort-trigger__chevron" aria-hidden="true" />
+                    </button>
+                    <template #dropdown>
+                      <ui-dropdown-menu class="published-sort-menu" role="listbox" aria-label="梗图排序方式">
+                        <p class="published-sort-menu__heading">排列方式</p>
+                        <ui-dropdown-item
+                          v-for="option in publishedSortOptions"
+                          :key="option.value"
+                          :command="option.value"
+                          class="published-sort-option"
+                          role="option"
+                          :aria-selected="publishedSort === option.value"
+                        >
+                          <i :class="option.icon" class="published-sort-option__icon" aria-hidden="true" />
+                          <span class="published-sort-option__label">{{ option.label }}</span>
+                          <i
+                            v-if="publishedSort === option.value"
+                            class="ri-check-line published-sort-option__check"
+                            aria-hidden="true"
+                          />
+                        </ui-dropdown-item>
+                      </ui-dropdown-menu>
+                    </template>
+                  </ui-dropdown>
                 </div>
 
                 <div v-if="publishedLoading && !publishedList.length" class="published-skeleton">
@@ -148,6 +204,21 @@
                       :show-stats="true"
                       :show-author="false"
                     >
+                      <template #footer>
+                        <div class="published-card-footer">
+                          <p class="published-card-meta">{{ formatPublishedDate(item.releaseTime || item.createTime || item.updateTime) }}</p>
+                          <div
+                            v-if="isOwnProfile && item.editRevisionStatus"
+                            class="published-edit-review"
+                            :class="`published-edit-review--${String(item.editRevisionStatus).toLowerCase()}`"
+                          >
+                            <span>{{ editRevisionStatusLabel(item.editRevisionStatus) }}</span>
+                            <span v-if="['REJECTED', 'CANCELED'].includes(item.editRevisionStatus) && item.editRevisionNote" class="published-edit-review__note">
+                              {{ item.editRevisionNote }}
+                            </span>
+                          </div>
+                        </div>
+                      </template>
                       <template #title-extra>
                         <ui-dropdown
                           v-if="isOwnProfile && canVoluntaryOffline(item)"
@@ -166,6 +237,9 @@
                           </button>
                           <template #dropdown>
                             <ui-dropdown-menu>
+                          <ui-dropdown-item v-if="canEditPublishedMeme(item)" command="edit">
+                            <span class="published-menu-item"><i class="ri-edit-2-line" /> 修改内容</span>
+                          </ui-dropdown-item>
                               <ui-dropdown-item command="delete">
                                 <span class="published-menu-item published-menu-item--danger"><i class="ri-inbox-unarchive-line" /> 下架梗</span>
                               </ui-dropdown-item>
@@ -189,6 +263,9 @@
                           </button>
                           <template #dropdown>
                             <ui-dropdown-menu>
+                              <ui-dropdown-item v-if="canEditPublishedMeme(item)" command="edit">
+                                <span class="published-menu-item"><i class="ri-edit-2-line" /> 修改内容</span>
+                              </ui-dropdown-item>
                               <ui-dropdown-item command="restore">
                                 <span class="published-menu-item"><i class="ri-arrow-go-back-line" /> 重新上架</span>
                               </ui-dropdown-item>
@@ -333,6 +410,7 @@
                   </div>
 
                   <div
+                    ref="folderContentPanel"
                     class="folder-content"
                     :class="{ 'folder-content--batch-active': isOwnProfile && selectedMemeIds.length > 0 }"
                   >
@@ -1156,6 +1234,10 @@ import { buildMemeDetailLocation, buildToolPageLocation } from '@/utils/pageBrea
 import FollowButton from '@/components/user/FollowButton.vue'
 import FollowRelationDrawer from '@/components/user/FollowRelationDrawer.vue'
 import { getFollowStatus } from '@/api/follow'
+import { getUserSuppressionStatus } from '@/api/userSafety'
+import { useUserSafetyStore } from '@/stores/userSafety'
+import { canApplySafetyStatus } from '@/utils/userSafety.mjs'
+import { formatDateShort } from '@/utils/formatDate'
 
 export default {
   name: 'UserProfilePage',
@@ -1217,6 +1299,9 @@ export default {
         },
       },
       followMutual: false,
+      safetyStatus: { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false },
+      safetyStatusEpoch: 0,
+      safetyBusy: false,
       relationDrawerVisible: false,
       relationDrawerTab: 'following',
       followStatusEpoch: 0,
@@ -1228,9 +1313,16 @@ export default {
       },
       publishedStatusCounts: { all: 0, live: 0, reviewing: 0, offline: 0, locked: 0 },
       publishedPageNo: 1,
-      publishedPageSize: 10,
+      publishedPageSize: 12,
       publishedLoading: false,
       publishedStatusFilter: 'all',
+      publishedSort: 'latest',
+      publishedSortOptions: [
+        { value: 'latest', label: '最新发布', icon: 'ri-time-line' },
+        { value: 'views', label: '最多浏览', icon: 'ri-eye-line' },
+        { value: 'likes', label: '最多点赞', icon: 'ri-thumb-up-line' },
+        { value: 'comments', label: '最多评论', icon: 'ri-chat-3-line' },
+      ],
       deletePublishedDialogVisible: false,
       deletePublishedTarget: null,
       deletePublishedSubmitting: false,
@@ -1247,7 +1339,7 @@ export default {
       selectedFolderId: '0',
       folderContentPage: { list: [], total: 0, hasMore: false },
       folderContentPageNo: 1,
-      folderContentPageSize: 15,
+      folderContentPageSize: 12,
       folderContentLoading: false,
       folderSelectAll: false,
       selectedMemeIds: [],
@@ -1289,6 +1381,9 @@ export default {
       if (user.userId != null) return String(user.userId).trim()
       return ''
     },
+    isLoggedIn() {
+      return useAuthStore().isLoggedIn
+    },
     requestUserId() {
       if (this.routeUserId && /^\d+$/.test(this.routeUserId)) {
         return this.routeUserId
@@ -1317,6 +1412,9 @@ export default {
     },
     publishedPageTotal() {
       return Number(this.publishedPage.total) || 0
+    },
+    publishedSortLabel() {
+      return this.publishedSortOptions.find((option) => option.value === this.publishedSort)?.label || '最新发布'
     },
     publishedDisplayTotal() {
       return Number(this.publishedStatusCounts.all) || this.publishedPageTotal
@@ -1366,6 +1464,8 @@ export default {
     '$route.params.userId': {
       immediate: true,
       handler() {
+        this.safetyStatusEpoch += 1
+        this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
         this.syncRouteUserId()
         this.resetFavoriteViewState()
         this.applyRouteTab()
@@ -1376,6 +1476,8 @@ export default {
       this.applyRouteTab()
     },
     currentUserId() {
+      this.safetyStatusEpoch += 1
+      this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
       this.syncRouteUserId()
       this.loadProfile()
     },
@@ -1468,6 +1570,7 @@ export default {
         this.loadPublishedMemes()
         this.applyRouteTab()
         this.refreshFollowMutual()
+        this.refreshSafetyStatus()
         if (this.activeTab === 'favorite') {
           this.loadFolders()
         }
@@ -1520,7 +1623,9 @@ export default {
     },
     handlePublishedMemeCommand(command, item) {
       if (!item) return
-      if (command === 'delete') {
+      if (command === 'edit' && this.canEditPublishedMeme(item)) {
+        this.$router.push({ name: 'publishMeme', query: { edit: this.normalizeMemeId(item.id) } })
+      } else if (command === 'delete') {
         this.openDeletePublishedDialog(item)
       } else if (command === 'restore') {
         this.openRestorePublishedDialog(item)
@@ -1563,6 +1668,21 @@ export default {
     canVoluntaryOffline(item) {
       const status = Number(item?.status)
       return status === 1 || status === 2
+    },
+    canEditPublishedMeme(item) {
+      const status = Number(item?.status)
+      return this.isOwnProfile && (status === 1 || status === 3) && item?.editRevisionStatus !== 'PENDING'
+    },
+    editRevisionStatusLabel(status) {
+      return ({
+        PENDING: '修改审核中，当前展示旧版',
+        APPROVED: '修改已通过',
+        REJECTED: '修改未通过，可查看原因后重提',
+        CANCELED: '修改稿已取消',
+      })[String(status || '').toUpperCase()] || '修改审核状态已更新'
+    },
+    formatPublishedDate(value) {
+      return formatDateShort(value)
     },
     openRestorePublishedDialog(item) {
       const status = Number(item?.status)
@@ -1636,6 +1756,7 @@ export default {
           page: this.publishedPageNo,
           size: this.publishedPageSize,
           status: statusParam,
+          sort: this.publishedSort,
         })
         const list = Array.isArray(data.list) ? data.list : []
         const normalized = list.map((it) => ({
@@ -1701,11 +1822,29 @@ export default {
       this.publishedPageNo = 1
       this.loadPublishedMemes()
     },
+    setPublishedSort(value) {
+      this.$nextTick(() => this.$refs.publishedSortTrigger?.focus())
+      const allowedSorts = this.publishedSortOptions.map((option) => option.value)
+      const next = allowedSorts.includes(value) ? value : 'latest'
+      if (next === this.publishedSort) return
+      this.publishedSort = next
+      this.publishedPageNo = 1
+      this.loadPublishedMemes()
+    },
     goPublishedPage(page) {
       const next = Math.max(1, Number(page) || 1)
       if (next === this.publishedPageNo) return
       this.publishedPageNo = next
+      this.scrollToProfileList('publishedPanel')
       this.loadPublishedMemes()
+    },
+    scrollToProfileList(refName) {
+      this.$nextTick(() => {
+        const target = this.$refs[refName]
+        if (target && typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      })
     },
     async handleEditProfile() {
       this.editDialogVisible = true
@@ -1839,8 +1978,9 @@ export default {
             signature: this.editForm.signature,
             gender: this.editForm.gender,
             birthday: this.editForm.birthday || '',
-            avatar: this.editForm.avatar || '',
           }
+          const avatar = this.editForm.avatar != null ? String(this.editForm.avatar).trim() : ''
+          if (avatar) payload.avatar = avatar
           await updateUserProfile(payload, this.authToken)
 
           this.profile = {
@@ -1851,9 +1991,9 @@ export default {
           authStore.updateCurrentUser({
             nickname: payload.nickname,
             signature: payload.signature,
-            avatar: payload.avatar,
             gender: payload.gender,
             birthday: payload.birthday,
+            ...(payload.avatar ? { avatar: payload.avatar } : {}),
           })
 
           this.editDialogVisible = false
@@ -1901,6 +2041,62 @@ export default {
         }
       } catch (_) {
         // 状态刷新失败不影响主页展示
+      }
+    },
+    async refreshSafetyStatus() {
+      const targetId = String(this.profile.userId || '')
+      const viewerId = String(this.currentUserId || '')
+      const requestEpoch = ++this.safetyStatusEpoch
+      if (!this.isLoggedIn || this.isOwnProfile || !this.profile.userId) {
+        this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
+        return
+      }
+      try {
+        const status = await getUserSuppressionStatus(targetId)
+        if (!this.isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch)) return
+        this.safetyStatus = {
+          muted: Boolean(status.muted),
+          blocked: Boolean(status.blocked),
+          blockedByMe: Boolean(status.blockedByMe),
+          blockedByTarget: Boolean(status.blockedByTarget),
+        }
+      } catch (_) {
+        if (this.isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch)) {
+          this.safetyStatus = { muted: false, blocked: false, blockedByMe: false, blockedByTarget: false }
+        }
+      }
+    },
+    isCurrentSafetyStatusRequest(targetId, viewerId, requestEpoch) {
+      return canApplySafetyStatus({
+        requestTargetId: targetId,
+        requestViewerId: viewerId,
+        currentTargetId: this.profile.userId,
+        currentViewerId: this.currentUserId,
+        requestEpoch,
+        currentEpoch: this.safetyStatusEpoch,
+      })
+        && this.isLoggedIn
+    },
+    async toggleMute() {
+      await this.toggleSuppression('MUTE', this.safetyStatus.muted)
+    },
+    async toggleBlock() {
+      await this.toggleSuppression('BLOCK', this.safetyStatus.blockedByMe)
+    },
+    async toggleSuppression(type, active) {
+      if (this.safetyBusy || !this.profile.userId) return
+      this.safetyBusy = true
+      try {
+        const store = useUserSafetyStore()
+        await store.load(this.currentUserId)
+        if (active) await store.remove(this.profile.userId, type)
+        else await store.apply(this.profile.userId, type)
+        await this.refreshSafetyStatus()
+        toast.success(type === 'BLOCK' ? (active ? '已取消屏蔽' : '已屏蔽该用户') : (active ? '已取消静音' : '已静音该用户'))
+      } catch (error) {
+        toast.error(error?.message || '操作失败，请稍后重试')
+      } finally {
+        this.safetyBusy = false
       }
     },
     openRelationDrawer(tab) {
@@ -2032,6 +2228,7 @@ export default {
       if (next === this.folderContentPageNo) return
       this.folderContentPageNo = next
       this.clearMemeSelection()
+      this.scrollToProfileList('folderContentPanel')
       this.loadFolderContent()
     },
     handleFolderCommand(cmd, folder) {
@@ -2409,6 +2606,19 @@ export default {
   padding-bottom: 4px;
 }
 
+.profile-hero__social-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-safety-note {
+  color: var(--meme-text-secondary);
+  font-size: 12px;
+}
+
 .profile-hero__edit-btn {
   min-width: 120px;
   height: 40px !important;
@@ -2557,8 +2767,31 @@ export default {
 
 .meme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
   gap: 14px;
+}
+
+.meme-grid > * {
+  min-width: 0;
+}
+
+@media (max-width: 1440px) {
+  .meme-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .meme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .meme-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .meme-card-item {
@@ -2569,6 +2802,15 @@ export default {
   background: var(--meme-bg-card);
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.meme-grid > .meme-card-item:hover,
+.meme-grid > .meme-card-item:focus-within {
+  z-index: 2;
+}
+
+.meme-grid :deep(.meme-card) {
+  overflow: visible !important;
 }
 
 .meme-card-item:hover {
@@ -2597,6 +2839,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scroll-margin-top: 96px;
 }
 
 .published-panel-header {
@@ -2653,6 +2896,152 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.published-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.published-list-toolbar.has-status-filter {
+  justify-content: space-between;
+}
+
+.published-sort-dropdown {
+  flex: 0 0 auto;
+}
+
+.published-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--meme-border);
+  border-radius: 12px;
+  color: var(--meme-text);
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--meme-text) 4%, transparent);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.published-sort-trigger:hover,
+.published-sort-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--meme-primary) 46%, var(--meme-border));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--meme-primary) 12%, transparent);
+  outline: none;
+}
+
+.published-sort-trigger:active {
+  transform: translateY(1px);
+}
+
+.published-sort-trigger__icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--meme-primary-soft);
+  color: var(--meme-primary);
+  font-size: 15px;
+}
+
+.published-sort-trigger__label {
+  color: var(--meme-text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.published-sort-trigger__value {
+  color: var(--meme-text);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.published-sort-trigger__chevron {
+  margin-left: 1px;
+  color: var(--meme-text-muted);
+  font-size: 16px;
+  transition: transform 0.18s ease;
+}
+
+.published-sort-dropdown :deep(.ui-dropdown__menu) {
+  z-index: 1300;
+  min-width: 216px;
+  padding: 8px;
+  border-color: var(--meme-border);
+  border-radius: 15px;
+  background: var(--meme-bg-elevated);
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--meme-text) 15%, transparent);
+  animation: published-sort-menu-in 0.16s ease-out;
+  transform-origin: top right;
+}
+
+.published-sort-menu__heading {
+  margin: 2px 8px 7px;
+  color: var(--meme-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.published-sort-dropdown :deep(.published-sort-option) {
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--meme-text-secondary);
+  font-size: 13px;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.published-sort-dropdown :deep(.published-sort-option:hover:not(:disabled)) {
+  color: var(--meme-text);
+  background: var(--meme-bg-muted);
+  transform: translateX(2px);
+}
+
+.published-sort-dropdown :deep(.published-sort-option[aria-selected='true']) {
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+  font-weight: 700;
+}
+
+.published-sort-option__icon {
+  width: 18px;
+  color: var(--meme-text-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.published-sort-dropdown :deep(.published-sort-option[aria-selected='true'] .published-sort-option__icon) {
+  color: var(--meme-primary);
+}
+
+.published-sort-option__label {
+  flex: 1;
+}
+
+.published-sort-option__check {
+  color: var(--meme-primary);
+  font-size: 16px;
+}
+
+@keyframes published-sort-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .published-filter-chip {
@@ -2910,6 +3299,41 @@ export default {
 
 .published-menu-item--danger {
   color: var(--meme-danger);
+}
+
+.published-card-meta {
+  margin: 6px 0 0;
+  color: var(--meme-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.published-edit-review {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+  color: var(--meme-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.published-edit-review--pending {
+  color: var(--meme-primary);
+}
+
+.published-edit-review--rejected,
+.published-edit-review--canceled {
+  color: var(--meme-danger);
+}
+
+.published-edit-review--approved {
+  color: var(--meme-success, #16865b);
+}
+
+.published-edit-review__note {
+  color: var(--meme-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .published-filter-empty {
@@ -3819,8 +4243,8 @@ export default {
 
 @media (max-width: 768px) {
   .profile-page {
-    margin: -16px -32px -32px;
-    width: calc(100% + 64px);
+    margin: -16px -18px -32px;
+    width: calc(100% + 36px);
     padding: 12px 10px 20px;
   }
 
@@ -3866,6 +4290,15 @@ export default {
     width: 100%;
   }
 
+  .published-list-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .published-sort-dropdown {
+    align-self: flex-end;
+  }
+
   .cropper-controls {
     flex-direction: column;
     align-items: stretch;
@@ -3882,6 +4315,14 @@ export default {
 
   .cropper-result-row {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .profile-page {
+    margin-left: -14px;
+    margin-right: -14px;
+    width: calc(100% + 28px);
   }
 }
 
@@ -4071,6 +4512,7 @@ html.dark .folder-card-loading {
 }
 .folder-content {
   min-width: 0;
+  scroll-margin-top: 96px;
 }
 .folder-content--batch-active {
   padding-bottom: 88px;

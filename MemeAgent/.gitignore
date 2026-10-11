@@ -6,5 +6,7 @@ __pycache__/
 .venv/
 .env
 *.egg-info/
+# 中文说明：忽略脚本运行时生成的采集、回填和诊断结果。
+scripts/output/
 dist/
 build/

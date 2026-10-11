@@ -24,7 +24,14 @@
       @page-size-change="onPageSizeChange"
     >
       <template #img="{ record }">
-        <a-image v-if="record.imgUrl" :src="record.imgUrl" width="72" height="40" />
+        <a-image
+          v-if="record.imgUrl"
+          :src="record.imgUrl"
+          width="72"
+          height="40"
+          fit="contain"
+          style="background: #edf3f9; border-radius: 6px"
+        />
       </template>
       <template #status="{ record }">
         <a-tag :color="record.status === 1 ? 'green' : 'gray'">
@@ -49,7 +56,7 @@
       :title="editingId ? '编辑轮播' : '新增轮播'"
       :ok-loading="saving"
       @ok="save"
-      @cancel="modalVisible = false"
+      @cancel="closeModal"
     >
       <a-form :model="form" layout="vertical">
         <a-form-item label="标题">
@@ -58,13 +65,18 @@
         <a-form-item label="图片" required>
           <div class="upload-row">
             <a-input v-model="form.imgUrl" placeholder="图片 URL / OSS key" />
-            <a-upload :custom-request="onUpload" :show-file-list="false" accept="image/*">
-              <template #upload-button>
-                <a-button>上传</a-button>
-              </template>
-            </a-upload>
+            <input
+              ref="imageFileInput"
+              class="image-file-input"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              @change="onCropFileChange"
+            />
+            <a-button :loading="cropUploading" :disabled="saving" @click="chooseImageFile">
+              选择并裁剪
+            </a-button>
           </div>
-          <a-image v-if="form.imgUrl" :src="form.imgUrl" width="120" style="margin-top: 8px" />
+          <a-image v-if="form.imgUrl" :src="form.imgUrl" width="120" fit="contain" style="margin-top: 8px" />
         </a-form-item>
         <a-form-item label="跳转类型" required>
           <a-select
@@ -90,11 +102,21 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <HomeImageCropDialog
+      :visible="cropDialogVisible"
+      :file="cropSourceFile"
+      :title="form.title"
+      :loading="cropUploading"
+      @cancel="closeCropDialog"
+      @confirm="uploadCroppedImage"
+    />
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import HomeImageCropDialog from '@/components/home-images/HomeImageCropDialog.vue'
 import {
   createAdminHomeImage,
   deleteAdminHomeImage,
@@ -112,6 +134,12 @@ const list = ref([])
 const status = ref(undefined)
 const modalVisible = ref(false)
 const editingId = ref('')
+const imageFileInput = ref(null) // 首页轮播图片选择器。
+const cropSourceFile = ref(null) // 等待裁剪的原始图片文件。
+const cropDialogVisible = ref(false) // 首页轮播裁剪对话框显隐状态。
+const cropUploading = ref(false) // 裁剪结果上传 OSS 的进行状态。
+const ALLOWED_HOME_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] // 首页轮播允许上传的图片格式。
+const MAX_HOME_IMAGE_BYTES = 10 * 1024 * 1024 // 首页轮播图片最大体积，与 OSS 限制保持一致。
 const form = reactive({
   title: '',
   imgUrl: '',
@@ -196,15 +224,53 @@ function openEdit(record) {
   modalVisible.value = true
 }
 
-async function onUpload(option) {
+function closeModal() {
+  if (cropUploading.value || saving.value) return
+  modalVisible.value = false
+  closeCropDialog()
+}
+
+function chooseImageFile() {
+  if (cropUploading.value || saving.value) return
+  imageFileInput.value?.click()
+}
+
+function onCropFileChange(event) {
+  const input = event.target
+  const file = input.files && input.files[0]
+  input.value = ''
+  if (!file) return
+  if (!ALLOWED_HOME_IMAGE_TYPES.includes(file.type)) {
+    toastError('仅支持 JPG、PNG、WebP 或 GIF 图片')
+    return
+  }
+  if (file.size > MAX_HOME_IMAGE_BYTES) {
+    toastError('图片不能超过 10MB')
+    return
+  }
+  cropSourceFile.value = file
+  cropDialogVisible.value = true
+}
+
+function closeCropDialog() {
+  if (cropUploading.value) return
+  cropDialogVisible.value = false
+  cropSourceFile.value = null
+}
+
+async function uploadCroppedImage(file) {
+  if (!file || cropUploading.value) return
+  cropUploading.value = true
   try {
-    const url = await uploadToOss(option.fileItem.file, 'home')
+    const url = await uploadToOss(file, 'home', file.name)
     form.imgUrl = url
-    option.onSuccess()
-    toastSuccess('上传成功')
+    cropDialogVisible.value = false
+    cropSourceFile.value = null
+    toastSuccess('图片已上传，首页预览已更新')
   } catch (e) {
-    option.onError(e)
     toastError(e.message || '上传失败')
+  } finally {
+    cropUploading.value = false
   }
 }
 
@@ -272,5 +338,8 @@ onMounted(load)
   display: flex;
   gap: 8px;
   width: 100%;
+}
+.image-file-input {
+  display: none;
 }
 </style>

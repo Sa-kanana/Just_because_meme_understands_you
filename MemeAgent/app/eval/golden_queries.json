@@ -1,6 +1,48 @@
 [
   {
-    "query": "只因你太美是什么梗",
-    "expected_meme_ids": []
+    "query": "背手负鼠是什么梗？",
+    "expected_meme_names": ["背手负鼠"],
+    "expected_answer_fact_groups": [["负鼠", "背爪站立"]]
+  },
+  {
+    "query": "哭哭马一般用来表达什么？",
+    "expected_meme_names": ["哭哭马"],
+    "expected_answer_fact_groups": [["委屈", "疲惫", "强颜欢笑"]]
+  },
+  {
+    "query": "SBTI 是什么类型的测试？",
+    "expected_meme_names": ["SBTI"],
+    "expected_answer_fact_groups": [["娱乐型", "娱乐"], ["人格测试", "性格测试"]]
+  },
+  {
+    "query": "AI 水果短剧有什么特点？",
+    "expected_meme_names": ["AI水果"],
+    "expected_answer_fact_groups": [["水果拟人", "水果角色"], ["狗血剧情", "反转"]]
+  },
+  {
+    "query": "网络上说养龙虾指的是什么？",
+    "expected_meme_names": ["养龙虾"],
+    "expected_answer_fact_groups": [["OpenClaw"], ["龙虾标志", "龙虾 logo"]]
+  },
+  {
+    "query": "不明觉厉是什么意思？",
+    "expected_meme_names": ["不明觉厉"],
+    "expected_answer_fact_groups": []
+  },
+  {
+    "query": "你好",
+    "expected_empty": true
+  },
+  {
+    "query": "谢谢",
+    "expected_empty": true
+  },
+  {
+    "query": "帮我写一个 Java 快速排序算法",
+    "expected_empty": true
+  },
+  {
+    "query": "太阳系有几颗行星？",
+    "expected_empty": true
   }
 ]

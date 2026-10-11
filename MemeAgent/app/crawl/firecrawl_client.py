@@ -220,7 +220,7 @@ async def firecrawl_search(
     include_markdown: bool = True,
 ) -> list[dict[str, Any]]:
     if not settings.firecrawl_enabled:
-        logger.info("Firecrawl disabled, skip search query=%s", query[:80])
+        logger.info("Firecrawl disabled, skip search query_chars=%s", len(query))
         return []
     return await asyncio.to_thread(
         _sync_search,

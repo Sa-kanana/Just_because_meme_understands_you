@@ -37,7 +37,7 @@ export function getUserProfile(userId, token) {
     return Promise.reject(new Error('用户ID格式不正确'))
   }
 
-  return request(`/user/${encodeURIComponent(id)}/profile`, {
+  return request(`/users/${encodeURIComponent(id)}`, {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => {
@@ -70,25 +70,28 @@ export function getUserProfile(userId, token) {
 
 /**
  * 分页获取用户发布的梗
- * GET /user/{userId}/memes?page=&size=&status=
+ * GET /users/{userId}/memes?page=&size=&status=&sort=
  * 返回 { author, list, page, size, total, isOwner, hasMore, statusCounts? }
  * list 项含 id/memeId、status、author、releaseTime 等
  * status：本人可选 1/2/3；他人忽略
+ * sort：latest/views/likes/comments，按最新、浏览、点赞或评论排序
  */
 export function pageUserMemes(userId, params = {}) {
   const id = userId != null ? String(userId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少用户ID'))
   }
-  const { page = 1, size = 10, status } = params
+  const { page = 1, size = 10, status, sort = 'latest' } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
+  const validSorts = ['latest', 'views', 'likes', 'comments']
+  query.set('sort', validSorts.includes(String(sort).toLowerCase()) ? String(sort).toLowerCase() : 'latest')
   if (
     status === 1 || status === 2 || status === 3 || status === 5 || status === 6
     || status === '1' || status === '2' || status === '3' || status === '5' || status === '6'
   ) {
     query.set('status', String(status))
   }
-  return request(`/user/${encodeURIComponent(id)}/memes?${query}`, { method: 'GET' }).then((res) => {
+  return request(`/users/${encodeURIComponent(id)}/memes?${query}`, { method: 'GET' }).then((res) => {
     if (res && Number(res.code) === 1 && res.data) {
       const data = res.data
       return {
@@ -104,7 +107,7 @@ export function getEditProfileEcho(token) {
   if (!token) {
     return Promise.reject(new Error('未登录，无法获取编辑资料回显'))
   }
-  return request('/user/me/profile', {
+  return request('/users/me', {
     method: 'GET',
     headers: withAuthHeader(token),
   }).then((res) => {
@@ -132,7 +135,7 @@ export function uploadUserAvatar(file, token) {
   }
   const formData = new FormData()
   formData.append('file', file)
-  return request('/user/avatar/upload', {
+  return request('/users/me/avatar', {
     method: 'POST',
     headers: withAuthHeader(token),
     body: formData,
@@ -177,7 +180,7 @@ export function updateUserProfile(payload = {}, token) {
     body.avatar = String(payload.avatar).trim()
   }
 
-  return request('/user/profile', {
+  return request('/users/me', {
     method: 'PUT',
     headers: withAuthHeader(token),
     body: JSON.stringify(body),
@@ -199,13 +202,13 @@ export function updateUserProfile(payload = {}, token) {
 
 /**
  * 账号设置页聚合数据
- * GET /user/me/settings → { profile, security }
+ * GET /users/me/settings → { profile, security }
  */
 export function getAccountSettings(token) {
   if (!token) {
     return Promise.reject(new Error('未登录，无法获取账号设置'))
   }
-  return request('/user/me/settings', {
+  return request('/users/me/settings', {
     method: 'GET',
     headers: withAuthHeader(token),
     withCredentials: true,
@@ -241,13 +244,13 @@ export function getAccountSettings(token) {
 
 /**
  * 账号安全概览
- * GET /user/me/security
+ * GET /users/me/security
  */
 export function getAccountSecurity(token) {
   if (!token) {
     return Promise.reject(new Error('未登录，无法获取安全概览'))
   }
-  return request('/user/me/security', {
+  return request('/users/me/security', {
     method: 'GET',
     headers: withAuthHeader(token),
     withCredentials: true,
@@ -271,7 +274,7 @@ export function getAccountSecurity(token) {
 
 /**
  * 登录态修改密码
- * PUT /user/me/password
+ * PUT /users/me/password
  */
 export function changeAccountPassword(payload = {}, token) {
   if (!token) {
@@ -283,7 +286,7 @@ export function changeAccountPassword(payload = {}, token) {
   if (!oldPassword || !newPassword || !confirmPassword) {
     return Promise.reject(new Error('请填写完整的密码信息'))
   }
-  return request('/user/me/password', {
+  return request('/users/me/password', {
     method: 'PUT',
     headers: withAuthHeader(token),
     body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
@@ -305,14 +308,14 @@ export function changeAccountPassword(payload = {}, token) {
 
 /**
  * 退出所有设备
- * POST /user/me/sessions/revoke-all
+ * DELETE /users/me/sessions
  */
 export function revokeAllSessions(token) {
   if (!token) {
     return Promise.reject(new Error('未登录，无法退出设备'))
   }
-  return request('/user/me/sessions/revoke-all', {
-    method: 'POST',
+  return request('/users/me/sessions', {
+    method: 'DELETE',
     headers: withAuthHeader(token),
     withCredentials: true,
   }).then((res) => {

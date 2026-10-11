@@ -1,0 +1,222 @@
+package com.sakana.just_because_meme_understands_you.modules.comment.application.support;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.sakana.just_because_meme_understands_you.common.exception.BizException;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
+import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCommentCreateRequestDTO;
+import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeComment;
+import com.sakana.just_because_meme_understands_you.modules.comment.application.assembler.MemeCommentViewMapper;
+import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeCommentImage;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
+import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisplayPolicy;
+import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentImageMapper;
+import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
+import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentCreateResponseVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeReplyCommentVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeRootCommentVO;
+import jakarta.annotation.Resource;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+@Component
+public class MemeCommentSupport {
+
+    public static final int NOT_DELETED = 0;
+
+    @Resource
+    private MemeCommentViewMapper memeCommentViewMapper;
+
+    @Resource
+    private MemeCommentMapper memeCommentMapper;
+
+    @Resource
+    private MemeCommentImageMapper memeCommentImageMapper;
+
+    @Resource
+    private IUserService userService;
+
+    @Resource
+    private OssUrlHelper ossUrlHelper;
+
+    @Resource
+    private OssObjectPromoteService ossObjectPromoteService;
+
+    public void validateUser(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
+        }
+    }
+
+    public void validateCreateRequest(MemeCommentCreateRequestDTO request) {
+        if (request == null || !StringUtils.hasText(request.getContent())) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "评论内容不能为空");
+        }
+        if (request.getContent().trim().length() > 2000) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "评论内容过长");
+        }
+    }
+
+    public long parseCommentRefId(String raw, String fieldName) {
+        if (!StringUtils.hasText(raw) || "0".equals(raw.trim())) {
+            return 0L;
+        }
+        try {
+            long parsed = Long.parseLong(raw.trim());
+            if (parsed < 0) {
+                throw new BizException(Result.CODE_BAD_REQUEST, fieldName + " 不合法");
+            }
+            return parsed;
+        } catch (NumberFormatException ignored) {
+            throw new BizException(Result.CODE_BAD_REQUEST, fieldName + " 格式错误");
+        }
+    }
+
+    public boolean isValidReplyParent(MemeComment parent, long rootId) {
+        if (parent == null || !Objects.equals(parent.getIsDeleted(), NOT_DELETED)) {
+            return false;
+        }
+        if (Objects.equals(parent.getId(), rootId) && Objects.equals(parent.getRootId(), 0L)) {
+            return true;
+        }
+        return Objects.equals(parent.getRootId(), rootId);
+    }
+
+    public MemeCommentCreateResponseVO toCreateResponseVO(MemeComment comment) {
+        return memeCommentViewMapper.toCreateResponseVO(comment);
+    }
+
+    public MemeRootCommentVO toRootVO(MemeComment comment, Map<Long, User> userMap, Map<Long, List<String>> imageMap) {
+        MemeRootCommentVO vo = memeCommentViewMapper.toRootVO(comment);
+        User user = userMap.get(comment.getUserId());
+        vo.setUserName(UserDisplayPolicy.displayName(user, "匿名用户"));
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(user)));
+        vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
+        vo.setReplyCount(defaultInt(comment.getReplyCount()));
+        vo.setLikes(defaultInt(comment.getLikes()));
+        vo.setLiked(Boolean.FALSE);
+        vo.setOwner(Boolean.FALSE);
+        return vo;
+    }
+
+    public MemeReplyCommentVO toReplyVO(MemeComment comment,
+                                        Map<Long, User> userMap,
+                                        Map<Long, MemeComment> parentMap,
+                                        Map<Long, List<String>> imageMap) {
+        MemeReplyCommentVO vo = memeCommentViewMapper.toReplyVO(comment);
+        User author = userMap.get(comment.getUserId());
+        vo.setUserName(UserDisplayPolicy.displayName(author, "匿名用户"));
+        vo.setUserAvatar(ossUrlHelper.toPublicUrl(UserDisplayPolicy.displayAvatar(author)));
+        MemeComment parent = parentMap.get(comment.getParentId());
+        if (parent != null) {
+            vo.setReplyToUserId(parent.getUserId());
+            User replyToUser = userMap.get(parent.getUserId());
+            if (replyToUser == null && parent.getUserId() != null) {
+                User loaded = userService.getById(parent.getUserId());
+                if (loaded != null) {
+                    replyToUser = loaded;
+                }
+            }
+            vo.setReplyToUserName(UserDisplayPolicy.displayName(replyToUser, "匿名用户"));
+        }
+        vo.setImages(ossUrlHelper.toPublicUrls(imageMap.getOrDefault(comment.getId(), Collections.emptyList())));
+        vo.setLikes(defaultInt(comment.getLikes()));
+        vo.setLiked(Boolean.FALSE);
+        vo.setOwner(Boolean.FALSE);
+        return vo;
+    }
+
+    public Map<Long, User> loadUserMap(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> ids = userIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<User> users = userService.listByIds(ids);
+        if (users == null || users.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, User> map = new HashMap<>();
+        for (User user : users) {
+            map.put(user.getId(), user);
+        }
+        return map;
+    }
+
+    public Map<Long, MemeComment> loadCommentMap(List<Long> commentIds) {
+        if (commentIds == null || commentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> ids = commentIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeComment> comments = memeCommentMapper.selectList(
+                new LambdaQueryWrapper<MemeComment>().in(MemeComment::getId, ids)
+        );
+        if (comments == null || comments.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, MemeComment> map = new HashMap<>();
+        for (MemeComment comment : comments) {
+            map.put(comment.getId(), comment);
+        }
+        return map;
+    }
+
+    public Map<Long, List<String>> loadImageMap(List<Long> commentIds) {
+        if (commentIds == null || commentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> ids = commentIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<MemeCommentImage> images = memeCommentImageMapper.selectList(
+                new LambdaQueryWrapper<MemeCommentImage>()
+                        .in(MemeCommentImage::getMemeCommentId, ids)
+                        .orderByAsc(MemeCommentImage::getSortOrder)
+                        .orderByAsc(MemeCommentImage::getId)
+        );
+        if (images == null || images.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return images.stream().collect(Collectors.groupingBy(
+                MemeCommentImage::getMemeCommentId,
+                Collectors.mapping(MemeCommentImage::getUrl, Collectors.toList())
+        ));
+    }
+
+    public void saveImages(Long commentId, Long userId, List<String> images) {
+        if (commentId == null || images == null || images.isEmpty()) {
+            return;
+        }
+        int sort = 0;
+        for (String url : images) {
+            if (!StringUtils.hasText(url)) {
+                continue;
+            }
+            String key = ossObjectPromoteService.promoteCommentImage(url, userId);
+            MemeCommentImage image = new MemeCommentImage();
+            image.setMemeCommentId(commentId);
+            image.setUrl(key);
+            image.setSortOrder(sort++);
+            memeCommentImageMapper.insert(image);
+        }
+    }
+
+    private int defaultInt(Integer value) {
+        return value == null ? 0 : value;
+    }
+}

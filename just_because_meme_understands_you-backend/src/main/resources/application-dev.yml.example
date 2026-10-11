@@ -43,6 +43,11 @@ jwt:
   secret: just_because_meme_understands_you_jwt_secret_dev_only
   cookie-secure: false
 
+# ---------- 共享用户角色 ----------
+auth:
+  # 首次初始化超级管理员时填写一个已注册账号邮箱；成功后可以清空或移除该变量
+  bootstrap-super-admin-email: ${AUTH_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
+
 # ---------- 本地安全 / CORS ----------
 app:
   security:
@@ -63,7 +68,7 @@ app:
       client-id: # 请自行填写 GitHub OAuth App Client ID
       client-secret: # 请自行填写 GitHub OAuth App Client Secret
       # GitHub 应用回调须指向后端（不要走前端代理）
-      redirect-uri: http://localhost:8080/login/oauth/github/callback
+      redirect-uri: http://localhost:8080/v1/auth/oauth/github/callbacks
       # 本地前端（vue serve 默认 80 端口）
       frontend-callback-url: http://localhost/login/oauth/callback
       scope: read:user user:email
@@ -73,6 +78,12 @@ meme:
   agent:
     base-url: http://127.0.0.1:8000
     api-key: # 请自行填写，与 MemeAgent INTERNAL_API_KEY 一致
+    # 本地开发时 AI SSE 上游连接池最大活跃连接数
+    max-connections: 100
+    # 本地开发时最多排队等待上游连接的请求数
+    pending-acquire-max-count: 200
+    # 本地开发时等待上游连接池可用连接的最长毫秒数
+    pending-acquire-timeout-ms: 10000
     # write-api-key: # 可选；与 INTERNAL_API_KEY_WRITE 一致，空则回退 api-key
   ai:
     max-history-tokens: 3000
@@ -81,16 +92,8 @@ meme:
     rate-limit-per-minute: 20
     chars-per-token-estimate: 3
     backfill-enabled: true
-  ops:
-    require-admin: true
-    # 本地无 ROLE_ADMIN 时可把本人 userId 加入白名单
-    admin-user-ids: []
 
 # ---------- Firecrawl 热梗采集 ----------
-meme:
-  agent:
-    base-url: http://127.0.0.1:8000
-    api-key: # 与 MemeAgent INTERNAL_API_KEY 一致
   crawl:
     enabled: true
     schedule-enabled: true
@@ -100,4 +103,3 @@ meme:
     limit: 5
     live-limit: 8
     live-hours: 48
-

@@ -1,8 +1,9 @@
 <template>
   <component
+    v-if="!authorSuppressed"
     :is="rootTag"
     class="meme-card"
-    :class="{ 'meme-card--link': isLink }"
+    :class="{ 'meme-card--link': isLink, 'meme-card--stats-body': statsPlacement === 'body' }"
     v-bind="rootProps"
     @click="handleClick"
   >
@@ -26,8 +27,8 @@
         />
       </div>
 
-      <div v-if="showStats" class="meme-card__shade" aria-hidden="true" />
-      <div v-if="showStats" class="meme-card__stats">
+      <div v-if="showStats && statsPlacement === 'cover'" class="meme-card__shade" aria-hidden="true" />
+      <div v-if="showStats && statsPlacement === 'cover'" class="meme-card__stats">
         <MemeCardStats
           variant="overlay"
           spread
@@ -45,16 +46,26 @@
         <slot name="title-extra" />
       </div>
       <slot name="footer">
-        <div v-if="hasAuthor" class="meme-card__author" @click.stop.prevent="goAuthor">
-          <ui-avatar
-            :size="20"
-            :src="authorAvatar"
-            :fallback="authorFallback"
-            class="meme-card__author-avatar"
-          />
-          <span class="meme-card__author-name">{{ authorNickname }}</span>
+        <div class="meme-card__footer">
+          <div v-if="hasAuthor" class="meme-card__author" @click.stop.prevent="goAuthor">
+            <ui-avatar
+              :size="20"
+              :src="authorAvatar"
+              :fallback="authorFallback"
+              class="meme-card__author-avatar"
+            />
+            <span class="meme-card__author-name">{{ authorNickname }}</span>
+          </div>
+          <p v-else-if="footerText" class="meme-card__meta">{{ footerText }}</p>
+          <div v-if="showStats && statsPlacement === 'body'" class="meme-card__body-stats">
+            <MemeCardStats
+              variant="inline"
+              :page-views="pageViews"
+              :likes="likes"
+              :comments="comments"
+            />
+          </div>
         </div>
-        <p v-else-if="footerText" class="meme-card__meta">{{ footerText }}</p>
       </slot>
     </div>
   </component>
@@ -65,6 +76,7 @@ import MemeCardStats from '@/components/meme/MemeCardStats.vue'
 import MemeCoverPlaceholder from '@/components/meme/MemeCoverPlaceholder.vue'
 import { formatDateShort } from '@/utils/formatDate'
 import { buildUserProfileLocation } from '@/utils/pageBreadcrumb'
+import { useUserSafetyStore } from '@/stores/userSafety'
 
 export default {
   name: 'MemeCard',
@@ -123,6 +135,12 @@ export default {
       type: Boolean,
       default: true,
     },
+    /** 统计数据展示位置：cover 为封面叠层，body 为信息栏。 */
+    statsPlacement: {
+      type: String,
+      default: 'cover',
+      validator: (value) => ['cover', 'body'].includes(value),
+    },
     lazy: {
       type: Boolean,
       default: true,
@@ -135,6 +153,10 @@ export default {
     }
   },
   computed: {
+    authorSuppressed() {
+      const userId = this.author && this.author.userId
+      return !!userId && useUserSafetyStore().isHidden(userId)
+    },
     isLink() {
       return this.to != null && this.to !== ''
     },
@@ -197,9 +219,11 @@ export default {
   width: 100%;
   text-decoration: none;
   color: inherit;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
+  border-radius: 16px;
+  border: 1px solid var(--meme-border);
+  background: var(--meme-bg-card);
+  box-shadow: 0 4px 18px rgba(27, 69, 125, 0.04);
+  overflow: hidden;
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
@@ -208,10 +232,10 @@ export default {
 }
 
 .meme-card--link:hover {
-  transform: translateY(-3px);
-  border-color: var(--meme-border);
+  transform: translateY(-4px);
+  border-color: var(--meme-border-accent);
   background: var(--meme-bg-elevated);
-  box-shadow: var(--meme-shadow-soft);
+  box-shadow: var(--meme-shadow-card);
 }
 
 .meme-card--link:hover .meme-card__title {
@@ -222,13 +246,13 @@ export default {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 10;
-  border-radius: 14px;
+  border-radius: 15px 15px 0 0;
   background: var(--meme-bg-cover);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
 }
 
 .meme-card--link:hover .meme-card__cover {
-  border-radius: 14px 14px 0 0;
+  border-radius: 15px 15px 0 0;
   box-shadow: none;
 }
 
@@ -251,6 +275,14 @@ export default {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.meme-card__media :deep(.ui-image img) {
+  transition: transform 0.28s ease;
+}
+
+.meme-card--link:hover .meme-card__media :deep(.ui-image img) {
+  transform: scale(1.035);
 }
 
 .meme-card__shade {
@@ -281,7 +313,7 @@ export default {
 }
 
 .meme-card__body {
-  padding: 10px 10px 12px;
+  padding: 13px 14px 15px;
   min-width: 0;
 }
 
@@ -296,8 +328,8 @@ export default {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.45;
   color: var(--meme-text);
   display: -webkit-box;
@@ -320,7 +352,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 10px;
   max-width: 100%;
   min-width: 0;
   cursor: pointer;
@@ -343,5 +375,66 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: color 0.15s ease;
+}
+
+.meme-card--stats-body .meme-card__body {
+  padding: 11px 12px 13px;
+  background: linear-gradient(
+    180deg,
+    var(--meme-bg-card) 0%,
+    color-mix(in srgb, var(--meme-bg-card) 96%, var(--meme-primary-soft)) 100%
+  );
+}
+
+.meme-card--stats-body .meme-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.meme-card--stats-body .meme-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.meme-card--stats-body .meme-card__author {
+  flex: 0 1 auto;
+  margin-top: 0;
+}
+
+.meme-card--stats-body .meme-card__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.meme-card--stats-body .meme-card__body-stats {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.meme-card--stats-body .meme-card__body-stats :deep(.meme-card-stats) {
+  gap: 7px;
+}
+
+.meme-card--stats-body .meme-card__body-stats :deep(.meme-card-stats__chip) {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.meme-card--stats-body .meme-card__body-stats :deep(.meme-card-stats__icon) {
+  width: 13px;
+  height: 13px;
+}
+
+@media (max-width: 420px) {
+  .meme-card--stats-body .meme-card__footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
 }
 </style>

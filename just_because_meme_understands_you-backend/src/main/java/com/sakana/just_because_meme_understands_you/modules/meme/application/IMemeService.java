@@ -1,0 +1,90 @@
+package com.sakana.just_because_meme_understands_you.modules.meme.application;
+
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDetailVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.MemeListItemVO;
+import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import com.sakana.just_because_meme_understands_you.api.user.vo.SimpleMemeVO;
+
+import java.util.List;
+
+/**
+ * <p>
+ *  服务类
+ * </p>
+ *
+ * @author sakana
+ * @since 2026-03-06
+ */
+public interface IMemeService extends IService<Meme> {
+
+    /** 每页固定条数 */
+    int PAGE_SIZE = 16;
+
+    /**
+     * 梗的分页展示，每页固定返回 8 条
+     *
+     * @param page 页码，从 1 开始，由前端传递
+     * @return 当前页的梗列表（包含标签），最多 8 条
+     */
+    List<MemeListItemVO> pageMemeList(int page);
+
+    /**
+     * 梗分页 Feed，支持 sort：hot / new / comments / views / following。
+     *
+     * @param followingUserId 当 sort=following 时必填，表示当前登录用户 id
+     */
+    PageVO<MemeListItemVO> pageMemeFeed(int page, int size, String sort, Long followingUserId);
+
+    /** 当前用户关注标签的正常梗信息流，按发布时间倒序。 */
+    PageVO<MemeListItemVO> pageFollowedTagFeed(int page, int size, Long userId);
+
+    /**
+     * 今日热梗横滑列表，按综合热度排序。
+     */
+    List<MemeListItemVO> listHotMemes(int limit);
+
+    /**
+     * 实时新梗（Firecrawl 采集入库），按发布时间倒序。
+     *
+     * @param publisherUserId 系统发布者；&lt;=0 时退化为全站最新
+     * @param hours           时间窗小时数
+     * @param limit           条数
+     */
+    List<MemeListItemVO> listLiveMemes(long publisherUserId, int hours, int limit);
+
+    /**
+     * 关键字搜索梗，按名称、介绍或标签名模糊匹配，分页返回（每页 8 条）
+     *
+     * @param keyword 关键字，为空或空白时返回空列表
+     * @param page    页码，从 1 开始
+     * @return 当前页的梗列表（包含标签）
+     */
+    List<MemeListItemVO> searchByKeyword(String keyword, int page);
+
+    /**
+     * 关键字搜索（接口 /search）：按关键字搜索，支持 mostLikes/mostViews/mostComments 排序
+     *
+     * @param keyword      关键字，必填
+     * @param mostLikes    最多点赞（有值则按点赞降序）
+     * @param mostViews    最多浏览（有值则按浏览降序）
+     * @param mostComments 最多评论（有值则按评论降序）
+     * @return SimpleMeme 列表，符合接口 DataResponse.data
+     */
+    List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews, String mostComments);
+
+    /**
+     * 梗的详细页面：根据 memeId 查询梗的详细信息（包含标签和相关链接）
+     *
+     * @param memeId 梗的 id
+     * @param currentUserId 当前登录用户 id，未登录传 null
+     * @return 梗的详细信息，无权查看或不存在返回 null
+     */
+    MemeDetailVO getMemeDetail(Long memeId, Long currentUserId);
+
+    /**
+     * 删除梗后清理详情 Redis 缓存。
+     */
+    void evictMemeDetailCache(Long memeId);
+}
