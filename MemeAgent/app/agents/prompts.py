@@ -11,7 +11,7 @@ from app.retrieval.repository import RetrievedChunk
 
 
 # 提示词版本用于日志标记；修改提示词后同步升级以便追踪行为变化。
-PROMPT_VERSION = "meme-search-v12"
+PROMPT_VERSION = "meme-search-v13"
 
 # 可直接编辑的 Markdown 提示词资源；随 app.agents 包一起发布。
 SYSTEM_PROMPT_PATH = files("app.agents").joinpath("prompt_files").joinpath("search_system_zh.md")
