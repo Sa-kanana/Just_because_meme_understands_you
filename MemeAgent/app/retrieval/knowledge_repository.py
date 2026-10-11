@@ -60,6 +60,14 @@ class RetrievedKnowledgeChunk:
     vector_rank_score: float = 0.0
     # 中文注释：标题、标签或正文候选的 RRF 分量，供评估脚本重放线上排序。
     lexical_rank_score: float = 0.0
+    # 中文注释：该片段在向量候选分支中的原始排名，用于过滤后重算 RRF。
+    vector_rank: int | None = None
+    # 中文注释：该片段在标题/标签/正文词项候选分支中的原始排名。
+    lexical_rank: int | None = None
+    # 中文注释：PostgreSQL 中稳定的片段序号，用于候选排序和章节去重。
+    chunk_index: int = 0
+    # 中文注释：候选由向量召回、词项召回或两路共同召回。
+    candidate_sources: tuple[str, ...] = ()
 
 
 def normalize_knowledge_body(content: str) -> str:
@@ -584,9 +592,11 @@ async def delete_knowledge_by_ids(doc_ids: list[str], revision: int) -> int:
 
 
 async def similarity_search_knowledge(
-    query: str, top_k: int, min_similarity: float | None = None
+    query: str, candidate_limit: int
 ) -> list[RetrievedKnowledgeChunk]:
-    """融合 READY 文档的向量候选与标题、标签、正文短语候选。"""
+    """召回 READY 文档的有界原始候选，不执行阈值筛选或章节去重。"""
+    if candidate_limit < 1:
+        raise ValueError("知识检索候选上限必须大于 0")
     query_embedding = await embed_text(query)
     pool = get_pool()
     settings = get_settings()
@@ -598,12 +608,12 @@ async def similarity_search_knowledge(
                 SELECT chunk.doc_id, chunk.content, chunk.title, chunk.section_path, chunk.page_number,
                        chunk.chunk_index,
                        chunk.embedding <=> $1::vector AS distance,
-                       (COALESCE(position(lower(chunk.title) in lower($3)) > 0, FALSE)
+                       (COALESCE(position(lower(chunk.title) in lower($2)) > 0, FALSE)
                         OR EXISTS (SELECT 1 FROM unnest(chunk.tags) AS tag_value(value)
                                    WHERE length(tag_value.value) > 0
-                                     AND position(lower(tag_value.value) in lower($3)) > 0)) AS exact_match,
-                       (char_length($5) >= 3
-                        AND lower(chunk.content) LIKE '%' || $5 || '%' ESCAPE E'\\\\') AS content_match
+                                     AND position(lower(tag_value.value) in lower($2)) > 0)) AS exact_match,
+                       (char_length($3) >= 3
+                        AND lower(chunk.content) LIKE '%' || $3 || '%' ESCAPE E'\\\\') AS content_match
                 FROM knowledge_vector_chunk AS chunk
                 JOIN knowledge_doc_state AS state ON state.doc_id = chunk.doc_id
                 WHERE state.status = 'READY'
@@ -612,9 +622,8 @@ async def similarity_search_knowledge(
                 SELECT ready_chunks.*,
                        ROW_NUMBER() OVER (ORDER BY distance ASC, chunk_index ASC) AS vector_rank
                 FROM ready_chunks
-                WHERE $4::float IS NOT NULL AND 1 - distance >= $4
                 ORDER BY distance ASC, chunk_index ASC
-                LIMIT $6
+                LIMIT $4
             ), lexical_candidates AS (
                 SELECT ready_chunks.*,
                        ROW_NUMBER() OVER (
@@ -623,7 +632,7 @@ async def similarity_search_knowledge(
                 FROM ready_chunks
                 WHERE exact_match OR content_match
                 ORDER BY exact_match DESC, content_match DESC, distance ASC, chunk_index ASC
-                LIMIT $6
+                LIMIT $4
             ), candidate_ranks AS (
                 SELECT doc_id, content, title, section_path, page_number, chunk_index,
                        distance, exact_match, content_match,
@@ -639,44 +648,41 @@ async def similarity_search_knowledge(
                        MIN(distance) AS distance,
                        BOOL_OR(exact_match) AS exact_match,
                        BOOL_OR(content_match) AS content_match,
+                       MIN(vector_rank) AS vector_rank,
+                       MIN(lexical_rank) AS lexical_rank,
+                       ARRAY_REMOVE(
+                           ARRAY[
+                               CASE WHEN BOOL_OR(vector_rank IS NOT NULL) THEN 'vector' END,
+                               CASE WHEN BOOL_OR(lexical_rank IS NOT NULL) THEN 'lexical' END
+                           ], NULL
+                       ) AS candidate_sources,
                        COALESCE(MAX(1.0 / (60 + vector_rank)), 0) AS vector_rank_score,
                        COALESCE(MAX(1.0 / (60 + lexical_rank)), 0) AS lexical_rank_score
                 FROM candidate_ranks
                 GROUP BY doc_id, content, title, section_path, page_number, chunk_index
-            ), section_ranked AS (
-                SELECT fused_candidates.*,
-                       vector_rank_score + lexical_rank_score AS rank_score,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY doc_id,
-                               COALESCE(NULLIF(section_path, ''),
-                                        CASE WHEN page_number IS NOT NULL
-                                             THEN 'PDF 第 ' || page_number::text || ' 页' END,
-                                        '文档')
-                            ORDER BY exact_match DESC,
-                                     (vector_rank_score + lexical_rank_score) DESC,
-                                     distance ASC,
-                                     chunk_index ASC
-                       ) AS section_rank
-                FROM fused_candidates
             )
             SELECT doc_id, content, title, section_path, page_number,
                    1 - distance AS score,
-                   rank_score,
+                   vector_rank_score + lexical_rank_score AS rank_score,
                    vector_rank_score,
                    lexical_rank_score,
                    exact_match,
-                   content_match
-            FROM section_ranked
-            WHERE section_rank = 1
-            ORDER BY exact_match DESC, rank_score DESC, distance ASC
-            LIMIT $2
+                   content_match,
+                   vector_rank,
+                   lexical_rank,
+                   chunk_index,
+                   candidate_sources
+            FROM fused_candidates
+            ORDER BY exact_match DESC,
+                     content_match DESC,
+                     rank_score DESC,
+                     distance ASC,
+                     chunk_index ASC
             """,
             vector_literal(query_embedding),
-            top_k,
             query.strip(),
-            min_similarity,
             escaped_query,
-            max(20, top_k * 4),
+            candidate_limit,
         )
 
     results = [
@@ -692,6 +698,10 @@ async def similarity_search_knowledge(
             rank_score=float(row["rank_score"] or 0),
             vector_rank_score=float(row["vector_rank_score"] or 0),
             lexical_rank_score=float(row["lexical_rank_score"] or 0),
+            vector_rank=int(row["vector_rank"]) if row["vector_rank"] is not None else None,
+            lexical_rank=int(row["lexical_rank"]) if row["lexical_rank"] is not None else None,
+            chunk_index=int(row["chunk_index"] or 0),
+            candidate_sources=tuple(row["candidate_sources"] or ()),
         )
         for row in rows
     ]

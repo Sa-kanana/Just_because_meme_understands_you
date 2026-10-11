@@ -12,20 +12,22 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langsmith.run_helpers import trace
 
 from app.agents.meme_agent import build_meme_search_agent
-from app.agents.prompts import AGENT_SYSTEM_PROMPT, PROMPT_VERSION, build_user_payload
+from app.agents.prompts import (
+    AGENT_SYSTEM_PROMPT,
+    PROMPT_VERSION,
+    build_agent_prompt_inputs,
+)
 from app.agents.query_intent import greeting_reply
 from app.agents.retrieval_query_rewrite import (
     rewrite_retrieval_query,
     should_attempt_contextual_rewrite,
 )
 from app.agents.tools import (
-    admin_knowledge_chunks_to_tool_payload,
     build_search_admin_knowledge_tool,
     build_search_meme_tool,
-    chunks_to_tool_payload,
-    parse_tool_payload,
     retrieve_admin_knowledge_chunks,
     retrieve_meme_chunks,
 )
@@ -115,6 +117,8 @@ class _StreamState:
     emitted_citations: set[str] = field(default_factory=set)
     # 模型供应商返回的实际 token 用量。
     usage: dict[str, int] = field(default_factory=dict)
+    # 中文注释：工具二次检索取得、尚未发送 SSE 引用事件的梗候选。
+    pending_citations: list[RetrievedChunk] = field(default_factory=list)
 
 
 def _fallback_text(state: _StreamState) -> str:
@@ -215,9 +219,61 @@ def _chunk_text(text: str, size: int) -> list[str]:
 
 
 async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
-    """逐条转发 AI 搜索生成的 SSE 事件。"""
-    async for event in _stream_ai_search(request):
-        yield event
+    """以请求级 LangSmith 父 trace 包裹整个 RAG 流程并转发 SSE。"""
+    settings = get_settings()
+    apply_langsmith_env(settings)
+    safe_query = sanitize_user_text(request.query, max_len=2000)
+    locale = sanitize_user_text(request.context.locale or "zh-CN", max_len=32)
+    event_counts: dict[str, int] = {}
+    with trace(
+        name="meme_rag_request",
+        run_type="chain",
+        inputs={
+            "question": {"query": safe_query},
+            "locale": {"locale": locale},
+        },
+        project_name=settings.langchain_project,
+        tags=["meme-rag", f"prompt:{PROMPT_VERSION}"],
+        metadata={
+            "request_id": request.request_id,
+            "session_id": request.session_id,
+            "prompt_version": PROMPT_VERSION,
+        },
+    ) as request_trace:
+        async for event in _stream_ai_search(request):
+            event_name = event.partition("\n")[0].removeprefix("event: ").strip()
+            event_counts[event_name] = event_counts.get(event_name, 0) + 1
+            yield event
+        request_trace.end(outputs={"event_counts": event_counts})
+
+
+async def _trace_query_rewrite(
+    query: str,
+    history_messages: list,
+    settings: Settings,
+    *,
+    request_id: str,
+) -> str | None:
+    """将按需查询改写标记成命名 trace 子节点。"""
+    with trace(
+        name="query_rewrite",
+        run_type="chain",
+        inputs={"query": query, "history_message_count": len(history_messages)},
+        metadata={"request_id": request_id, "stage": "query_rewrite"},
+    ) as rewrite_trace:
+        rewritten_query = await rewrite_retrieval_query(
+            query,
+            history_messages,
+            settings,
+            request_id=request_id,
+        )
+        rewrite_trace.end(
+            outputs={
+                "rewritten": rewritten_query is not None,
+                "query": rewritten_query,
+            }
+        )
+    return rewritten_query
 
 
 async def _stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
@@ -345,7 +401,7 @@ async def _stream_ai_search_body(
     rewrite_attempted = False
     if history_messages and should_attempt_contextual_rewrite(safe_query):
         rewrite_attempted = True
-        rewritten_query = await rewrite_retrieval_query(
+        rewritten_query = await _trace_query_rewrite(
             safe_query,
             history_messages,
             settings,
@@ -441,7 +497,7 @@ async def _stream_ai_search_body(
         and not state.knowledge_retrieved
     ):
         rewrite_attempted = True
-        rewritten_query = await rewrite_retrieval_query(
+        rewritten_query = await _trace_query_rewrite(
             safe_query,
             history_messages,
             settings,
@@ -551,6 +607,7 @@ async def _stream_ai_search_body(
         initial_chunks=state.retrieved,
         retrieval_unavailable=state.retrieval_status == "degraded",
         request_id=request.request_id,
+        on_retrieval=state.pending_citations.extend,
     )
     knowledge_tool = build_search_admin_knowledge_tool(
         default_top_k=settings.retrieval_top_k,
@@ -567,27 +624,14 @@ async def _stream_ai_search_body(
     active_model_runs: set[str] = set()
     tool_call_runs: set[str] = set()
 
-    agent_input = build_user_payload(
+    locale = sanitize_user_text(request.context.locale or "zh-CN", max_len=32)
+    agent_input = build_agent_prompt_inputs(
         safe_query,
-        {
-            "locale": sanitize_user_text(request.context.locale or "zh-CN", max_len=32),
-            "retrieval_context": {
-                "sources": [
-                    json.loads(
-                        chunks_to_tool_payload(
-                            state.retrieved,
-                            unavailable=state.retrieval_status == "degraded",
-                        )
-                    ),
-                    json.loads(
-                        admin_knowledge_chunks_to_tool_payload(
-                            state.knowledge_retrieved,
-                            unavailable=state.knowledge_retrieval_status == "degraded",
-                        )
-                    ),
-                ]
-            },
-        },
+        locale,
+        state.retrieved,
+        state.knowledge_retrieved,
+        meme_unavailable=state.retrieval_status == "degraded",
+        admin_unavailable=state.knowledge_retrieval_status == "degraded",
     )
 
     generation_started_at = time.monotonic()
@@ -607,17 +651,22 @@ async def _stream_ai_search_body(
     try:
         async for event in executor.astream_events(
             {
-                "input": agent_input,
+                **agent_input,
                 "chat_history": history_messages,
             },
             version="v2",
             config={
+                "run_name": "agent_generation",
                 "metadata": {
                     "request_id": request.request_id,
                     "session_id": request.session_id,
                     "prompt_version": PROMPT_VERSION,
                 },
-                "tags": ["meme-search-agent", f"prompt:{PROMPT_VERSION}"],
+                "tags": [
+                    "meme-search-agent",
+                    "agent-generation",
+                    f"prompt:{PROMPT_VERSION}",
+                ],
             },
         ):
             kind = event.get("event")
@@ -643,9 +692,9 @@ async def _stream_ai_search_body(
                     tool_name,
                     int((time.monotonic() - tool_started_at) * 1000),
                 )
-                output = event.get("data", {}).get("output")
-                raw = output if isinstance(output, str) else getattr(output, "content", "")
-                for chunk in parse_tool_payload(str(raw or "")):
+                pending_citations = list(state.pending_citations)
+                state.pending_citations.clear()
+                for chunk in pending_citations:
                     if chunk.meme_id in state.emitted_citations:
                         continue
                     state.emitted_citations.add(chunk.meme_id)

@@ -87,10 +87,11 @@ async def delete_by_meme_ids(meme_ids: list[str]) -> int:
     return deleted_count
 
 
-async def similarity_search(query: str, top_k: int) -> list[RetrievedChunk]:
+async def similarity_search(query: str, candidate_limit: int) -> list[RetrievedChunk]:
+    """返回指定上限的原始向量 chunk，不执行业务去重或相似度过滤。"""
+    if candidate_limit < 1:
+        raise ValueError("梗库检索候选上限必须大于 0")
     query_embedding = await embed_text(query)
-    # 简介最多拆成六个片段；多取片段后由候选排序按 meme_id 去重。
-    candidate_limit = max(1, top_k) * MAX_CHUNKS_PER_MEME
     pool = get_pool()
     acquire_timeout = get_settings().vector_pool_acquire_timeout_seconds
     async with pool.acquire(timeout=acquire_timeout) as conn:

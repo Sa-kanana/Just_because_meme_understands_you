@@ -304,7 +304,7 @@ async def test_embedding_dimension_mismatch_is_rejected_before_database_write(mo
 
 
 @pytest.mark.asyncio
-async def test_retrieval_excludes_non_ready_docs_and_fails_closed_without_calibrated_threshold(monkeypatch):
+async def test_similarity_search_knowledge_returns_unfiltered_bounded_candidates(monkeypatch):
     connection = _Connection(
         [None],
         rows=[
@@ -320,6 +320,10 @@ async def test_retrieval_excludes_non_ready_docs_and_fails_closed_without_calibr
                 "rank_score": 0.0321,
                 "vector_rank_score": 0.0161,
                 "lexical_rank_score": 0.0160,
+                "vector_rank": 1,
+                "lexical_rank": 1,
+                "chunk_index": 3,
+                "candidate_sources": ["vector", "lexical"],
             }
         ],
     )
@@ -335,21 +339,24 @@ async def test_retrieval_excludes_non_ready_docs_and_fails_closed_without_calibr
 
     monkeypatch.setattr(repository, "embed_text", embed_query)
 
-    results = await repository.similarity_search_knowledge("FAQ", 5, min_similarity=None)
+    results = await repository.similarity_search_knowledge("FAQ", candidate_limit=23)
 
     assert len(results) == 1
     assert results[0].exact_match is True
     assert results[0].content_match is False
     assert results[0].rank_score == 0.0321
+    assert results[0].vector_rank == 1
+    assert results[0].lexical_rank == 1
+    assert results[0].chunk_index == 3
     assert "JOIN knowledge_doc_state AS state" in connection.fetch_query
     assert "state.status = 'READY'" in connection.fetch_query
-    assert "$4::float IS NOT NULL" in connection.fetch_query
+    assert "$4" in connection.fetch_query
+    assert "$4::float IS NOT NULL" not in connection.fetch_query
     assert "vector_candidates" in connection.fetch_query
     assert "lexical_candidates" in connection.fetch_query
     assert "ready_chunks AS NOT MATERIALIZED" in connection.fetch_query
-    assert "rank_score" in connection.fetch_query
     assert "lower(chunk.content) LIKE" in connection.fetch_query
-    assert "PARTITION BY doc_id," in connection.fetch_query
-    assert "section_rank = 1" in connection.fetch_query
-    assert connection.fetch_args[3] is None
-    assert connection.fetch_args[4] == "faq"
+    assert "section_rank" not in connection.fetch_query
+    assert "LIMIT $2" not in connection.fetch_query
+    assert connection.fetch_args[3] == 23
+    assert connection.fetch_args[2] == "faq"

@@ -12,10 +12,11 @@ from typing import Any
 
 from app.agents.search_agent import stream_ai_search
 from app.agents.query_intent import greeting_reply
-from app.agents.tools import rank_vector_candidates, retrieve_meme_chunks
+from app.agents.tools import retrieve_meme_chunks
 from app.core.settings import get_settings
 from app.retrieval.db import close_pool, create_pool
-from app.retrieval.repository import similarity_search
+from app.retrieval.repository import MAX_CHUNKS_PER_MEME, similarity_search
+from app.retrieval.score_filter import rank_meme_candidates
 from app.schemas.stream import StreamRequest
 
 DEFAULT_DATASET = Path(__file__).with_name("golden_queries.json")
@@ -381,8 +382,9 @@ async def evaluate_dataset(
                             }
                         )
                 elif calibrate_threshold:
-                    raw_chunks = await similarity_search(query, max(TOP_KS))
-                    ranked_chunks = rank_vector_candidates(
+                    candidate_limit = max(20, max(TOP_KS) * MAX_CHUNKS_PER_MEME)
+                    raw_chunks = await similarity_search(query, candidate_limit)
+                    ranked_chunks = rank_meme_candidates(
                         query,
                         raw_chunks,
                         min_similarity=-1.0,

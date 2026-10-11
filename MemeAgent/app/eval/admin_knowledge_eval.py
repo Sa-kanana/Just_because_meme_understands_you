@@ -12,37 +12,74 @@ from typing import Any
 
 from app.core.settings import get_settings
 from app.retrieval.db import close_pool, create_pool
-from app.retrieval.knowledge_repository import similarity_search_knowledge
+from app.retrieval.knowledge_repository import RetrievedKnowledgeChunk, similarity_search_knowledge
+from app.retrieval.score_filter import rank_admin_knowledge_candidates
 
 
 def _rank_candidates(
     candidates: list[dict[str, Any]], threshold: float
 ) -> list[dict[str, Any]]:
-    """按线上精确词项优先级与阈值后 RRF 分数恢复候选排序。"""
-    eligible = [
-        candidate
-        for candidate in candidates
-        if candidate.get("exact_match")
-        or candidate.get("content_match")
-        or float(candidate.get("score") or 0) >= threshold
-    ]
-
-    def sort_key(candidate: dict[str, Any]) -> tuple[bool, bool, float, float]:
+    """适配旧评估字典并复用线上过滤、RRF 重排和章节去重。"""
+    documents: list[RetrievedKnowledgeChunk] = []
+    original_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for index, candidate in enumerate(candidates):
         score = float(candidate.get("score") or 0)
-        vector_part = float(candidate.get("vector_rank_score") or 0)
-        lexical_part = float(candidate.get("lexical_rank_score") or 0)
-        if vector_part or lexical_part:
-            fused_score = lexical_part + (vector_part if score >= threshold else 0.0)
-        else:
-            fused_score = float(candidate.get("rank_score") or score)
-        return (
-            not bool(candidate.get("exact_match")),
-            not bool(candidate.get("content_match")),
-            -fused_score,
-            -score,
+        doc_id = str(candidate.get("doc_id") or "")
+        section_path = str(candidate.get("section_path") or "")
+        page_number = candidate.get("page_number")
+        chunk_index = int(candidate.get("chunk_index") or index)
+        document = RetrievedKnowledgeChunk(
+            doc_id=doc_id,
+            content=str(candidate.get("content") or ""),
+            score=score,
+            title=candidate.get("title"),
+            section_path=section_path,
+            page_number=page_number,
+            exact_match=bool(candidate.get("exact_match")),
+            content_match=bool(candidate.get("content_match")),
+            rank_score=float(candidate.get("rank_score") or 0),
+            vector_rank_score=float(candidate.get("vector_rank_score") or 0),
+            lexical_rank_score=float(candidate.get("lexical_rank_score") or 0),
+            vector_rank=(
+                int(candidate["vector_rank"])
+                if candidate.get("vector_rank") is not None
+                else None
+            ),
+            lexical_rank=(
+                int(candidate["lexical_rank"])
+                if candidate.get("lexical_rank") is not None
+                else None
+            ),
+            chunk_index=chunk_index,
+            candidate_sources=tuple(candidate.get("candidate_sources") or ()),
         )
+        documents.append(document)
+        key = (
+            doc_id,
+            section_path,
+            page_number,
+            chunk_index,
+            score,
+            document.exact_match,
+            document.content_match,
+        )
+        original_by_key[key] = candidate
 
-    return sorted(eligible, key=sort_key)
+    ordered = rank_admin_knowledge_candidates(documents, threshold, top_k=None)
+    return [
+        original_by_key[
+            (
+                item.doc_id,
+                item.section_path,
+                item.page_number,
+                item.chunk_index,
+                item.score,
+                item.exact_match,
+                item.content_match,
+            )
+        ]
+        for item in ordered
+    ]
 
 
 def calibrate_admin_knowledge_threshold(cases: list[dict[str, Any]]) -> dict[str, Any]:
@@ -59,7 +96,7 @@ def calibrate_admin_knowledge_threshold(cases: list[dict[str, Any]]) -> dict[str
             raise ValueError("问题不能同时标注相关文档和 expected_empty")
         if not expected and not expected_empty:
             continue
-        candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        candidates: list[dict[str, Any]] = []
         for candidate in case.get("candidates") or []:
             doc_id = str(candidate.get("doc_id") or "").strip()
             try:
@@ -68,35 +105,14 @@ def calibrate_admin_knowledge_threshold(cases: list[dict[str, Any]]) -> dict[str
                 continue
             if not doc_id or not math.isfinite(score):
                 continue
-            section_path = str(candidate.get("section_path") or "").strip()
-            page_number = candidate.get("page_number")
-            section_key = section_path or (f"PDF 第 {page_number} 页" if page_number else "文档")
-            candidate_key = (doc_id, section_key)
-            exact_match = bool(candidate.get("exact_match"))
-            content_match = bool(candidate.get("content_match"))
-            vector_rank_score = float(candidate.get("vector_rank_score") or 0)
-            lexical_rank_score = float(candidate.get("lexical_rank_score") or 0)
-            rank_score = float(candidate.get("rank_score") or score)
-            previous = candidates.get(candidate_key)
-            if previous is None or (exact_match, content_match, rank_score, score) > (
-                bool(previous["exact_match"]),
-                bool(previous["content_match"]),
-                float(previous["rank_score"]),
-                float(previous["score"]),
-            ):
-                candidates[candidate_key] = {
-                    "doc_id": doc_id,
-                    "score": score,
-                    "exact_match": exact_match,
-                    "content_match": content_match,
-                    "rank_score": rank_score,
-                    "vector_rank_score": vector_rank_score,
-                    "lexical_rank_score": lexical_rank_score,
-                }
-        observed_scores.update(float(candidate["score"]) for candidate in candidates.values())
+            normalized_candidate = dict(candidate)
+            normalized_candidate["doc_id"] = doc_id
+            normalized_candidate["score"] = score
+            candidates.append(normalized_candidate)
+        observed_scores.update(float(candidate["score"]) for candidate in candidates)
         positive_count += len(expected)
         # 中文注释：top_k 控制每个查询最终计入的文档数量。
-        prepared.append((expected, list(candidates.items()), max(1, int(case.get("top_k") or 5))))
+        prepared.append((expected, candidates, max(1, int(case.get("top_k") or 5))))
 
     if positive_count == 0:
         raise ValueError("校准至少需要一个带 expected_doc_ids 的正例")
@@ -109,7 +125,7 @@ def calibrate_admin_knowledge_threshold(cases: list[dict[str, Any]]) -> dict[str
     for threshold in thresholds:
         true_positive = false_positive = false_negative = predicted = 0
         for expected, candidates, top_k in prepared:
-            ordered = _rank_candidates([candidate for _key, candidate in candidates], threshold)
+            ordered = _rank_candidates(candidates, threshold)
             selected_sections = ordered[:top_k]
             # 中文注释：线上 top_k 按文档/章节合并后的片段数计算；评估指标按唯一文档计算。
             selected = {str(candidate["doc_id"]) for candidate in selected_sections}
@@ -144,7 +160,7 @@ def calibrate_admin_knowledge_threshold(cases: list[dict[str, Any]]) -> dict[str
 
 
 def _ranking_metrics(
-    prepared: list[tuple[set[str], list[tuple[tuple[str, str], dict[str, Any]]], int]],
+    prepared: list[tuple[set[str], list[dict[str, Any]], int]],
     threshold: float,
 ) -> dict[str, Any]:
     """计算带相关问题的 P@K、R@K、MRR 与无结果问题准确率。"""
@@ -153,7 +169,7 @@ def _ranking_metrics(
     reciprocal_ranks: list[float] = []
     empty_correct = empty_total = 0
     for expected, candidates, top_k in prepared:
-        ordered = _rank_candidates([candidate for _key, candidate in candidates], threshold)
+        ordered = _rank_candidates(candidates, threshold)
         selected = ordered[:top_k]
         ranked_doc_ids = list(dict.fromkeys(str(item.get("doc_id") or "") for item in selected))
         if expected:
@@ -190,7 +206,7 @@ async def evaluate_admin_knowledge_dataset(dataset_path: Path) -> dict[str, Any]
             query = str(case["query"]).strip()
             started_at = time.monotonic()
             # 中文注释：-1 仅用于评估阶段收集未按门槛裁剪的向量候选。
-            hits = await similarity_search_knowledge(query, 100, -1.0)
+            hits = await similarity_search_knowledge(query, candidate_limit=100)
             evaluated.append(
                 {
                     "query": query,
@@ -205,6 +221,10 @@ async def evaluate_admin_knowledge_dataset(dataset_path: Path) -> dict[str, Any]
                             "rank_score": hit.rank_score,
                             "vector_rank_score": hit.vector_rank_score,
                             "lexical_rank_score": hit.lexical_rank_score,
+                            "vector_rank": getattr(hit, "vector_rank", None),
+                            "lexical_rank": getattr(hit, "lexical_rank", None),
+                            "chunk_index": getattr(hit, "chunk_index", 0),
+                            "candidate_sources": list(getattr(hit, "candidate_sources", ())),
                             "exact_match": hit.exact_match,
                             "content_match": hit.content_match,
                             "title": hit.title,
