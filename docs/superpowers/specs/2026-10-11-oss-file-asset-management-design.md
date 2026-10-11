@@ -25,12 +25,13 @@
 2. `file_asset_ref`：保存资产到业务字段的引用，字段包含资产 ID、业务类型、业务 ID、字段键和创建时间。`field_key` 用于区分封面、头像、评论图片、资源行和审核稿中的不同位置；唯一约束保证同一个业务字段只有一个当前资源，资产 ID 有外键。
 3. `file_delete_task`：作为事务内删除队列，记录资产 ID、objectKey 快照、任务状态、重试次数、下次执行时间、租约时间、完成时间和最近错误；状态包含 `WAITING`、`PROCESSING`、`DONE`、`CANCELED`、`FAILED`。
 4. `file_orphan_candidate`：保存 OSS 对账发现的未登记对象、首次与最近发现时间、复查状态、删除时间及最近检查结果。
+5. `file_asset_backfill_state`：用迁移名和完成状态保护一次性历史数据回填，避免多实例启动时重复扫描。
 
-迁移将现有自有 OSS key 从 `user.avatar`、`meme.image`、`meme_resource.resource_url`、`meme_comment_images.url`、`home_image.img_url` 回填为资产及引用；待审核 `meme_edit_revision.content_json` 中的自有封面和媒体地址也回填为 `MEME_REVISION` 引用。相同 objectKey 只创建一条资产记录。外部 URL、无法归属当前 Bucket 的 URL 和系统保护资源不创建可删除资产。已有业务图片字段不改写。
+Flyway 负责建表；紧随迁移运行的幂等回填器使用 `OssUrlHelper` 按当前 Bucket/CDN 域名归一化历史 URL，再把现有自有 OSS key 从 `user.avatar`、`meme.image`、`meme_resource.resource_url`、`meme_comment_images.url`、`home_image.img_url` 写入资产及引用；待审核 `meme_edit_revision.content_json` 中的自有封面和媒体地址也写入 `MEME_REVISION` 引用。回填状态逐批提交，完成后记录 checkpoint；失败可重试且不会重复创建引用。相同 objectKey 只创建一条资产记录。外部 URL、无法归属当前 Bucket 的 URL 和系统保护资源不创建可删除资产。已有业务图片字段不改写。
 
 ## 上传、确认与业务绑定
 
-将上传凭证签发改为上传票据流程：
+将上传凭证签发改为上传票据流程，接口为 `POST /v1/uploads/tickets` 和 `POST /v1/uploads/{assetId}/confirm`：
 
 1. 用户或管理员提交场景、原始文件名、声明 MIME 和文件大小；服务端校验身份、场景权限、白名单扩展名/MIME、大小上限，并生成唯一的 `tmp/{scene}/{userId}/{date}/{uuid}.{ext}` objectKey。
 2. 服务端在同一流程创建 `TEMP` 资产并签发仅允许该 key、声明 MIME 和大小范围的短时 PostObject policy。客户端仍直传 OSS。
