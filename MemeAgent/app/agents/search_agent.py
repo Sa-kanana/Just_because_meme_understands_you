@@ -229,8 +229,8 @@ async def stream_ai_search(request: StreamRequest) -> AsyncIterator[str]:
         name="meme_rag_request",
         run_type="chain",
         inputs={
-            "question": {"query": safe_query},
-            "locale": {"locale": locale},
+            "question": safe_query,
+            "locale": locale,
         },
         project_name=settings.langchain_project,
         tags=["meme-rag", f"prompt:{PROMPT_VERSION}"],

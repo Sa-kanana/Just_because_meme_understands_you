@@ -848,6 +848,33 @@ async def test_agent_stream_logs_rag_stages_without_logging_user_content(monkeyp
     assert query not in messages
 
 
+async def test_request_trace_keeps_question_and_locale_as_native_strings(monkeypatch):
+    captured = {}
+
+    class TraceContext:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def __enter__(self):
+            return SimpleNamespace(end=lambda **_kwargs: None)
+
+        def __exit__(self, *_args):
+            return False
+
+    async def no_meme_hits(**_kwargs):
+        return []
+
+    monkeypatch.setattr(search_agent, "trace", lambda **kwargs: TraceContext(**kwargs))
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", no_meme_hits)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: None)
+
+    events = [event async for event in search_agent.stream_ai_search(_request())]
+
+    assert _decode_sse(events)[-1][0] == "done"
+    assert captured["inputs"] == {"question": "只因是什么梗", "locale": "zh-CN"}
+
+
 async def test_agent_stream_logs_tool_boundaries_without_tool_payload(monkeypatch, caplog):
     async def retrieval(**_kwargs):
         return []

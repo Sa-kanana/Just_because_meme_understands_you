@@ -65,6 +65,18 @@ def test_admin_knowledge_fusion_rank_uses_exact_and_content_matches_before_rrf()
     assert [candidate["doc_id"] for candidate in ordered] == ["title", "content", "semantic"]
 
 
+def test_admin_eval_preserves_zero_chunk_index_when_adapting_candidates():
+    ordered = admin_knowledge_eval._rank_candidates(
+        [
+            {"doc_id": "z", "score": 0.8, "chunk_index": 0},
+            {"doc_id": "a", "score": 0.8, "chunk_index": 0},
+        ],
+        threshold=0.5,
+    )
+
+    assert [candidate["doc_id"] for candidate in ordered] == ["a", "z"]
+
+
 def test_rank_admin_knowledge_candidates_filters_and_reranks_before_section_dedup():
     candidates = [
         RetrievedKnowledgeChunk(
@@ -172,6 +184,24 @@ def test_rank_admin_knowledge_candidates_without_threshold_keeps_only_lexical_hi
     ranked = rank_admin_knowledge_candidates(candidates, min_similarity=None)
 
     assert [item.doc_id for item in ranked] == ["title", "phrase"]
+
+
+def test_admin_candidate_sources_are_authoritative_when_present():
+    candidate = RetrievedKnowledgeChunk(
+        doc_id="vector-hit",
+        content="正文包含查询短语",
+        score=0.8,
+        content_match=True,
+        candidate_sources=("vector",),
+        chunk_index=0,
+    )
+
+    ranked = rank_admin_knowledge_candidates([candidate], min_similarity=0.5)
+
+    assert len(ranked) == 1
+    assert ranked[0].vector_rank == 1
+    assert ranked[0].lexical_rank is None
+    assert ranked[0].rank_score == pytest.approx(1 / 61)
 
 
 @pytest.mark.asyncio

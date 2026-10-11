@@ -62,6 +62,8 @@ def _filter_trace_outputs(result: _AdminFilterResult) -> dict[str, Any]:
 def _candidate_sources(candidate: RetrievedKnowledgeChunk) -> set[str]:
     """读取候选来源，并兼容没有新增来源字段的旧评估样本。"""
     sources = set(candidate.candidate_sources or ())
+    if sources:
+        return sources
     if candidate.vector_rank is not None or candidate.vector_rank_score > 0:
         sources.add("vector")
     if (

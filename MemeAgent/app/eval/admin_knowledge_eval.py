@@ -27,7 +27,8 @@ def _rank_candidates(
         doc_id = str(candidate.get("doc_id") or "")
         section_path = str(candidate.get("section_path") or "")
         page_number = candidate.get("page_number")
-        chunk_index = int(candidate.get("chunk_index") or index)
+        chunk_index_value = candidate.get("chunk_index")
+        chunk_index = int(index if chunk_index_value is None else chunk_index_value)
         document = RetrievedKnowledgeChunk(
             doc_id=doc_id,
             content=str(candidate.get("content") or ""),

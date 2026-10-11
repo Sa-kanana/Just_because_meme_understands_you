@@ -332,25 +332,6 @@ async def retrieve_admin_knowledge_chunks(
     return chunks
 
 
-def format_admin_knowledge_tool_result(
-    chunks: list[RetrievedKnowledgeChunk], *, unavailable: bool = False
-) -> str:
-    """以可读纯文本返回管理员知识证据，不暴露内部 ID 或分数。"""
-    return _format_readable_tool_result(
-        "管理员知识库",
-        [
-            (
-                chunk.title or "未提供标题",
-                _knowledge_content_for_model(chunk.content),
-                chunk.section_path,
-                chunk.page_number,
-            )
-            for chunk in chunks
-        ],
-        unavailable=unavailable,
-    )
-
-
 def _knowledge_content_for_model(content: str) -> str:
     """移除切块正文中的重复元数据头，保留实际知识正文。"""
     normalized = (content or "").strip()
