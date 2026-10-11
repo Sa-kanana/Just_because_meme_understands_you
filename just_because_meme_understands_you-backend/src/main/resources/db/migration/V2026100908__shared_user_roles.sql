@@ -26,23 +26,30 @@ CREATE TABLE IF NOT EXISTS user_role
     CONSTRAINT fk_user_role_role FOREIGN KEY (role_id) REFERENCES `role` (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) COMMENT='用户角色关联表';
 
--- 逐项字段复制说明：来源字段 user.role 转换后写入目标字段 role.code；未知或空旧值按最低权限映射为 USER。
--- 逐项字段复制说明：来源字段 user.id 写入目标字段 user_role.user_id。
--- 逐项字段复制说明：来源字段 role.id 写入目标字段 user_role.role_id。
-INSERT IGNORE INTO user_role (user_id, role_id)
-SELECT source_user.id,
-       target_role.id
-FROM `user` AS source_user
-JOIN `role` AS target_role
-  ON target_role.code = CASE UPPER(COALESCE(source_user.role, ''))
-        WHEN 'ROLE_ADMIN' THEN 'ADMIN'
-        WHEN 'ADMIN' THEN 'ADMIN'
-        WHEN 'ROLE_SUPER_ADMIN' THEN 'SUPER_ADMIN'
-        WHEN 'SUPER_ADMIN' THEN 'SUPER_ADMIN'
-        WHEN 'ROLE_USER' THEN 'USER'
-        WHEN 'USER' THEN 'USER'
-        ELSE 'USER'
-     END;
+-- 中文说明：仅旧版 user 表确实存在 role 字段时迁移历史角色；当前完整 schema 已预置 USER 关联且没有旧字段。
+SET @user_has_legacy_role = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'user'
+      AND COLUMN_NAME = 'role'
+);
 
-ALTER TABLE `user`
-    DROP COLUMN role;
+-- 逐项字段复制说明：来源字段 user.id 写入目标字段 user_role.user_id；来源字段 user.role 映射后匹配 role.code；来源字段 role.id 写入目标字段 user_role.role_id。
+SET @user_role_migration_ddl = IF(
+    @user_has_legacy_role = 0,
+    'SELECT 1',
+    'INSERT IGNORE INTO user_role (user_id, role_id) SELECT source_user.id, target_role.id FROM `user` AS source_user JOIN `role` AS target_role ON target_role.code = CASE UPPER(source_user.role) WHEN ''ROLE_ADMIN'' THEN ''ADMIN'' WHEN ''ADMIN'' THEN ''ADMIN'' WHEN ''ROLE_SUPER_ADMIN'' THEN ''SUPER_ADMIN'' WHEN ''SUPER_ADMIN'' THEN ''SUPER_ADMIN'' WHEN ''ROLE_USER'' THEN ''USER'' WHEN ''USER'' THEN ''USER'' ELSE ''USER'' END'
+);
+PREPARE user_role_migration_stmt FROM @user_role_migration_ddl;
+EXECUTE user_role_migration_stmt;
+DEALLOCATE PREPARE user_role_migration_stmt;
+
+-- 中文说明：迁移完成后仅在旧版字段存在时删除 user.role；不存在时跳过重复 DDL。
+SET @user_role_drop_ddl = IF(
+    @user_has_legacy_role = 0,
+    'SELECT 1',
+    'ALTER TABLE `user` DROP COLUMN role'
+);
+PREPARE user_role_drop_stmt FROM @user_role_drop_ddl;
+EXECUTE user_role_drop_stmt;
+DEALLOCATE PREPARE user_role_drop_stmt;
