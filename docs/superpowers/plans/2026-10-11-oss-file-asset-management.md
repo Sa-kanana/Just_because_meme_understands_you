@@ -55,11 +55,11 @@
 
 **步骤：**
 
-- [ ] 1. 先写结构契约测试，检查五张表、唯一约束、业务字段唯一约束、外键、状态/重试索引和每列中文注释。
-- [ ] 2. 在后端运行 `.\mvnw.cmd -Dtest=FileAssetSchemaContractTest test`，确认迁移资源缺失导致测试失败。
-- [ ] 3. 添加 Flyway 迁移、实体和 Mapper；遵循项目的信息架构检查写法，并在复制历史字段时逐项说明来源与目标。
-- [ ] 4. 注册迁移后运行 `.\mvnw.cmd "-Dtest=FileAssetSchemaContractTest,FlywayMigrationCatalogTest" test`，预期通过。
-- [ ] 5. 提交：`feat: add file asset lifecycle schema`。
+- [x] 1. 先写结构契约测试，检查五张表、唯一约束、业务字段唯一约束、外键、状态/重试索引和每列中文注释。
+- [x] 2. 在后端运行 `.\mvnw.cmd -Dtest=FileAssetSchemaContractTest test`，确认迁移资源缺失导致测试失败。
+- [x] 3. 添加 Flyway 迁移、实体和 Mapper；遵循项目的信息架构检查写法，并在复制历史字段时逐项说明来源与目标。
+- [x] 4. 注册迁移后运行 `.\mvnw.cmd "-Dtest=FileAssetSchemaContractTest,FlywayMigrationCatalogTest" test`，预期通过。
+- [x] 5. 提交：`feat: add file asset lifecycle schema`。
 
 ### Task 2：签发并确认安全上传票据
 

@@ -33,7 +33,8 @@ class FlywayMigrationCatalogTest {
             "V2026100908__shared_user_roles.sql",
             "V2026101001__reliable_admin_knowledge_indexing.sql",
             "V2026101002__user_soft_delete.sql",
-            "V2026101003__meme_edit_revisions.sql"
+            "V2026101003__meme_edit_revisions.sql",
+            "V2026101101__file_asset_lifecycle.sql"
     );
 
     /** 中文注释：将动态 SQL 字符串中的双单引号还原为实际执行 SQL，避免断言依赖转义写法。 */
