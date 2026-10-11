@@ -101,10 +101,10 @@
 
 **步骤：**
 
-- [ ] 1. 检查前后端依赖，没有现成 JS 单元测试框架；不为此引入测试依赖。验证方式使用现有 lint/build，并用可执行的手工流程检查票据、直传和确认顺序。
-- [ ] 2. 更新两端上传工具，移除客户端自行生成 objectKey 的逻辑；保留浏览器 MIME、扩展名和 10 MiB 校验及直传行为。
-- [ ] 3. 在两个前端目录分别运行 `npm run lint` 和 `npm run build`，预期通过。
-- [ ] 4. 提交：`feat: confirm browser OSS uploads`。
+- [x] 1. 检查前后端依赖，没有现成 JS 单元测试框架；不为此引入测试依赖。验证方式使用现有 lint/build，并用可执行的手工流程检查票据、直传和确认顺序。
+- [x] 2. 更新两端上传工具，移除客户端自行生成 objectKey 的逻辑；保留浏览器 MIME、扩展名和 10 MiB 校验及直传行为。
+- [x] 3. 在两个前端目录分别运行 `npm run lint` 和 `npm run build`，预期通过。
+- [x] 4. 提交：`feat: confirm browser OSS uploads`。
 
 ### Task 4：实现引用管理、延迟删除队列和 OSS Worker
 
