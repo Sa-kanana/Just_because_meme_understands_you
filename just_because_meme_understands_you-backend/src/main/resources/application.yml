@@ -147,6 +147,16 @@ oss:
     max-retries: ${OSS_CLEANUP_MAX_RETRIES:5}
     # Worker 领取任务后的租约时长，单位为秒。
     lease-seconds: ${OSS_CLEANUP_LEASE_SECONDS:300}
+    # 是否运行历史文件引用回填；关闭时 OSS 物理删除门禁保持关闭。
+    backfill-enabled: ${OSS_BACKFILL_ENABLED:true}
+    # 每个历史数据源每轮读取的最大记录数。
+    backfill-batch-size: ${OSS_BACKFILL_BATCH_SIZE:200}
+    # 历史数据源回填批次之间的间隔，单位为毫秒。
+    backfill-poll-interval-ms: ${OSS_BACKFILL_POLL_INTERVAL_MS:1000}
+    # 多实例共享的历史回填租约时长，单位为秒。
+    backfill-lease-seconds: ${OSS_BACKFILL_LEASE_SECONDS:300}
+    # 每日执行过期TEMP资产检查的Cron表达式。
+    temp-cleanup-cron: '${OSS_TEMP_CLEANUP_CRON:0 0 3 * * *}'
     # 多实例部署时的当前 Worker 唯一标识；默认由应用启动时生成。
     worker-id: ${OSS_CLEANUP_WORKER_ID:}
     # 未确认上传资产保留天数，超时后进入删除队列。

@@ -1,8 +1,6 @@
 package com.sakana.just_because_meme_understands_you.modules.oss.domain.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -12,10 +10,6 @@ import java.time.LocalDateTime;
 @Data
 @TableName("file_asset_backfill_state")
 public class FileAssetBackfillState {
-
-    /** 中文注释：历史资产回填状态主键。 */
-    @TableId(type = IdType.AUTO)
-    private Long id;
 
     /** 中文注释：本次历史资产回填任务的唯一名称。 */
     @TableField("backfill_key")

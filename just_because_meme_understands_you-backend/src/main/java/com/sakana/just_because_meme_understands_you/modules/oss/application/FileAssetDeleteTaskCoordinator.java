@@ -87,6 +87,56 @@ public class FileAssetDeleteTaskCoordinator {
         return tasks;
     }
 
+    /** 中文注释：过期临时资产仍有业务引用时保护并激活，否则进入可靠删除队列或记为已不存在。 */
+    @Transactional
+    public boolean expireTemporaryAsset(Long assetId, LocalDateTime cutoff, boolean objectExists) {
+        if (assetId == null || cutoff == null) {
+            return false;
+        }
+        FileAsset asset = fileAssetMapper.selectByIdForUpdate(assetId);
+        if (asset == null || !FileAssetStatus.TEMP.name().equals(asset.getStatus())
+                || asset.getCreatedAt() == null || asset.getCreatedAt().isAfter(cutoff)) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (fileAssetReferenceMapper.countByAssetId(assetId) > 0) {
+            asset.setStatus(FileAssetStatus.ACTIVE.name());
+            asset.setActivatedAt(now);
+            asset.setUpdatedAt(now);
+            fileAssetMapper.updateById(asset);
+            return false;
+        }
+        if (objectExists) {
+            asset.setStatus(FileAssetStatus.PENDING_DELETE.name());
+            asset.setDeleteAfter(now);
+            asset.setUpdatedAt(now);
+            if (fileAssetMapper.updateById(asset) != 1) {
+                throw new IllegalStateException("过期临时资产进入删除队列前更新状态失败");
+            }
+            FileAssetDeleteTask task = new FileAssetDeleteTask();
+            task.setAssetId(asset.getId());
+            task.setObjectKey(asset.getObjectKey());
+            task.setReason("TEMP_ASSET_EXPIRED");
+            task.setStatus("WAITING");
+            task.setRetryCount(0);
+            task.setNextAttemptAt(now);
+            task.setCreatedAt(now);
+            task.setUpdatedAt(now);
+            if (fileAssetDeleteTaskMapper.insert(task) != 1) {
+                throw new IllegalStateException("创建过期临时资产删除任务失败");
+            }
+            return true;
+        }
+        asset.setStatus(FileAssetStatus.DELETED.name());
+        asset.setDeletedAt(now);
+        asset.setDeleteAfter(null);
+        asset.setUpdatedAt(now);
+        if (fileAssetMapper.updateById(asset) != 1) {
+            throw new IllegalStateException("记录不存在的过期临时资产失败");
+        }
+        return true;
+    }
+
     /**
      * 中文注释：删除 OSS 对象前锁定资产并二次检查任务租约、状态、延迟时间和引用数。
      *

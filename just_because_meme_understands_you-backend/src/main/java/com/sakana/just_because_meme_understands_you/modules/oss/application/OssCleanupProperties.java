@@ -38,6 +38,18 @@ public class OssCleanupProperties {
     /** 中文注释：尚未确认的临时上传资产保留天数，过期后进入删除队列。 */
     private long tempAssetTtlDays = 3L;
 
+    /** 中文注释：是否启动历史 OSS 文件引用回填；关闭时物理删除门禁保持关闭。 */
+    private boolean backfillEnabled = true;
+
+    /** 中文注释：每个历史数据源单批读取和保存的最大记录数。 */
+    private int backfillBatchSize = 200;
+
+    /** 中文注释：历史文件引用回填批次之间的调度间隔，单位为毫秒。 */
+    private long backfillPollIntervalMs = 1000L;
+
+    /** 中文注释：历史回填全局租约有效时长，单位为秒。 */
+    private long backfillLeaseSeconds = 300L;
+
     /** 中文注释：孤儿对象至少经过该观察天数后才能进入人工复查阶段。 */
     private long orphanReviewDays = 7L;
 

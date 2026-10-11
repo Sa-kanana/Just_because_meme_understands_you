@@ -1,9 +1,7 @@
 package com.sakana.just_because_meme_understands_you.modules.oss.application;
 
 import com.aliyun.oss.OSS;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sakana.just_because_meme_understands_you.modules.oss.domain.entity.FileAsset;
-import com.sakana.just_because_meme_understands_you.modules.oss.domain.entity.FileAssetBackfillState;
 import com.sakana.just_because_meme_understands_you.modules.oss.domain.entity.FileAssetDeleteTask;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetBackfillStateMapper;
 import jakarta.annotation.Resource;
@@ -96,13 +94,11 @@ public class FileAssetDeleteWorker {
 
     /** 中文注释：没有回填状态行或仍有未完成数据源时，禁止任何物理删除。 */
     private boolean isLegacyBackfillComplete() {
-        Long stateCount = fileAssetBackfillStateMapper.selectCount(null);
-        if (stateCount == null || stateCount == 0) {
+        long stateCount = fileAssetBackfillStateMapper.countAllStates(FileAssetLegacyBackfillRunner.BACKFILL_KEY);
+        if (stateCount == 0) {
             return false;
         }
-        Long incompleteCount = fileAssetBackfillStateMapper.selectCount(
-                new QueryWrapper<FileAssetBackfillState>().ne("status", "COMPLETED"));
-        return incompleteCount != null && incompleteCount == 0;
+        return fileAssetBackfillStateMapper.countIncompleteStates(FileAssetLegacyBackfillRunner.BACKFILL_KEY) == 0;
     }
 
     /** 中文注释：只允许白名单业务前缀，并拦截外链、反斜杠、控制字符和路径穿越。 */

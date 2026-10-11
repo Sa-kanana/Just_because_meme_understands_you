@@ -43,9 +43,11 @@ class FileAssetDeleteWorkerTest {
         AtomicInteger claimCalls = new AtomicInteger();
         Object coordinator = coordinator(List.of(), null, new AtomicInteger(), new AtomicInteger(), claimCalls);
         FileAssetBackfillStateMapper backfillMapper = mock(FileAssetBackfillStateMapper.class,
-                invocation -> invocation.getMethod().getName().equals("selectCount")
-                        ? (invocation.getArgument(0) == null ? 0L : 0L)
-                        : Answers.RETURNS_DEFAULTS.answer(invocation));
+                invocation -> switch (invocation.getMethod().getName()) {
+                    case "countAllStates" -> 7L;
+                    case "countIncompleteStates" -> 1L;
+                    default -> Answers.RETURNS_DEFAULTS.answer(invocation);
+                });
         OSS oss = mock(OSS.class);
         Object worker = createWorker(coordinator, backfillMapper, oss);
 
@@ -250,10 +252,11 @@ class FileAssetDeleteWorkerTest {
 
     private FileAssetBackfillStateMapper completedBackfillMapper() {
         return mock(FileAssetBackfillStateMapper.class, invocation -> {
-            if (!invocation.getMethod().getName().equals("selectCount")) {
-                return Answers.RETURNS_DEFAULTS.answer(invocation);
-            }
-            return invocation.getArgument(0) == null ? 1L : 0L;
+            return switch (invocation.getMethod().getName()) {
+                case "countAllStates" -> 7L;
+                case "countIncompleteStates" -> 0L;
+                default -> Answers.RETURNS_DEFAULTS.answer(invocation);
+            };
         });
     }
 
