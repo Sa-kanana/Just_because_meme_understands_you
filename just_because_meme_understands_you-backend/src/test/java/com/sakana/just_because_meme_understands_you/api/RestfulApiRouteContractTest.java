@@ -10,6 +10,7 @@ import com.sakana.just_because_meme_understands_you.api.user.controller.MemeCont
 import com.sakana.just_because_meme_understands_you.api.user.controller.MemeCommentLikeController;
 import com.sakana.just_because_meme_understands_you.api.user.controller.MemeFavoriteController;
 import com.sakana.just_because_meme_understands_you.api.user.controller.NotificationController;
+import com.sakana.just_because_meme_understands_you.api.user.controller.OssController;
 import com.sakana.just_because_meme_understands_you.api.user.controller.UserFollowController;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -67,6 +68,13 @@ class RestfulApiRouteContractTest {
         assertRoute(AiSearchController.class, "GET", "/v1/ai/searches/current");
         assertRoute(AiSearchController.class, "GET", "/v1/ai/searches/{taskId}/events");
         assertRoute(AiSearchController.class, "POST", "/v1/ai/searches/{taskId}/cancel");
+    }
+
+    @Test
+    void uploadsRequireARegisteredTicketAndExplicitConfirmation() {
+        assertRoute(OssController.class, "POST", "/v1/uploads/tickets");
+        assertRoute(OssController.class, "POST", "/v1/uploads/{assetId}/confirm");
+        assertRouteAbsent(OssController.class, "GET", "/v1/uploads/policies");
     }
 
     @Test

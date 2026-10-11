@@ -80,11 +80,11 @@
 
 **步骤：**
 
-- [ ] 1. 先为合法图片、非法 MIME/扩展名、超过 10 MiB、未授权首页场景、所有者不匹配、OSS 对象缺失、元数据不匹配和重复确认编写测试。
-- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=OssUploadTicketServiceTest,RestfulApiRouteContractTest" test`，确认新流程尚未实现时失败。
-- [ ] 3. 实现服务端 UUID key：`tmp/{scene}/{userId}/{yyyyMMdd}/{uuid}.{ext}`；仅允许精确 key、声明 MIME 和大小范围；签名有效期 60 秒，文件上限 10 MiB。
-- [ ] 4. 运行聚焦测试，确认路由、权限和校验通过。
-- [ ] 5. 提交：`feat: issue tracked OSS upload tickets`。
+- [x] 1. 先为合法图片、非法 MIME/扩展名、超过 10 MiB、未授权首页场景、所有者不匹配、OSS 对象缺失、元数据不匹配和重复确认编写测试。
+- [x] 2. 运行 `.\mvnw.cmd "-Dtest=OssUploadTicketServiceTest,RestfulApiRouteContractTest" test`，确认新流程尚未实现时失败。
+- [x] 3. 实现服务端 UUID key：`tmp/{scene}/{userId}/{yyyyMMdd}/{uuid}.{ext}`；仅允许精确 key、声明 MIME 和大小范围；签名有效期 60 秒，文件上限 10 MiB。
+- [x] 4. 运行聚焦测试，确认路由、权限和校验通过。
+- [x] 5. 提交：`feat: issue tracked OSS upload tickets`。
 
 ### Task 3：更新用户端和管理端直传工具
 
