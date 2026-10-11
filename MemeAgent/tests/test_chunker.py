@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from langchain_openai import ChatOpenAI
 
 from app.core.settings import apply_langsmith_env, get_settings
@@ -41,6 +42,9 @@ def test_long_document_chunks_repeat_title_and_tags_for_vector_retrieval():
 
 def test_openai():
     settings = get_settings()
+    if not settings.openai_api_key:
+        pytest.skip("需要 OPENAI_API_KEY 才能运行真实 OpenAI 调用")
+
     apply_langsmith_env(settings)
 
     llm = ChatOpenAI(
