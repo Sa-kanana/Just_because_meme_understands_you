@@ -10,6 +10,14 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface FileAssetMapper extends BaseMapper<FileAsset> {
 
+    /** 中文注释：按主键锁定资产，保证状态变更与引用增删串行化。 */
+    @Select("SELECT * FROM file_asset WHERE id = #{assetId} FOR UPDATE")
+    FileAsset selectByIdForUpdate(@Param("assetId") Long assetId);
+
+    /** 中文注释：按对象键查询资产ID，后续按主键顺序加锁以减少死锁风险。 */
+    @Select("SELECT * FROM file_asset WHERE object_key = #{objectKey}")
+    FileAsset selectByObjectKey(@Param("objectKey") String objectKey);
+
     /** 中文注释：在当前事务中按对象键锁定资产，串行化引用替换和删除状态变更。 */
     @Select("SELECT * FROM file_asset WHERE object_key = #{objectKey} FOR UPDATE")
     FileAsset selectByObjectKeyForUpdate(@Param("objectKey") String objectKey);

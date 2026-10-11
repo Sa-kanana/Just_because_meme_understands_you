@@ -133,6 +133,40 @@ oss:
   publicBaseUrl: ${OSS_PUBLIC_BASE_URL:}
   # 申请上传凭证限流：每用户每 IP 每分钟次数
   policy-rate-limit-per-minute: ${OSS_POLICY_RATE_LIMIT_PER_MINUTE:10}
+  # ---------- 文件资产清理 ----------
+  cleanup:
+    # 是否启用 OSS 延迟清理定时任务。
+    enabled: ${OSS_CLEANUP_ENABLED:true}
+    # 每轮最多领取的 OSS 删除任务数。
+    batch-size: ${OSS_CLEANUP_BATCH_SIZE:100}
+    # Worker 两轮轮询之间的间隔，单位为毫秒。
+    poll-interval-ms: ${OSS_CLEANUP_POLL_INTERVAL_MS:60000}
+    # 最后一个业务引用释放后等待删除的天数。
+    deletion-delay-days: ${OSS_CLEANUP_DELETION_DELAY_DAYS:2}
+    # 单个对象最多安排的 OSS 删除重试次数。
+    max-retries: ${OSS_CLEANUP_MAX_RETRIES:5}
+    # Worker 领取任务后的租约时长，单位为秒。
+    lease-seconds: ${OSS_CLEANUP_LEASE_SECONDS:300}
+    # 多实例部署时的当前 Worker 唯一标识；默认由应用启动时生成。
+    worker-id: ${OSS_CLEANUP_WORKER_ID:}
+    # 未确认上传资产保留天数，超时后进入删除队列。
+    temp-asset-ttl-days: ${OSS_TEMP_ASSET_TTL_DAYS:3}
+    # 孤儿对象进入复查阶段前要求的最短观察天数。
+    orphan-review-days: ${OSS_ORPHAN_REVIEW_DAYS:7}
+    # 孤儿对账默认仅登记候选，不创建物理删除任务。
+    reconcile-dry-run: ${OSS_RECONCILE_DRY_RUN:true}
+    # Worker 可以删除的业务对象前缀白名单。
+    allowed-prefixes:
+      - tmp/ # 直传产生的临时文件。
+      - avatar/ # 用户头像。
+      - memes/ # 梗图及其媒体。
+      - comments/ # 评论图片。
+      - home/ # 首页运营图片。
+      - common/ # 项目公共图片。
+    # 无论其他配置如何都禁止删除的系统对象前缀。
+    protected-prefixes:
+      - system/ # 系统级静态资源。
+      - homepage/static/ # 首页静态资源。
 
 # ---------- JWT ----------
 jwt:

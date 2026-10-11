@@ -124,12 +124,12 @@
 
 **步骤：**
 
-- [ ] 1. 先写测试覆盖临时资产所有者/确认校验、共享资产、同字段替换、最后引用延迟入队、待删除资产重绑并取消任务、回填未完成时阻止物理删除、非法/保护 key、dry-run、成功删除、重复领取和重试间隔/上限。
-- [ ] 2. 运行 `.\mvnw.cmd "-Dtest=FileAssetServiceTest,FileAssetDeleteWorkerTest" test`，确认核心实现缺失时失败。
-- [ ] 3. 实现事务内引用变更及有租约、有界的数据库 Worker。OSS 网络调用放在领取事务之外；外部删除前将资产置为 `DELETING`，阻止并发重新绑定。历史回填未完成时暂停 Worker 的 OSS 删除；删除失败且仍可重试时，将资产恢复为 `PENDING_DELETE` 并按退避时间重新排队。
-- [ ] 4. 保留安全的 promote/copy；在后续业务迁移完成后移除 `OssObjectPromoteService` 中的直接删除入口。
-- [ ] 5. 运行聚焦测试，确认共享/保护对象不被删除且重试有上限。
-- [ ] 6. 提交：`feat: queue safe OSS asset deletion`。
+- [x] 1. 先写测试覆盖临时资产所有者/确认校验、共享资产、同字段替换、最后引用延迟入队、待删除资产重绑并取消任务、回填未完成时阻止物理删除、非法/保护 key、dry-run、成功删除、重复领取和重试间隔/上限。
+- [x] 2. 运行 `.\mvnw.cmd "-Dtest=FileAssetServiceTest,FileAssetDeleteWorkerTest" test`，确认核心实现缺失时失败。
+- [x] 3. 实现事务内引用变更及有租约、有界的数据库 Worker。OSS 网络调用放在领取事务之外；外部删除前将资产置为 `DELETING`，阻止并发重新绑定。历史回填未完成时暂停 Worker 的 OSS 删除；删除失败且仍可重试时，将资产恢复为 `PENDING_DELETE` 并按退避时间重新排队。
+- [x] 4. 保留安全的 promote/copy；在后续业务迁移完成后移除 `OssObjectPromoteService` 中的直接删除入口。
+- [x] 5. 运行聚焦测试，确认共享/保护对象不被删除且重试有上限。
+- [x] 6. 提交：`feat: queue safe OSS asset deletion`。
 
 ### Task 5：回填历史资产并清理过期临时文件
 

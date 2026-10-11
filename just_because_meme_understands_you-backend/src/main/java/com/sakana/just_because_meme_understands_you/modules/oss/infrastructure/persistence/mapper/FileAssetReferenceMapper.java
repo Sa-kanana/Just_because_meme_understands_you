@@ -22,4 +22,12 @@ public interface FileAssetReferenceMapper extends BaseMapper<FileAssetReference>
             @Param("bizType") String bizType,
             @Param("bizId") Long bizId,
             @Param("fieldKey") String fieldKey);
+
+    /** 中文注释：锁定目标业务字段已有引用，避免并发替换时丢失更新。 */
+    @Select("SELECT * FROM file_asset_ref WHERE biz_type = #{bizType} AND biz_id = #{bizId} "
+            + "AND field_key = #{fieldKey} FOR UPDATE")
+    List<FileAssetReference> selectByBusinessFieldForUpdate(
+            @Param("bizType") String bizType,
+            @Param("bizId") Long bizId,
+            @Param("fieldKey") String fieldKey);
 }

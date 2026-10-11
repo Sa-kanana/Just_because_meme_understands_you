@@ -33,6 +33,10 @@ public class OssObjectPromoteService {
     public static final String TMP_MEMES = "tmp/memes/";
     public static final String TMP_COMMENTS = "tmp/comments/";
     public static final String TMP_HOME = "tmp/home/";
+    /** 中文注释：上传票据新格式中梗图场景使用的单数临时目录。 */
+    public static final String TMP_MEME = "tmp/meme/";
+    /** 中文注释：上传票据新格式中评论图片场景使用的单数临时目录。 */
+    public static final String TMP_COMMENT = "tmp/comment/";
 
     private static final DateTimeFormatter DATE_DIR = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -63,7 +67,7 @@ public class OssObjectPromoteService {
             return key;
         }
         //校验objectkey是否属于tmp/avatar目录
-        assertTmpOwnedByUser(key, TMP_AVATAR, userId);
+        assertTmpOwnedByUser(key, userId, TMP_AVATAR);
         String dest = permanentPrefix + fileNameOf(key);
         //复制objectkey到正式前缀目录
         return copyAndScheduleDeleteTmp(key, dest, permanentPrefix);
@@ -80,7 +84,7 @@ public class OssObjectPromoteService {
             ossUrlHelper.assertOwnedImageKey(key, "memes/");
             return key;
         }
-        assertTmpOwnedByUser(key, TMP_MEMES, userId);
+        assertTmpOwnedByUser(key, userId, TMP_MEMES, TMP_MEME);
         String dest = "memes/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
         return copyAndScheduleDeleteTmp(key, dest, "memes/");
     }
@@ -95,7 +99,7 @@ public class OssObjectPromoteService {
             ossUrlHelper.assertOwnedImageKey(key, "comments/");
             return key;
         }
-        assertTmpOwnedByUser(key, TMP_COMMENTS, userId);
+        assertTmpOwnedByUser(key, userId, TMP_COMMENTS, TMP_COMMENT);
         String dest = "comments/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
         return copyAndScheduleDeleteTmp(key, dest, "comments/");
     }
@@ -110,7 +114,7 @@ public class OssObjectPromoteService {
             ossUrlHelper.assertOwnedImageKey(key, "home/");
             return key;
         }
-        assertTmpOwnedByUser(key, TMP_HOME, userId);
+        assertTmpOwnedByUser(key, userId, TMP_HOME);
         String dest = "home/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
         return copyAndScheduleDeleteTmp(key, dest, "home/");
     }
@@ -254,12 +258,15 @@ public class OssObjectPromoteService {
         }
     }
 
-    private void assertTmpOwnedByUser(String key, String tmpTypePrefix, Long userId) {
-        String expected = tmpTypePrefix + userId + "/";
-        if (!key.startsWith(expected)) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "临时图片不属于当前用户或已失效");
+    private void assertTmpOwnedByUser(String key, Long userId, String... tmpTypePrefixes) {
+        for (String tmpTypePrefix : tmpTypePrefixes) {
+            String expected = tmpTypePrefix + userId + "/";
+            if (key.startsWith(expected)) {
+                ossUrlHelper.assertOwnedImageKey(key, expected);
+                return;
+            }
         }
-        ossUrlHelper.assertOwnedImageKey(key, expected);
+        throw new BizException(Result.CODE_BAD_REQUEST, "临时图片不属于当前用户或已失效");
     }
 
     private String requireOwnedKey(String keyOrUrl) {

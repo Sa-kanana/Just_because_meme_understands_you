@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -54,7 +55,7 @@ public class FileAsset {
     private LocalDateTime activatedAt;
 
     /** 中文注释：允许执行 OSS 删除的最早时间。 */
-    @TableField("delete_after")
+    @TableField(value = "delete_after", updateStrategy = FieldStrategy.ALWAYS)
     private LocalDateTime deleteAfter;
 
     /** 中文注释：OSS 对象确认删除的时间。 */
