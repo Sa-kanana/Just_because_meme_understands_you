@@ -14,7 +14,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCreateResponseVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +27,10 @@ import org.springframework.util.StringUtils;
 import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -68,8 +70,9 @@ public class MemePublishService {
     @Resource
     private IUserProfileService userProfileService;
 
+    /** 中文注释：提升梗图片并维护封面及资源行对应的文件资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     /**
      * 发布梗。
@@ -89,9 +92,13 @@ public class MemePublishService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        String imageKey = StringUtils.hasText(request.getImage())
-                ? ossObjectPromoteService.promoteMemeImage(request.getImage().trim(), userId)
-                : null;
+        Map<String, String> promotedMedia = new HashMap<>();
+        String imageKey = null;
+        if (StringUtils.hasText(request.getImage())) {
+            String submittedImage = request.getImage().trim();
+            imageKey = fileAssetService.promote(submittedImage, userId, "meme");
+            promotedMedia.put(submittedImage, imageKey);
+        }
 
         // 1. 写入 meme 主表
         Meme meme = new Meme();
@@ -111,9 +118,10 @@ public class MemePublishService {
         if (memeId == null) {
             throw new BizException(Result.CODE_ERROR, "梗主表写入失败");
         }
+        fileAssetService.replaceReference(imageKey, "MEME", memeId, "COVER", "MEME_PUBLISHED");
 
         // 2. 写入 meme_resource 资源表
-        saveMediaResources(userId, memeId, request.getResourceUrls());
+        saveMediaResources(userId, memeId, request.getResourceUrls(), promotedMedia);
         saveStructuredLinks(memeId, request.getResources());
 
         // 3. 写入 meme_tag_relation 关联表
@@ -177,7 +185,8 @@ public class MemePublishService {
         }
     }
 
-    private void saveMediaResources(Long userId, Long memeId, List<String> resourceUrls) {
+    private void saveMediaResources(Long userId, Long memeId, List<String> resourceUrls,
+                                    Map<String, String> promotedMedia) {
         if (resourceUrls == null || resourceUrls.isEmpty()) {
             return;
         }
@@ -190,7 +199,8 @@ public class MemePublishService {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
-            String normalized = ossObjectPromoteService.promoteMemeMediaOrKeepExternal(url, userId);
+            String normalized = promotedMedia.computeIfAbsent(url.trim(),
+                    submittedUrl -> fileAssetService.promoteMemeMediaOrKeepExternal(submittedUrl, userId));
             MemeResource resource = new MemeResource();
             resource.setMemeId(memeId);
             resource.setResourceUrl(normalized);
@@ -198,7 +208,11 @@ public class MemePublishService {
             resource.setSortOrder(sortOrder++);
             resource.setStatus(RESOURCE_STATUS_ACTIVE);
             resource.setCreateTime(now);
-            memeResourceMapper.insert(resource);
+            if (memeResourceMapper.insert(resource) != 1 || resource.getId() == null) {
+                throw new BizException(Result.CODE_ERROR, "保存梗图片资源失败");
+            }
+            fileAssetService.replaceReference(normalized, "MEME_RESOURCE", resource.getId(), "URL",
+                    "MEME_RESOURCE_CREATED");
         }
     }
 

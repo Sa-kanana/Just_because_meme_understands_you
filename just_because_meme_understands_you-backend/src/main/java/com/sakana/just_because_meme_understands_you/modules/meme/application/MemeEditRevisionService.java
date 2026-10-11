@@ -19,7 +19,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -83,8 +83,9 @@ public class MemeEditRevisionService {
     @Resource
     private ObjectMapper objectMapper;
 
+    /** 中文注释：提升编辑稿图片并记录等待审核期间的独立资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     @Resource
     private IUserProfileService userProfileService;
@@ -132,7 +133,10 @@ public class MemeEditRevisionService {
         revision.setContentJson(serialize(normalized));
         revision.setStatus(REVISION_PENDING);
         revision.setCreatedAt(LocalDateTime.now());
-        memeEditRevisionMapper.insert(revision);
+        if (memeEditRevisionMapper.insert(revision) != 1 || revision.getId() == null) {
+            throw new BizException(Result.CODE_ERROR, "保存梗修改稿失败");
+        }
+        registerRevisionAssetReferences(revision.getId(), normalized);
 
         scheduleProfileCacheEviction(userId);
 
@@ -170,15 +174,28 @@ public class MemeEditRevisionService {
         normalized.setName(name);
         normalized.setIntroduction(introduction);
         String image = request.getImage() == null ? "" : request.getImage().trim();
-        normalized.setImage(StringUtils.hasText(image)
-                ? ossObjectPromoteService.promoteMemeImage(image, userId)
-                : null);
+        String promotedImage = StringUtils.hasText(image) ? fileAssetService.promote(image, userId, "meme") : null;
+        normalized.setImage(promotedImage);
         normalized.setTagIds(tagIds);
         normalized.setResourceUrls(mediaUrls.stream()
-                .map(url -> ossObjectPromoteService.promoteMemeMediaOrKeepExternal(url, userId))
+                .map(url -> url.equals(image) ? promotedImage
+                        : fileAssetService.promoteMemeMediaOrKeepExternal(url, userId))
                 .toList());
         normalized.setResources(links);
         return normalized;
+    }
+
+    /** 中文注释：修改稿按自身 ID 和媒体数组下标持有资产，审核结束后再整体释放或迁移。 */
+    private void registerRevisionAssetReferences(Long revisionId, MemeEditRequestDTO revision) {
+        if (StringUtils.hasText(revision.getImage())) {
+            fileAssetService.replaceReference(revision.getImage(), "MEME_REVISION", revisionId, "COVER",
+                    "MEME_REVISION_CREATED");
+        }
+        List<String> mediaUrls = revision.getResourceUrls();
+        for (int index = 0; index < mediaUrls.size(); index++) {
+            fileAssetService.replaceReference(mediaUrls.get(index), "MEME_REVISION", revisionId,
+                    "RESOURCE:" + index, "MEME_REVISION_CREATED");
+        }
     }
 
     private List<Integer> normalizeTagIds(List<Integer> tagIds) {

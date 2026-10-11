@@ -2,12 +2,12 @@ package com.sakana.just_because_meme_understands_you.modules.oss.application;
 
 import com.aliyun.oss.OSS;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
-import com.sakana.just_because_meme_understands_you.common.transaction.AfterCommitExecutor;
 import com.sakana.just_because_meme_understands_you.modules.oss.domain.entity.FileAsset;
 import com.sakana.just_because_meme_understands_you.modules.oss.domain.entity.FileAssetReference;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetMapper;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetReferenceMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Answers;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -61,12 +61,37 @@ class FileAssetServiceTest {
     }
 
     @Test
+    void allowsExistingOwnedAvatarEvenWhenLegacyBackfillHasNoUploader() throws Throwable {
+        FileAsset asset = activeAsset(30L, "avatar/7/existing.png");
+        asset.setOwnerId(null);
+        asset.setScene("avatar");
+        Object service = createService(fileMapper(List.of(asset)), referenceMapper(List.of(), 0),
+                newDeleteTaskMapper(new ArrayList<>()), mock(OssObjectPromoteService.class));
+
+        String reusedKey = (String) invoke(service, "promote",
+                new Class<?>[]{String.class, Long.class, String.class}, asset.getObjectKey(), 7L, "avatar");
+
+        assertEquals("avatar/7/existing.png", reusedKey);
+    }
+
+    @Test
+    void rejectsExternalCoverInsteadOfTreatingItAsAnUpload() throws Throwable {
+        Object service = createService(fileMapper(List.of()), referenceMapper(List.of(), 0),
+                newDeleteTaskMapper(new ArrayList<>()), mock(OssObjectPromoteService.class));
+
+        assertThrows(BizException.class, () -> invoke(service, "promote",
+                new Class<?>[]{String.class, Long.class, String.class}, "https://elsewhere.example/cover.png", 7L,
+                "meme"));
+    }
+
+    @Test
     void promotesConfirmedTemporaryAssetAndUpdatesItsLifecycleState() throws Throwable {
         FileAsset asset = temporaryAsset(9L, "meme", LocalDateTime.now());
+        FileAssetMapper mapper = fileMapper(List.of(asset));
         OssObjectPromoteService promoteService = mock(OssObjectPromoteService.class);
         when(promoteService.promoteMemeImage(asset.getObjectKey(), 7L))
                 .thenReturn("memes/20261011/promoted.png");
-        Object service = createService(fileMapper(List.of(asset)), referenceMapper(List.of(), 0),
+        Object service = createService(mapper, referenceMapper(List.of(), 0),
                 newDeleteTaskMapper(new ArrayList<>()), promoteService);
 
         String promotedKey = (String) invoke(service, "promote",
@@ -75,6 +100,11 @@ class FileAssetServiceTest {
         assertEquals("memes/20261011/promoted.png", promotedKey);
         assertEquals("ACTIVE", asset.getStatus());
         assertNotNull(asset.getActivatedAt());
+        ArgumentCaptor<FileAsset> tempSource = ArgumentCaptor.forClass(FileAsset.class);
+        verify(mapper).insert(tempSource.capture());
+        assertEquals("tmp/meme/7/20261011/asset.png", tempSource.getValue().getObjectKey());
+        assertEquals("TEMP", tempSource.getValue().getStatus());
+        assertEquals(null, tempSource.getValue().getUploadedAt(), "临时源对象不能再次绑定业务");
     }
 
     @Test
@@ -89,7 +119,6 @@ class FileAssetServiceTest {
         ReflectionTestUtils.setField(promoteService, "bucketName", "test-bucket");
         ReflectionTestUtils.setField(promoteService, "ossClient", oss);
         ReflectionTestUtils.setField(promoteService, "ossUrlHelper", urlHelper);
-        ReflectionTestUtils.setField(promoteService, "afterCommitExecutor", mock(AfterCommitExecutor.class));
 
         String memeKey = promoteService.promoteMemeImage("tmp/meme/7/20261011/meme.png", 7L);
         String commentKey = promoteService.promoteCommentImage("tmp/comment/7/20261011/comment.png", 7L);
@@ -194,6 +223,13 @@ class FileAssetServiceTest {
             case "selectById", "selectByIdForUpdate" -> byId.get((Long) invocation.getArgument(0));
             case "selectByObjectKey", "selectByObjectKeyForUpdate" -> byKey.get((String) invocation.getArgument(0));
             case "updateById" -> 1;
+            case "insert" -> {
+                FileAsset inserted = invocation.getArgument(0);
+                inserted.setId(1000L);
+                byId.put(inserted.getId(), inserted);
+                byKey.put(inserted.getObjectKey(), inserted);
+                yield 1;
+            }
             default -> Answers.RETURNS_DEFAULTS.answer(invocation);
         });
     }

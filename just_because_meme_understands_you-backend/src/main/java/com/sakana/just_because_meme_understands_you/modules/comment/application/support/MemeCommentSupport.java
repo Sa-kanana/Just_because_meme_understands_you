@@ -204,11 +204,13 @@ public class MemeCommentSupport {
             return;
         }
         int sort = 0;
+        Map<String, String> promotedImages = new HashMap<>();
         for (String url : images) {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
-            String key = fileAssetService.promote(url, userId, "comment");
+            String key = promotedImages.computeIfAbsent(url.trim(),
+                    submittedUrl -> fileAssetService.promote(submittedUrl, userId, "comment"));
             MemeCommentImage image = new MemeCommentImage();
             image.setMemeCommentId(commentId);
             image.setUrl(key);

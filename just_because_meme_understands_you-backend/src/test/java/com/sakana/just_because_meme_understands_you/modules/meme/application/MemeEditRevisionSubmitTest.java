@@ -17,7 +17,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +52,7 @@ class MemeEditRevisionSubmitTest {
     private MemeResourceMapper resourceMapper;
     private MemeTagRelationMapper tagRelationMapper;
     private MemeTagMapper tagMapper;
-    private OssObjectPromoteService ossPromoteService;
+    private FileAssetService fileAssetService;
     private IUserProfileService userProfileService;
     private Object service;
     private Class<?> requestType;
@@ -71,7 +71,7 @@ class MemeEditRevisionSubmitTest {
         resourceMapper = mock(MemeResourceMapper.class);
         tagRelationMapper = mock(MemeTagRelationMapper.class);
         tagMapper = mock(MemeTagMapper.class);
-        ossPromoteService = mock(OssObjectPromoteService.class);
+        fileAssetService = mock(FileAssetService.class);
         userProfileService = mock(IUserProfileService.class);
 
         service = serviceType.getDeclaredConstructor().newInstance();
@@ -81,17 +81,21 @@ class MemeEditRevisionSubmitTest {
         inject(service, "memeTagRelationMapper", tagRelationMapper);
         inject(service, "memeTagMapper", tagMapper);
         inject(service, "objectMapper", new ObjectMapper());
-        inject(service, "ossObjectPromoteService", ossPromoteService);
+        injectIfPresent(service, "fileAssetService", fileAssetService);
         inject(service, "userProfileService", userProfileService);
 
         when(revisionMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(resourceMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(tagRelationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(new MemeTag().setId(9)));
-        when(ossPromoteService.promoteMemeImage(anyString(), any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(ossPromoteService.promoteMemeMediaOrKeepExternal(anyString(), any()))
+        when(fileAssetService.promote(anyString(), any(), anyString())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(fileAssetService.promoteMemeMediaOrKeepExternal(anyString(), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(revisionMapper.insert(any(MemeEditRevision.class))).thenReturn(1);
+        java.util.concurrent.atomic.AtomicLong revisionIds = new java.util.concurrent.atomic.AtomicLong(700L);
+        when(revisionMapper.insert(any(MemeEditRevision.class))).thenAnswer(invocation -> {
+            ((MemeEditRevision) invocation.getArgument(0)).setId(revisionIds.getAndIncrement());
+            return 1;
+        });
     }
 
     @Test
@@ -117,6 +121,12 @@ class MemeEditRevisionSubmitTest {
         assertEquals("正式内容", official.getName());
         assertEquals("PENDING", getter(response, "status"));
         assertEquals("PENDING", getter(offlineResponse, "status"));
+        verify(fileAssetService).replaceReference("memes/cover.png", "MEME_REVISION", 700L, "COVER",
+                "MEME_REVISION_CREATED");
+        verify(fileAssetService).replaceReference("memes/cover.png", "MEME_REVISION", 701L, "COVER",
+                "MEME_REVISION_CREATED");
+        verify(fileAssetService).replaceReference("memes/extra.png", "MEME_REVISION", 700L, "RESOURCE:0",
+                "MEME_REVISION_CREATED");
 
         org.mockito.ArgumentCaptor<Wrapper> resourceQueries = org.mockito.ArgumentCaptor.forClass(Wrapper.class);
         verify(resourceMapper, org.mockito.Mockito.times(2)).selectList(resourceQueries.capture());
@@ -142,7 +152,21 @@ class MemeEditRevisionSubmitTest {
         JsonNode snapshot = new ObjectMapper().readTree(captor.getValue().getContentJson());
         assertEquals(true, snapshot.path("image").isNull() || snapshot.path("image").asText().isBlank());
         assertEquals("PENDING", getter(response, "status"));
-        verify(ossPromoteService, never()).promoteMemeImage(anyString(), any());
+        verify(fileAssetService, never()).promote(anyString(), any(), anyString());
+    }
+
+    @Test
+    void editRevisionReusesPromotedCoverWhenAlsoListedAsMedia() throws Exception {
+        String temporaryKey = "tmp/meme/21/shared.png";
+        when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
+        when(fileAssetService.promote(temporaryKey, 21L, "meme")).thenReturn("memes/shared.png");
+
+        invokeSubmit(21L, 1001L,
+                request("共享图片", temporaryKey, List.of(), List.of(temporaryKey), List.of()));
+
+        verify(fileAssetService, never()).promoteMemeMediaOrKeepExternal(temporaryKey, 21L);
+        verify(fileAssetService).replaceReference("memes/shared.png", "MEME_REVISION", 700L, "RESOURCE:0",
+                "MEME_REVISION_CREATED");
     }
 
     @Test
@@ -256,6 +280,13 @@ class MemeEditRevisionSubmitTest {
             return Class.forName(name);
         } catch (ClassNotFoundException ignored) {
             return null;
+        }
+    }
+
+    private static void injectIfPresent(Object target, String fieldName, Object value) throws Exception {
+        java.lang.reflect.Field field = org.springframework.util.ReflectionUtils.findField(target.getClass(), fieldName);
+        if (field != null) {
+            org.springframework.test.util.ReflectionTestUtils.setField(target, fieldName, value);
         }
     }
 }

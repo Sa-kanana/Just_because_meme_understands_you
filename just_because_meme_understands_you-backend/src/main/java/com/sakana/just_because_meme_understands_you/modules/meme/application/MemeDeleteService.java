@@ -13,6 +13,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeIndexEventPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeDeleteResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemePurgeResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeRestoreResponseVO;
@@ -68,8 +69,9 @@ public class MemeDeleteService {
     @Resource
     private MemePublishAsyncHandler memePublishAsyncHandler;
 
+    /** 中文注释：永久删除梗时释放封面和所有资源行的文件资产引用。 */
     @Resource
-    private MemeOssCleanupHandler memeOssCleanupHandler;
+    private FileAssetService fileAssetService;
 
     @Resource
     private IUserProfileService userProfileService;
@@ -211,9 +213,9 @@ public class MemeDeleteService {
             memeIndexEventPort.requestRemoval(memeId);
             Long memeIdLong = meme.getId();
             deactivateResources(memeIdLong);
-            Meme snapshot = new Meme().setId(meme.getId()).setImage(meme.getImage());
+            releaseMemeAssetReferences(memeIdLong);
             Long ownerId = meme.getUserId();
-            scheduleAfterCommit(() -> runAfterPurge(ownerId, memeIdLong, snapshot, false, List.of()));
+            scheduleAfterCommit(() -> runAfterPurge(ownerId, memeIdLong, false, List.of()));
             return meme;
         }
 
@@ -271,10 +273,25 @@ public class MemeDeleteService {
         memeIndexEventPort.requestRemoval(memeId);
 
         deactivateResources(memeId);
-        Meme snapshot = new Meme().setId(memeId).setImage(meme.getImage());
+        releaseMemeAssetReferences(memeId);
         Long ownerId = meme.getUserId();
-        scheduleAfterCommit(() -> runAfterPurge(ownerId, memeId, snapshot, wasPublic, tagIds));
+        scheduleAfterCommit(() -> runAfterPurge(ownerId, memeId, wasPublic, tagIds));
         return now;
+    }
+
+    /** 中文注释：只在永久删除时释放梗封面及全部历史资源行引用。 */
+    private void releaseMemeAssetReferences(Long memeId) {
+        fileAssetService.releaseReference("MEME", memeId, "COVER", "MEME_PURGED");
+        List<MemeResource> resources = memeResourceMapper.selectList(new LambdaQueryWrapper<MemeResource>()
+                .eq(MemeResource::getMemeId, memeId));
+        if (resources == null) {
+            return;
+        }
+        for (MemeResource resource : resources) {
+            if (resource != null && resource.getId() != null) {
+                fileAssetService.releaseReference("MEME_RESOURCE", resource.getId(), "URL", "MEME_PURGED");
+            }
+        }
     }
 
     private LocalDateTime markStatusChange(Meme meme, int targetStatus, String reason, boolean recordOfflineMeta) {
@@ -436,7 +453,7 @@ public class MemeDeleteService {
         }
     }
 
-    private void runAfterPurge(Long userId, Long memeId, Meme snapshot, boolean wasPublic, List<Integer> tagIds) {
+    private void runAfterPurge(Long userId, Long memeId, boolean wasPublic, List<Integer> tagIds) {
         evictCaches(userId, memeId);
         if (wasPublic) {
             try {
@@ -444,11 +461,6 @@ public class MemeDeleteService {
             } catch (Exception e) {
                 log.warn("永久删除梗后回滚标签计数失败 memeId={}", memeId, e);
             }
-        }
-        try {
-            memeOssCleanupHandler.cleanupMemeAssets(snapshot);
-        } catch (Exception e) {
-            log.warn("OSS 清理失败 memeId={}", memeId, e);
         }
     }
 

@@ -21,7 +21,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeIndexEventPort;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.MemePublishAsyncHandler;
 import com.sakana.just_because_meme_understands_you.modules.notification.application.NotificationPublisher;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,7 +60,7 @@ class MemeEditRevisionReviewTest {
     private MemeTagRelationMapper tagRelationMapper;
     private MemeTagMapper tagMapper;
     private NotificationPublisher notificationPublisher;
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
     private IUserProfileService userProfileService;
     private IMemeService memeService;
     private MemePublishAsyncHandler memePublishAsyncHandler;
@@ -80,7 +80,7 @@ class MemeEditRevisionReviewTest {
         tagRelationMapper = mock(MemeTagRelationMapper.class);
         tagMapper = mock(MemeTagMapper.class);
         notificationPublisher = mock(NotificationPublisher.class);
-        ossObjectPromoteService = mock(OssObjectPromoteService.class);
+        fileAssetService = mock(FileAssetService.class);
         userProfileService = mock(IUserProfileService.class);
         memeService = mock(IMemeService.class);
         memePublishAsyncHandler = mock(MemePublishAsyncHandler.class);
@@ -94,7 +94,7 @@ class MemeEditRevisionReviewTest {
         inject(service, "memeTagMapper", tagMapper);
         inject(service, "objectMapper", new ObjectMapper());
         inject(service, "notificationPublisher", notificationPublisher);
-        inject(service, "ossObjectPromoteService", ossObjectPromoteService);
+        injectIfPresent(service, "fileAssetService", fileAssetService);
         inject(service, "userProfileService", userProfileService);
         inject(service, "memeService", memeService);
         inject(service, "memePublishAsyncHandler", memePublishAsyncHandler);
@@ -125,10 +125,16 @@ class MemeEditRevisionReviewTest {
         verify(tagRelationMapper, times(2)).insert(any(MemeTagRelation.class));
         verify(resourceMapper).update(isNull(), any(Wrapper.class));
         verify(resourceMapper, times(2)).insert(any(MemeResource.class));
+        verify(fileAssetService).replaceReference("memes/new-cover.png", "MEME", 1001L, "COVER",
+                "MEME_REVISION_APPROVED");
+        verify(fileAssetService).replaceReference("memes/new-media.png", "MEME_RESOURCE", 301L, "URL",
+                "MEME_REVISION_APPROVED");
+        verify(fileAssetService).releaseReference("MEME_RESOURCE", 31L, "URL", "MEME_RESOURCES_REPLACED");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "COVER", "MEME_REVISION_APPROVED");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "RESOURCE:0", "MEME_REVISION_APPROVED");
         verify(memePublishAsyncHandler).decrementTagRelatedQuantity(List.of(1));
         verify(memePublishAsyncHandler).incrementTagRelatedQuantity(List.of(2, 3));
         assertReviewNotification("APPROVED", null);
-        assertMethodInvoked(ossObjectPromoteService, "deleteMemeObjectsAfterCommit");
         verify(userProfileService).evictUserMemesCache(21L);
         verify(memeService).evictMemeDetailCache(1001L);
     }
@@ -168,17 +174,7 @@ class MemeEditRevisionReviewTest {
         org.mockito.ArgumentCaptor<Wrapper> memeUpdate = org.mockito.ArgumentCaptor.forClass(Wrapper.class);
         verify(memeMapper).update(isNull(), memeUpdate.capture());
         assertEquals(true, ((UpdateWrapper<?>) memeUpdate.getValue()).getSqlSet().contains("image"));
-    }
-
-    @Test
-    void pendingRevisionReferencesProtectManagedAssetsFromCleanup() throws Exception {
-        when(revisionMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
-
-        invokePrivate("cleanupUnusedAssetKeys", new Class<?>[]{List.class}, List.of("memes/shared.png"));
-
-        org.mockito.ArgumentCaptor<List> deletedKeys = org.mockito.ArgumentCaptor.forClass(List.class);
-        verify(ossObjectPromoteService).deleteMemeObjectsAfterCommit(deletedKeys.capture());
-        assertEquals(List.of(), deletedKeys.getValue());
+        verify(fileAssetService).releaseReference("MEME", 1001L, "COVER", "MEME_REVISION_APPROVED");
     }
 
     @Test
@@ -195,7 +191,8 @@ class MemeEditRevisionReviewTest {
         assertEquals("REJECTED", revision.getStatus());
         verify(revisionMapper).updateById(any(MemeEditRevision.class));
         assertReviewNotification("REJECTED", "请更换封面");
-        assertMethodInvoked(ossObjectPromoteService, "deleteMemeObjectsAfterCommit");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "COVER", "MEME_REVISION_REJECTED");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "RESOURCE:0", "MEME_REVISION_REJECTED");
     }
 
     @Test
@@ -229,6 +226,7 @@ class MemeEditRevisionReviewTest {
         verify(memeMapper, never()).update(any(), any(Wrapper.class));
         verify(revisionMapper).updateById(any(MemeEditRevision.class));
         assertReviewNotification("CANCELED", "梗已被锁定，修改稿已取消");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "COVER", "MEME_REVISION_CANCELED");
     }
 
     private void prepareRevision(int status, String revisionStatus, boolean staleHash) throws Exception {
@@ -251,6 +249,13 @@ class MemeEditRevisionReviewTest {
         when(resourceMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
                 new MemeResource().setId(31L).setMemeId(1001L).setResourceUrl("memes/old-media.png")
                         .setResourceType(2).setSortOrder(0).setStatus(1)));
+        org.mockito.Mockito.when(resourceMapper.insert(any(MemeResource.class))).thenAnswer(invocation -> {
+            MemeResource inserted = invocation.getArgument(0);
+            if (inserted.getId() == null) {
+                inserted.setId(inserted.getResourceUrl().equals("memes/new-media.png") ? 301L : 302L);
+            }
+            return 1;
+        });
         when(revisionMapper.updateById(any(MemeEditRevision.class))).thenAnswer(invocation -> {
             MemeEditRevision updated = invocation.getArgument(0);
             revision.setStatus(updated.getStatus());
@@ -329,14 +334,6 @@ class MemeEditRevisionReviewTest {
         return new MemeTag().setId(id).setRelatedQuantity(10);
     }
 
-    private void assertMethodInvoked(Object mock, String methodName) {
-        var invocation = mockingDetails(mock).getInvocations().stream()
-                .filter(item -> methodName.equals(item.getMethod().getName()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("应调用 " + methodName));
-        assertNotNull(invocation);
-    }
-
     private void assertReviewNotification(String expectedStatus, String expectedNote) {
         var invocation = mockingDetails(notificationPublisher).getInvocations().stream()
                 .filter(item -> "publishMemeEditReview".equals(item.getMethod().getName()))
@@ -355,6 +352,13 @@ class MemeEditRevisionReviewTest {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    private static void injectIfPresent(Object target, String fieldName, Object value) throws Exception {
+        Field field = org.springframework.util.ReflectionUtils.findField(target.getClass(), fieldName);
+        if (field != null) {
+            org.springframework.test.util.ReflectionTestUtils.setField(target, fieldName, value);
+        }
     }
 
     private static Class<?> loadFeatureClass(String name) {

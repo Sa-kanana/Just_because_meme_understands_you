@@ -110,17 +110,23 @@ public class FileAssetService {
         }
         String objectKey = ossUrlHelper.normalizeForStorage(keyOrUrl);
         if (isExternalUrl(objectKey)) {
-            return objectKey;
+            throw new BizException(Result.CODE_BAD_REQUEST, "图片须先上传到 OSS");
         }
         if (uploaderId == null || uploaderId <= 0 || !StringUtils.hasText(scene)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "文件资产上传者或场景不合法");
         }
         FileAsset asset = fileAssetMapper.selectByObjectKeyForUpdate(objectKey);
-        if (asset == null || !uploaderId.equals(asset.getOwnerId()) || !scene.equals(asset.getScene())) {
+        if (asset == null) {
             throw new BizException(Result.CODE_FORBIDDEN, "文件资产不存在或不属于当前上传者");
         }
-        if (FileAssetStatus.ACTIVE.name().equals(asset.getStatus()) && !objectKey.startsWith("tmp/")) {
+        if ((FileAssetStatus.ACTIVE.name().equals(asset.getStatus())
+                || FileAssetStatus.PENDING_DELETE.name().equals(asset.getStatus()))
+                && !objectKey.startsWith("tmp/")) {
+            ossUrlHelper.assertOwnedImageKey(objectKey, finalPrefixForScene(scene, uploaderId));
             return objectKey;
+        }
+        if (!uploaderId.equals(asset.getOwnerId()) || !scene.equals(asset.getScene())) {
+            throw new BizException(Result.CODE_FORBIDDEN, "文件资产不存在或不属于当前上传者");
         }
         if (!FileAssetStatus.TEMP.name().equals(asset.getStatus()) || asset.getUploadedAt() == null) {
             throw new BizException(Result.CODE_BAD_REQUEST, "临时文件尚未确认上传，不能绑定业务");
@@ -148,7 +154,54 @@ public class FileAssetService {
         if (fileAssetMapper.updateById(asset) != 1) {
             throw new BizException(Result.CODE_ERROR, "保存文件资产正式路径失败，请重试");
         }
+        // 中文注释：正式资产改键后，原 tmp 对象保留独立 TEMP 记录供每日任务兜底清理。
+        FileAsset temporarySource = new FileAsset();
+        temporarySource.setObjectKey(objectKey);
+        temporarySource.setOwnerId(uploaderId);
+        temporarySource.setScene(scene);
+        temporarySource.setOriginalFilename(asset.getOriginalFilename());
+        temporarySource.setContentType(asset.getContentType());
+        temporarySource.setFileSize(asset.getFileSize());
+        temporarySource.setStatus(FileAssetStatus.TEMP.name());
+        temporarySource.setCreatedAt(asset.getCreatedAt());
+        temporarySource.setUpdatedAt(now);
+        if (fileAssetMapper.insert(temporarySource) != 1) {
+            throw new BizException(Result.CODE_ERROR, "登记临时文件清理记录失败，请重试");
+        }
         return asset.getObjectKey();
+    }
+
+    /** 中文注释：正式图片沿用旧接口的业务目录限制，同时允许归属信息为空的历史回填资产。 */
+    private String finalPrefixForScene(String scene, Long uploaderId) {
+        return switch (scene.toLowerCase(Locale.ROOT)) {
+            case "avatar" -> "avatar/" + uploaderId + "/";
+            case "meme" -> "memes/";
+            case "comment" -> "comments/";
+            case "home" -> "home/";
+            default -> throw new BizException(Result.CODE_BAD_REQUEST, "不支持的文件资产业务场景");
+        };
+    }
+
+    /**
+     * 中文注释：提升梗资源中的临时 OSS 图片；外链和已有公共图片目录保持兼容。
+     *
+     * @param keyOrUrl 资源地址或临时对象键
+     * @param uploaderId 当前上传者用户ID
+     * @return 提升后的对象键、公共对象键或原始外链
+     */
+    public String promoteMemeMediaOrKeepExternal(String keyOrUrl, Long uploaderId) {
+        if (!StringUtils.hasText(keyOrUrl)) {
+            return keyOrUrl;
+        }
+        String normalizedKey = ossUrlHelper.normalizeForStorage(keyOrUrl.trim());
+        if (isExternalUrl(normalizedKey)) {
+            return normalizedKey;
+        }
+        if (normalizedKey.startsWith("home/") || normalizedKey.startsWith("common/")) {
+            ossUrlHelper.assertOwnedImageKey(normalizedKey, "home/", "common/");
+            return normalizedKey;
+        }
+        return promote(normalizedKey, uploaderId, "meme");
     }
 
     /** 中文注释：在当前业务事务中绑定新对象并释放同一业务字段之前的资产引用。 */
@@ -162,7 +215,7 @@ public class FileAssetService {
         FileAsset newAssetSnapshot = null;
         if (StringUtils.hasText(normalizedKey) && !externalUrl) {
             newAssetSnapshot = fileAssetMapper.selectByObjectKey(normalizedKey);
-            if (newAssetSnapshot == null) {
+            if (newAssetSnapshot == null && !isUnmanagedSharedObjectKey(normalizedKey)) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "OSS 文件尚未登记为可管理资产");
             }
         }
@@ -364,5 +417,11 @@ public class FileAssetService {
         return StringUtils.hasText(keyOrUrl)
                 && (keyOrUrl.toLowerCase(Locale.ROOT).startsWith("http://")
                 || keyOrUrl.toLowerCase(Locale.ROOT).startsWith("https://"));
+    }
+
+    /** 中文注释：允许兼容未纳入资产管理的公共图片，但不为公共目录创建删除引用。 */
+    private boolean isUnmanagedSharedObjectKey(String objectKey) {
+        return StringUtils.hasText(objectKey)
+                && (objectKey.startsWith("home/") || objectKey.startsWith("common/"));
     }
 }

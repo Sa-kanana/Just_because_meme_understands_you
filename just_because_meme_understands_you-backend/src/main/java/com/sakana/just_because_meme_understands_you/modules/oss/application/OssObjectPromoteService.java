@@ -3,7 +3,6 @@ package com.sakana.just_because_meme_understands_you.modules.oss.application;
 import com.aliyun.oss.OSS;
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
-import com.sakana.just_because_meme_understands_you.common.transaction.AfterCommitExecutor;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,10 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * 将 tmp/ 直传对象提升为业务正式前缀，配合 OSS 生命周期清理未提交的临时图。
@@ -49,9 +45,6 @@ public class OssObjectPromoteService {
     @Resource
     private OssUrlHelper ossUrlHelper;
 
-    @Resource
-    private AfterCommitExecutor afterCommitExecutor;
-
     /**
      * 头像：tmp/avatar/{userId}/… → avatar/{userId}/…
      */
@@ -70,7 +63,7 @@ public class OssObjectPromoteService {
         assertTmpOwnedByUser(key, userId, TMP_AVATAR);
         String dest = permanentPrefix + fileNameOf(key);
         //复制objectkey到正式前缀目录
-        return copyAndScheduleDeleteTmp(key, dest, permanentPrefix);
+        return copyTemporaryObject(key, dest, permanentPrefix);
     }
 
     /**
@@ -86,7 +79,7 @@ public class OssObjectPromoteService {
         }
         assertTmpOwnedByUser(key, userId, TMP_MEMES, TMP_MEME);
         String dest = "memes/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
-        return copyAndScheduleDeleteTmp(key, dest, "memes/");
+        return copyTemporaryObject(key, dest, "memes/");
     }
 
     /**
@@ -101,7 +94,7 @@ public class OssObjectPromoteService {
         }
         assertTmpOwnedByUser(key, userId, TMP_COMMENTS, TMP_COMMENT);
         String dest = "comments/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
-        return copyAndScheduleDeleteTmp(key, dest, "comments/");
+        return copyTemporaryObject(key, dest, "comments/");
     }
 
     /**
@@ -116,77 +109,11 @@ public class OssObjectPromoteService {
         }
         assertTmpOwnedByUser(key, userId, TMP_HOME);
         String dest = "home/" + LocalDate.now().format(DATE_DIR) + "/" + fileNameOf(key);
-        return copyAndScheduleDeleteTmp(key, dest, "home/");
+        return copyTemporaryObject(key, dest, "home/");
     }
 
-    /**
-     * 梗附属媒体：允许 tmp/memes、正式 memes/home/common；外链原样返回。
-     */
-    public String promoteMemeMediaOrKeepExternal(String keyOrUrl, Long userId) {
-        if (!StringUtils.hasText(keyOrUrl)) {
-            return keyOrUrl;
-        }
-        String normalized = ossUrlHelper.normalizeForStorage(keyOrUrl);
-        if (!StringUtils.hasText(normalized)) {
-            return normalized;
-        }
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("http://") || lower.startsWith("https://")) {
-            return normalized;
-        }
-        if (normalized.startsWith("home/") || normalized.startsWith("common/")) {
-            ossUrlHelper.assertOwnedImageKey(normalized, "home/", "common/");
-            return normalized;
-        }
-        return promoteMemeImage(normalized, userId);
-    }
-
-    /** 中文注释：事务提交后清理已不再引用的梗图对象，只允许删除 memes/ 前缀下的对象。 */
-    public void deleteMemeObjectsAfterCommit(Collection<String> objectKeys) {
-        if (objectKeys == null || objectKeys.isEmpty()) {
-            return;
-        }
-        Set<String> safeKeys = new LinkedHashSet<>();
-        for (String objectKey : objectKeys) {
-            String normalized = ossUrlHelper.normalizeForStorage(objectKey);
-            if (isSafeMemeObjectKey(normalized)) {
-                safeKeys.add(normalized);
-            } else if (StringUtils.hasText(objectKey)) {
-                log.warn("忽略非梗图目录或不安全的 OSS 清理请求, key={}", objectKey);
-            }
-        }
-        if (safeKeys.isEmpty()) {
-            return;
-        }
-        afterCommitExecutor.execute(() -> safeKeys.forEach(this::deleteMemeObjectQuietly));
-    }
-
-    /** 同步删除 home/ 目录下的轮播图对象，失败时由调用方回滚轮播图记录删除。 */
-    public void deleteHomeImage(String objectKeyOrUrl) {
-        if (!StringUtils.hasText(objectKeyOrUrl)) {
-            return;
-        }
-        String objectKey = ossUrlHelper.normalizeForStorage(objectKeyOrUrl);
-        String lowerKey = objectKey == null ? "" : objectKey.toLowerCase(Locale.ROOT);
-        if (lowerKey.startsWith("http://") || lowerKey.startsWith("https://")) {
-            return;
-        }
-        if (!isSafeHomeImageObjectKey(objectKey)) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "轮播图 OSS 图片地址不合法，无法删除");
-        }
-        ossUrlHelper.assertOwnedImageKey(objectKey, "home/");
-        if (!StringUtils.hasText(bucketName)) {
-            throw new BizException(Result.CODE_ERROR, "未配置 OSS bucketName，无法删除轮播图图片");
-        }
-        try {
-            ossClient.deleteObject(bucketName, objectKey);
-        } catch (Exception exception) {
-            log.warn("轮播图 OSS 对象删除失败, key={}", objectKey, exception);
-            throw new BizException(Result.CODE_ERROR, "轮播图图片删除失败，请稍后重试");
-        }
-    }
-
-    private String copyAndScheduleDeleteTmp(String sourceKey, String destKey, String assertPrefix) {
+    /** 中文注释：复制已确认的临时对象；源对象由临时资产清理任务和 OSS 生命周期处理。 */
+    private String copyTemporaryObject(String sourceKey, String destKey, String assertPrefix) {
         if (!StringUtils.hasText(bucketName)) {
             throw new BizException(Result.CODE_ERROR, "未配置 OSS bucketName");
         }
@@ -209,53 +136,7 @@ public class OssObjectPromoteService {
         }
         // ③ 校验目标文件合法
         ossUrlHelper.assertOwnedImageKey(destKey, assertPrefix);
-        // ④ 事务提交后异步删除临时文件
-        afterCommitExecutor.execute(() -> deleteQuietly(sourceKey));
         return destKey;
-    }
-
-    private void deleteQuietly(String key) {
-        try {
-            ossClient.deleteObject(bucketName, key);
-        } catch (Exception e) {
-            log.warn("OSS tmp 删除失败（可由生命周期兜底）, key={}", key, e);
-        }
-    }
-
-    private boolean isSafeMemeObjectKey(String key) {
-        if (!StringUtils.hasText(key) || !key.startsWith("memes/") || key.length() > 1024) {
-            return false;
-        }
-        for (String segment : key.split("/")) {
-            if (".".equals(segment) || "..".equals(segment)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isSafeHomeImageObjectKey(String key) {
-        if (!StringUtils.hasText(key) || !key.startsWith("home/") || key.length() > 1024) {
-            return false;
-        }
-        for (String segment : key.split("/")) {
-            if (".".equals(segment) || "..".equals(segment)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void deleteMemeObjectQuietly(String key) {
-        if (!StringUtils.hasText(bucketName)) {
-            log.warn("未配置 OSS bucketName，跳过梗图对象清理 key={}", key);
-            return;
-        }
-        try {
-            ossClient.deleteObject(bucketName, key);
-        } catch (Exception exception) {
-            log.warn("梗图 OSS 对象清理失败（可由后续清理任务兜底）, key={}", key, exception);
-        }
     }
 
     private void assertTmpOwnedByUser(String key, Long userId, String... tmpTypePrefixes) {

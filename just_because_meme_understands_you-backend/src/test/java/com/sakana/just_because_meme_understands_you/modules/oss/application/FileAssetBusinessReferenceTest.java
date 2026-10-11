@@ -34,6 +34,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 /** 中文注释：验证业务行引用切换、服务端头像上传登记及评论图片行引用维护。 */
@@ -101,6 +102,30 @@ class FileAssetBusinessReferenceTest {
         order.verify(imageMapper).insert(any(MemeCommentImage.class));
         order.verify(fileAssetService).replaceReference(
                 "comments/20261011/image.png", "COMMENT_IMAGE", 91L, "URL", "COMMENT_IMAGE_CREATED");
+    }
+
+    @Test
+    void repeatedCommentImageUsesOneTemporaryPromotionAndTwoRowReferences() {
+        String temporaryKey = "tmp/comment/7/shared.png";
+        FileAssetService fileAssetService = mock(FileAssetService.class);
+        when(fileAssetService.promote(temporaryKey, 7L, "comment")).thenReturn("comments/shared.png");
+        MemeCommentImageMapper imageMapper = mock(MemeCommentImageMapper.class);
+        java.util.concurrent.atomic.AtomicLong ids = new java.util.concurrent.atomic.AtomicLong(91L);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ((MemeCommentImage) invocation.getArgument(0)).setId(ids.getAndIncrement());
+            return 1;
+        }).when(imageMapper).insert(any(MemeCommentImage.class));
+        MemeCommentSupport support = new MemeCommentSupport();
+        ReflectionTestUtils.setField(support, "memeCommentImageMapper", imageMapper);
+        ReflectionTestUtils.setField(support, "fileAssetService", fileAssetService);
+
+        support.saveImages(55L, 7L, List.of(temporaryKey, temporaryKey));
+
+        verify(fileAssetService, times(1)).promote(temporaryKey, 7L, "comment");
+        verify(fileAssetService).replaceReference("comments/shared.png", "COMMENT_IMAGE", 91L, "URL",
+                "COMMENT_IMAGE_CREATED");
+        verify(fileAssetService).replaceReference("comments/shared.png", "COMMENT_IMAGE", 92L, "URL",
+                "COMMENT_IMAGE_CREATED");
     }
 
     @Test
