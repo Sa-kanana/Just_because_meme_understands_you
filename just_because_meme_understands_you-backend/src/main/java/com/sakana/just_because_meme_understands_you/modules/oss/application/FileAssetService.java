@@ -54,6 +54,48 @@ public class FileAssetService {
     private OssUrlHelper ossUrlHelper;
 
     /**
+     * 中文注释：登记服务端 multipart 上传成功的临时资产；该对象已由服务端确认上传完成。
+     *
+     * @param ownerId 当前上传用户ID
+     * @param objectKey 服务端写入 OSS 的临时对象键
+     * @param scene 上传业务场景
+     * @param originalFilename 上传文件的原始文件名
+     * @param contentType 上传文件的 MIME 类型
+     * @param fileSize 上传文件的字节数
+     */
+    @Transactional
+    public void registerServerUploadedTempAsset(Long ownerId, String objectKey, String scene,
+                                                String originalFilename, String contentType, Long fileSize) {
+        if (ownerId == null || ownerId <= 0 || !StringUtils.hasText(scene) || scene.length() > 32
+                || !StringUtils.hasText(objectKey) || !objectKey.startsWith("tmp/" + scene + "/" + ownerId + "/")
+                || objectKey.length() > 512 || objectKey.contains("..") || objectKey.contains("\\")
+                || objectKey.codePoints().anyMatch(Character::isISOControl)
+                || fileSize == null || fileSize <= 0
+                || fileSize > 10L * 1024 * 1024) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "服务端上传文件资产参数不合法");
+        }
+        String filename = normalizeFilename(originalFilename);
+        if (StringUtils.hasText(contentType) && contentType.length() > 128) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "上传文件 MIME 类型不合法");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        FileAsset asset = new FileAsset();
+        asset.setObjectKey(objectKey);
+        asset.setOwnerId(ownerId);
+        asset.setScene(scene);
+        asset.setOriginalFilename(filename);
+        asset.setContentType(StringUtils.hasText(contentType) ? contentType.trim() : null);
+        asset.setFileSize(fileSize);
+        asset.setStatus(FileAssetStatus.TEMP.name());
+        asset.setUploadedAt(now);
+        asset.setCreatedAt(now);
+        asset.setUpdatedAt(now);
+        if (fileAssetMapper.insert(asset) != 1 || asset.getId() == null) {
+            throw new BizException(Result.CODE_ERROR, "登记服务端上传文件失败，请重试");
+        }
+    }
+
+    /**
      * 中文注释：验证临时资产归属、确认状态和有效期后，将对象复制到正式业务前缀。
      *
      * @param keyOrUrl 客户端提交的 OSS 对象键或本站访问 URL
@@ -139,15 +181,23 @@ public class FileAssetService {
         }
         validateBindableAsset(newAsset);
 
-        if (newAsset != null && previousReferences.size() == 1
+        if (newAsset != null && FileAssetStatus.ACTIVE.name().equals(newAsset.getStatus())
+                && previousReferences.size() == 1
                 && newAsset.getId().equals(previousReferences.get(0).getAssetId())) {
             return;
         }
 
-        deletePreviousReferences(previousReferences, lockedAssets, reason);
-        if (newAsset != null) {
-            activateAndBind(newAsset, bizType, bizId, fieldKey);
+        Set<Long> previousAssetIds = new TreeSet<>();
+        previousReferences.stream().map(FileAssetReference::getAssetId)
+                .filter(Objects::nonNull).forEach(previousAssetIds::add);
+        if (newAsset == null) {
+            deletePreviousReferences(previousReferences, lockedAssets, previousAssetIds, reason);
+            return;
         }
+
+        activateAsset(newAsset);
+        rebindBusinessField(previousReferences, newAsset, bizType, bizId, fieldKey);
+        releaseUnreferencedAssets(previousAssetIds, lockedAssets, newAsset.getId(), reason);
     }
 
     /** 中文注释：释放指定业务字段引用；资产只在引用计数归零后进入延迟删除队列。 */
@@ -157,15 +207,57 @@ public class FileAssetService {
     }
 
     private void deletePreviousReferences(List<FileAssetReference> references,
-                                          Map<Long, FileAsset> lockedAssets, String reason) {
+                                          Map<Long, FileAsset> lockedAssets,
+                                          Set<Long> assetIds,
+                                          String reason) {
         for (FileAssetReference reference : references) {
             if (fileAssetReferenceMapper.deleteById(reference.getId()) != 1) {
                 throw new BizException(Result.CODE_ERROR, "释放文件资产引用失败，请重试");
             }
         }
+        releaseUnreferencedAssets(assetIds, lockedAssets, null, reason);
+    }
+
+    /** 中文注释：先激活新资产，再原位切换唯一业务引用，避免新旧对象引用之间出现空档。 */
+    private void rebindBusinessField(List<FileAssetReference> references, FileAsset newAsset,
+                                    String bizType, Long bizId, String fieldKey) {
         LocalDateTime now = LocalDateTime.now();
-        for (Long assetId : references.stream().map(FileAssetReference::getAssetId)
-                .filter(Objects::nonNull).distinct().toList()) {
+        if (references.isEmpty()) {
+            FileAssetReference reference = new FileAssetReference();
+            reference.setAssetId(newAsset.getId());
+            reference.setBizType(bizType);
+            reference.setBizId(bizId);
+            reference.setFieldKey(fieldKey);
+            reference.setCreatedAt(now);
+            if (fileAssetReferenceMapper.insert(reference) != 1) {
+                throw new BizException(Result.CODE_ERROR, "创建文件资产业务引用失败，请重试");
+            }
+            return;
+        }
+
+        FileAssetReference currentReference = references.get(0);
+        if (!newAsset.getId().equals(currentReference.getAssetId())) {
+            currentReference.setAssetId(newAsset.getId());
+            currentReference.setCreatedAt(now);
+            if (fileAssetReferenceMapper.updateById(currentReference) != 1) {
+                throw new BizException(Result.CODE_ERROR, "切换文件资产业务引用失败，请重试");
+            }
+        }
+        for (int index = 1; index < references.size(); index++) {
+            if (fileAssetReferenceMapper.deleteById(references.get(index).getId()) != 1) {
+                throw new BizException(Result.CODE_ERROR, "清理重复文件资产业务引用失败，请重试");
+            }
+        }
+    }
+
+    /** 中文注释：只有业务引用归零且资产不是新绑定对象时，才创建延迟删除任务。 */
+    private void releaseUnreferencedAssets(Set<Long> assetIds, Map<Long, FileAsset> lockedAssets,
+                                           Long retainedAssetId, String reason) {
+        LocalDateTime now = LocalDateTime.now();
+        for (Long assetId : assetIds) {
+            if (Objects.equals(assetId, retainedAssetId)) {
+                continue;
+            }
             FileAsset asset = lockedAssets.get(assetId);
             if (asset == null || !FileAssetStatus.ACTIVE.name().equals(asset.getStatus())) {
                 continue;
@@ -183,7 +275,7 @@ public class FileAssetService {
         }
     }
 
-    private void activateAndBind(FileAsset asset, String bizType, Long bizId, String fieldKey) {
+    private void activateAsset(FileAsset asset) {
         if (FileAssetStatus.PENDING_DELETE.name().equals(asset.getStatus())) {
             asset.setStatus(FileAssetStatus.ACTIVE.name());
             asset.setDeleteAfter(null);
@@ -197,16 +289,20 @@ public class FileAssetService {
         if (fileAssetMapper.updateById(asset) != 1) {
             throw new BizException(Result.CODE_ERROR, "更新文件资产引用状态失败，请重试");
         }
+    }
 
-        FileAssetReference reference = new FileAssetReference();
-        reference.setAssetId(asset.getId());
-        reference.setBizType(bizType);
-        reference.setBizId(bizId);
-        reference.setFieldKey(fieldKey);
-        reference.setCreatedAt(now);
-        if (fileAssetReferenceMapper.insert(reference) != 1) {
-            throw new BizException(Result.CODE_ERROR, "创建文件资产业务引用失败，请重试");
+    /** 中文注释：剔除路径并验证上传文件名，避免将客户端本机目录或超长文本写入数据库。 */
+    private String normalizeFilename(String originalFilename) {
+        if (!StringUtils.hasText(originalFilename)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "上传文件名不能为空");
         }
+        String normalized = originalFilename.trim().replace('\\', '/');
+        normalized = normalized.substring(normalized.lastIndexOf('/') + 1);
+        if (!StringUtils.hasText(normalized) || normalized.length() > 255
+                || normalized.codePoints().anyMatch(Character::isISOControl)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "上传文件名不合法");
+        }
+        return normalized;
     }
 
     private void insertDeleteTask(FileAsset asset, String reason, LocalDateTime now) {

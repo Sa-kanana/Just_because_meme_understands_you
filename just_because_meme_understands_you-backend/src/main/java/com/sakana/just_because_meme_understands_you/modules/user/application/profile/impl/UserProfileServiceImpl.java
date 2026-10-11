@@ -18,7 +18,7 @@ import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.U
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserFavoriteMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserStatsMapper;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
@@ -43,6 +43,7 @@ import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -111,8 +112,9 @@ public class UserProfileServiceImpl implements IUserProfileService {
     @Resource
     private OssUrlHelper ossUrlHelper;
 
+    /** 中文注释：登记上传头像并在资料更新时维护头像文件资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     @Resource
     private IUserFavoriteFolderService userFavoriteFolderService;
@@ -420,12 +422,15 @@ public class UserProfileServiceImpl implements IUserProfileService {
             throw new BizException(Result.CODE_BAD_REQUEST, "仅支持 jpg/png/webp 图片");
         }
 
-        String objectKey = "avatar/" + userId + "/" + UUID.randomUUID() + "." + suffix;
+        String objectKey = "tmp/avatar/" + userId + "/" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+                + "/" + UUID.randomUUID() + "." + suffix;
         try {
             ossClient.putObject(bucketName, objectKey, file.getInputStream());
         } catch (IOException ignored) {
             throw new BizException(Result.CODE_ERROR, "头像上传失败，请稍后重试");
         }
+        fileAssetService.registerServerUploadedTempAsset(userId, objectKey, "avatar",
+                file.getOriginalFilename(), file.getContentType(), file.getSize());
 
         UploadAvatarVO vo = new UploadAvatarVO();
         vo.setUrl(ossUrlHelper.toPublicUrl(objectKey));
@@ -433,6 +438,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public AccountProfileVO updateProfile(Long userId, UserProfileUpdateRequestDTO request) {
         if (userId == null || userId <= 0) {
             throw new BizException(Result.CODE_UNAUTHORIZED, "未登录或登录已过期");
@@ -484,13 +490,18 @@ public class UserProfileServiceImpl implements IUserProfileService {
             if (!StringUtils.hasText(avatarRaw)) {
                 user.setAvatar(null);
             } else {
-                String avatarKey = ossObjectPromoteService.promoteAvatar(avatarRaw, userId);
+                String avatarKey = fileAssetService.promote(avatarRaw, userId, "avatar");
                 user.setAvatar(avatarKey);
             }
         }
 
         user.setUpdateTime(LocalDateTime.now());
-        userService.updateById(user);
+        if (!userService.updateById(user)) {
+            throw new BizException(Result.CODE_ERROR, "更新用户资料失败，请重试");
+        }
+        if (request.getAvatar() != null) {
+            fileAssetService.replaceReference(user.getAvatar(), "USER", userId, "AVATAR", "AVATAR_REPLACED");
+        }
         clearUserCache(userId);
 
         AccountProfileVO vo = userProfileViewMapper.toAccountProfileVO(user);

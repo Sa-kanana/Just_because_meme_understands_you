@@ -11,26 +11,22 @@ import com.sakana.just_because_meme_understands_you.modules.home.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.admin.application.IAdminHomeImageService;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.assembler.AdminViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.home.application.IHomeImageService;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
-import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminHomeImageVO;
 import jakarta.annotation.Resource;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
-@Slf4j
 public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
 
     @Resource
@@ -42,14 +38,12 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
     @Resource
     private IHomeImageService homeImageService;
 
+    /** 中文注释：提升轮播图上传并维护轮播图记录对应的文件资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     @Resource
     private OssUrlHelper ossUrlHelper;
-
-    @Resource
-    private MemeCatalogPort memeCatalogPort;
 
     @Override
     public PageVO<AdminHomeImageVO> page(Integer page, Integer size, Integer status) {
@@ -63,7 +57,7 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
         wrapper.orderByDesc(HomeImage::getSortOrder).orderByDesc(HomeImage::getId);
 
         Page<HomeImage> mpPage = homeImageMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
-        List<HomeImage> records = mpPage.getRecords() != null ? mpPage.getRecords() : Collections.emptyList();
+        List<HomeImage> records = mpPage.getRecords() != null ? mpPage.getRecords() : List.of();
 
         PageVO<AdminHomeImageVO> vo = new PageVO<>();
         vo.setList(records.stream().map(this::toVO).collect(Collectors.toList()));
@@ -89,7 +83,10 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
         if (entity.getSortOrder() == null) {
             entity.setSortOrder(0);
         }
-        homeImageMapper.insert(entity);
+        if (homeImageMapper.insert(entity) != 1 || entity.getId() == null) {
+            throw new BizException(Result.CODE_ERROR, "创建轮播图失败，请重试");
+        }
+        fileAssetService.replaceReference(entity.getImgUrl(), "BANNER", entity.getId(), "IMAGE", "BANNER_CREATED");
         homeImageService.evictCarouselCache();
         return toVO(entity);
     }
@@ -101,7 +98,10 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
         HomeImage entity = requireEntity(id);
         applySave(entity, request, adminUserId);
         entity.setUpdateTime(LocalDateTime.now());
-        homeImageMapper.updateById(entity);
+        if (homeImageMapper.updateById(entity) != 1) {
+            throw new BizException(Result.CODE_ERROR, "更新轮播图失败，请重试");
+        }
+        fileAssetService.replaceReference(entity.getImgUrl(), "BANNER", entity.getId(), "IMAGE", "BANNER_UPDATED");
         homeImageService.evictCarouselCache();
         return toVO(entity);
     }
@@ -110,10 +110,10 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         HomeImage entity = requireEntity(id);
-        if (!isImageReferencedElsewhere(entity)) {
-            ossObjectPromoteService.deleteHomeImage(entity.getImgUrl());
+        fileAssetService.releaseReference("BANNER", entity.getId(), "IMAGE", "BANNER_DELETED");
+        if (homeImageMapper.deleteById(entity.getId()) != 1) {
+            throw new BizException(Result.CODE_ERROR, "删除轮播图失败，请重试");
         }
-        homeImageMapper.deleteById(entity.getId());
         homeImageService.evictCarouselCache();
     }
 
@@ -133,7 +133,7 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
 
     private void applySave(HomeImage entity, AdminHomeImageSaveRequestDTO request, Long adminUserId) {
         entity.setTitle(trimToNull(request.getTitle()));
-        entity.setImgUrl(ossObjectPromoteService.promoteHomeImage(request.getImgUrl(), adminUserId));
+        entity.setImgUrl(fileAssetService.promote(request.getImgUrl(), adminUserId, "home"));
         entity.setTargetType(request.getTargetType());
         entity.setTargetValue(normalizeTargetValue(request.getTargetType(), request.getTargetValue()));
         if (request.getSortOrder() != null) {
@@ -190,27 +190,6 @@ public class AdminHomeImageServiceImpl implements IAdminHomeImageService {
         AdminHomeImageVO vo = adminViewMapper.toAdminHomeImageVO(entity);
         vo.setImgUrl(ossUrlHelper.toPublicUrl(entity.getImgUrl()));
         return vo;
-    }
-
-    private boolean isImageReferencedElsewhere(HomeImage entity) {
-        String objectKey = ossUrlHelper.normalizeForStorage(entity.getImgUrl());
-        if (!StringUtils.hasText(objectKey) || !objectKey.startsWith("home/")) {
-            return false;
-        }
-        LambdaQueryWrapper<HomeImage> otherCarouselReferences = new LambdaQueryWrapper<HomeImage>()
-                .ne(HomeImage::getId, entity.getId())
-                .and(wrapper -> wrapper.eq(HomeImage::getImgUrl, objectKey)
-                        .or().eq(HomeImage::getImgUrl, entity.getImgUrl()));
-        Long carouselReferenceCount = homeImageMapper.selectCount(otherCarouselReferences);
-        if (carouselReferenceCount != null && carouselReferenceCount > 0) {
-            log.info("轮播图删除后仍有其他轮播图引用图片，保留 OSS 对象 key={}", objectKey);
-            return true;
-        }
-        if (memeCatalogPort.isImageAssetReferenced(objectKey)) {
-            log.info("轮播图删除后仍有梗图内容引用图片，保留 OSS 对象 key={}", objectKey);
-            return true;
-        }
-        return false;
     }
 
     private static String trimToNull(String value) {
