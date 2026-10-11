@@ -35,7 +35,7 @@
 
 ---
 
-### 任务 1：建立资产表结构和持久化模型
+### Task 1：建立资产表结构和持久化模型
 
 **文件：**
 
@@ -61,7 +61,7 @@
 - [ ] 4. 注册迁移后运行 `.\mvnw.cmd -Dtest=FileAssetSchemaContractTest,FlywayMigrationCatalogTest test`，预期通过。
 - [ ] 5. 提交：`feat: add file asset lifecycle schema`。
 
-### 任务 2：签发并确认安全上传票据
+### Task 2：签发并确认安全上传票据
 
 **文件：**
 
@@ -86,7 +86,7 @@
 - [ ] 4. 运行聚焦测试，确认路由、权限和校验通过。
 - [ ] 5. 提交：`feat: issue tracked OSS upload tickets`。
 
-### 任务 3：更新用户端和管理端直传工具
+### Task 3：更新用户端和管理端直传工具
 
 **文件：**
 
@@ -106,7 +106,7 @@
 - [ ] 3. 在两个前端目录分别运行 `npm run lint` 和 `npm run build`，预期通过。
 - [ ] 4. 提交：`feat: confirm browser OSS uploads`。
 
-### 任务 4：实现引用管理、延迟删除队列和 OSS Worker
+### Task 4：实现引用管理、延迟删除队列和 OSS Worker
 
 **文件：**
 
@@ -131,7 +131,7 @@
 - [ ] 5. 运行聚焦测试，确认共享/保护对象不被删除且重试有上限。
 - [ ] 6. 提交：`feat: queue safe OSS asset deletion`。
 
-### 任务 5：回填历史资产并清理过期临时文件
+### Task 5：回填历史资产并清理过期临时文件
 
 **文件：**
 
@@ -156,7 +156,7 @@
 - [ ] 5. 运行聚焦测试及 `.\mvnw.cmd -Dtest=FlywayMigrationIntegrationTest test`；未设置 `MIGRATION_TEST_MYSQL_URL` 时，集成测试可按现有规则跳过。
 - [ ] 6. 提交：`feat: backfill legacy OSS asset references`。
 
-### 任务 6：接入头像、首页图和评论图片引用
+### Task 6：接入头像、首页图和评论图片引用
 
 **文件：**
 
@@ -180,7 +180,7 @@
 - [ ] 4. 运行聚焦测试，确认业务事务没有 OSS 网络调用。
 - [ ] 5. 提交：`feat: track profile and comment image references`。
 
-### 任务 7：接入梗、资源、审核稿和永久清理流程
+### Task 7：接入梗、资源、审核稿和永久清理流程
 
 **文件：**
 
@@ -202,7 +202,7 @@
 - [ ] 5. 运行聚焦测试，确认发布、审核和清理事务中不再直接删除 OSS。
 - [ ] 6. 提交：`feat: track meme and revision image references`。
 
-### 任务 8：增加默认 dry-run 的孤儿对账和运维说明
+### Task 8：增加默认 dry-run 的孤儿对账和运维说明
 
 **文件：**
 
@@ -226,7 +226,7 @@
 - [ ] 5. 运行聚焦测试，确认默认 dry-run 只登记候选。
 - [ ] 6. 提交：`feat: reconcile orphaned OSS objects safely`。
 
-### 任务 9：全量验证与收尾
+### Task 9：全量验证与收尾
 
 **范围：** 检查所有后端、前端、管理端、迁移和文档变更；只在新流程改变契约时调整相关测试。
 
