@@ -85,6 +85,17 @@ class FileAssetServiceTest {
     }
 
     @Test
+    void rejectsAnotherUsersRegisteredFinalImage() throws Throwable {
+        FileAsset asset = activeAsset(31L, "memes/20261011/other.png");
+        asset.setOwnerId(8L);
+        Object service = createService(fileMapper(List.of(asset)), referenceMapper(List.of(), 0),
+                newDeleteTaskMapper(new ArrayList<>()), mock(OssObjectPromoteService.class));
+
+        assertThrows(BizException.class, () -> invoke(service, "promote",
+                new Class<?>[]{String.class, Long.class, String.class}, asset.getObjectKey(), 7L, "meme"));
+    }
+
+    @Test
     void promotesConfirmedTemporaryAssetAndUpdatesItsLifecycleState() throws Throwable {
         FileAsset asset = temporaryAsset(9L, "meme", LocalDateTime.now());
         FileAssetMapper mapper = fileMapper(List.of(asset));

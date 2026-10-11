@@ -177,8 +177,7 @@ oss:
       - avatar/ # 用户头像。
       - memes/ # 梗图及媒体。
       - comments/ # 评论图片。
-      - home/ # 首页运营图片。
-      - common/ # 公共图片。
+      # 首页和公共目录可由未登记链接引用，默认不参与孤儿自动删除。
     # Worker 可以删除的业务对象前缀白名单。
     allowed-prefixes:
       - tmp/ # 直传产生的临时文件。

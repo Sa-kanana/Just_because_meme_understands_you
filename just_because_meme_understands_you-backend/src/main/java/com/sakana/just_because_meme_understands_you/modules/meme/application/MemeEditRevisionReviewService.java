@@ -334,7 +334,7 @@ public class MemeEditRevisionReviewService {
         fileAssetService.replaceReference(resource.getResourceUrl(), "MEME_RESOURCE", resource.getId(), "URL", reason);
     }
 
-    /** 中文注释：正式内容接管后释放编辑稿封面和媒体数组中持有的引用。 */
+    /** 中文注释：正式内容接管后释放编辑稿封面、媒体和站内结构化链接的引用。 */
     private void releaseRevisionAssetReferences(Long revisionId, MemeEditRequestDTO content, String reason) {
         if (content == null) {
             return;
@@ -345,6 +345,10 @@ public class MemeEditRevisionReviewService {
         List<String> mediaUrls = content.getResourceUrls();
         for (int index = 0; mediaUrls != null && index < mediaUrls.size(); index++) {
             fileAssetService.releaseReference("MEME_REVISION", revisionId, "RESOURCE:" + index, reason);
+        }
+        List<MemeResourceItemDTO> links = content.getResources();
+        for (int index = 0; links != null && index < links.size(); index++) {
+            fileAssetService.releaseReference("MEME_REVISION", revisionId, "LINK:" + index, reason);
         }
     }
 

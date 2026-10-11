@@ -122,6 +122,9 @@ public class FileAssetService {
         if ((FileAssetStatus.ACTIVE.name().equals(asset.getStatus())
                 || FileAssetStatus.PENDING_DELETE.name().equals(asset.getStatus()))
                 && !objectKey.startsWith("tmp/")) {
+            if (asset.getOwnerId() != null && !uploaderId.equals(asset.getOwnerId())) {
+                throw new BizException(Result.CODE_FORBIDDEN, "文件资产不属于当前上传者");
+            }
             ossUrlHelper.assertOwnedImageKey(objectKey, finalPrefixForScene(scene, uploaderId));
             return objectKey;
         }
@@ -171,7 +174,7 @@ public class FileAssetService {
         return asset.getObjectKey();
     }
 
-    /** 中文注释：正式图片沿用旧接口的业务目录限制，同时允许归属信息为空的历史回填资产。 */
+    /** 中文注释：正式图片限制业务目录；归属信息为空的历史回填资产仍可沿用。 */
     private String finalPrefixForScene(String scene, Long uploaderId) {
         return switch (scene.toLowerCase(Locale.ROOT)) {
             case "avatar" -> "avatar/" + uploaderId + "/";

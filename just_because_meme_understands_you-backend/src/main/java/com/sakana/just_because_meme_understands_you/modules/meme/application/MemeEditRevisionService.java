@@ -196,6 +196,12 @@ public class MemeEditRevisionService {
             fileAssetService.replaceReference(mediaUrls.get(index), "MEME_REVISION", revisionId,
                     "RESOURCE:" + index, "MEME_REVISION_CREATED");
         }
+        List<MemeResourceItemDTO> links = revision.getResources();
+        for (int index = 0; index < links.size(); index++) {
+            // 中文注释：站内OSS链接也可能是图片；外链由资产服务识别后不会建立引用。
+            fileAssetService.replaceReference(links.get(index).getUrl(), "MEME_REVISION", revisionId,
+                    "LINK:" + index, "MEME_REVISION_CREATED");
+        }
     }
 
     private List<Integer> normalizeTagIds(List<Integer> tagIds) {

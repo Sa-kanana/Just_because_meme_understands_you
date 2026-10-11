@@ -14,6 +14,10 @@ import java.util.List;
 @Mapper
 public interface FileAssetDeleteTaskMapper extends BaseMapper<FileAssetDeleteTask> {
 
+    /** 中文注释：返回指定状态的删除任务数，供每日对账汇总失败任务。 */
+    @Select("SELECT COUNT(*) FROM file_delete_task WHERE status = #{status}")
+    long countByStatus(@Param("status") String status);
+
     /** 中文注释：按主键锁定删除任务，供状态转换在数据库事务中串行执行。 */
     @Select("SELECT * FROM file_delete_task WHERE id = #{taskId} FOR UPDATE")
     FileAssetDeleteTask selectByIdForUpdate(@Param("taskId") Long taskId);

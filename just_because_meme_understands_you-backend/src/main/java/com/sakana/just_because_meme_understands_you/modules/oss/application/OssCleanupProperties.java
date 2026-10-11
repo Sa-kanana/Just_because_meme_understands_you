@@ -65,7 +65,7 @@ public class OssCleanupProperties {
 
     /** 中文注释：孤儿对账仅扫描这些业务前缀，仍需同时满足删除白名单。 */
     private List<String> reconcilePrefixes = new ArrayList<>(List.of(
-            "tmp/", "avatar/", "memes/", "comments/", "home/", "common/"));
+            "tmp/", "avatar/", "memes/", "comments/"));
 
     /** 中文注释：允许 Worker 删除的 OSS 对象键前缀白名单。 */
     private List<String> allowedPrefixes = new ArrayList<>(List.of(
@@ -99,5 +99,11 @@ public class OssCleanupProperties {
             }
         }
         return true;
+    }
+
+    /** 中文注释：公共和首页目录可被未登记业务链接复用，孤儿扫描禁止自动删除它们。 */
+    public boolean isSafeOrphanDeleteKey(String objectKey) {
+        return isSafeDeleteKey(objectKey)
+                && !objectKey.startsWith("home/") && !objectKey.startsWith("common/");
     }
 }

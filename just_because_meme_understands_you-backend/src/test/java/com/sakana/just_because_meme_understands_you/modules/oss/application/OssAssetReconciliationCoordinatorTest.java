@@ -123,7 +123,26 @@ class OssAssetReconciliationCoordinatorTest {
                 .isEqualTo(OssAssetReconciliationCoordinator.Observation.SKIPPED);
         assertThat(coordinator.observe("memes/../key.png", LocalDateTime.now().minusDays(10)))
                 .isEqualTo(OssAssetReconciliationCoordinator.Observation.SKIPPED);
+        assertThat(coordinator.observe("common/shared.png", LocalDateTime.now().minusDays(10)))
+                .isEqualTo(OssAssetReconciliationCoordinator.Observation.SKIPPED);
+        assertThat(coordinator.observe("home/banner.png", LocalDateTime.now().minusDays(10)))
+                .isEqualTo(OssAssetReconciliationCoordinator.Observation.SKIPPED);
         verifyNoInteractions(candidateMapper, assetMapper, taskMapper);
+    }
+
+    @Test
+    void previouslyReferencedObjectStartsFreshObservationIfRegistrationDisappears() {
+        OssCleanupProperties properties = (OssCleanupProperties) ReflectionTestUtils.getField(coordinator, "cleanupProperties");
+        properties.setReconcileDryRun(false);
+        FileOrphanCandidate candidate = oldCandidate();
+        candidate.setStatus("REFERENCED");
+        when(candidateMapper.selectByObjectKeyForUpdate(anyString())).thenReturn(candidate);
+
+        assertThat(coordinator.observe("memes/unknown.png", LocalDateTime.now().minusDays(10)))
+                .isEqualTo(OssAssetReconciliationCoordinator.Observation.DISCOVERED);
+        assertThat(candidate.getStatus()).isEqualTo("DISCOVERED");
+        assertThat(candidate.getFirstSeenAt()).isAfter(LocalDateTime.now().minusMinutes(1));
+        verifyNoInteractions(taskMapper, backfillMapper);
     }
 
     private FileOrphanCandidate oldCandidate() {

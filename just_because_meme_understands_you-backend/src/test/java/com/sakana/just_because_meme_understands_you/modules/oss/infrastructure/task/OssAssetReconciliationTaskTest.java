@@ -7,6 +7,7 @@ import com.aliyun.oss.model.OSSObjectSummary;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssAssetReconciliationCoordinator;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssCleanupProperties;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetMapper;
+import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetDeleteTaskMapper;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileOrphanCandidateMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,8 @@ class OssAssetReconciliationTaskTest {
     @Mock private OssAssetReconciliationCoordinator coordinator;
     /** 中文注释：模拟资产状态汇总。 */
     @Mock private FileAssetMapper fileAssetMapper;
+    /** 中文注释：模拟失败删除任务汇总。 */
+    @Mock private FileAssetDeleteTaskMapper deleteTaskMapper;
     /** 中文注释：模拟孤儿候选汇总。 */
     @Mock private FileOrphanCandidateMapper candidateMapper;
     /** 中文注释：被测的每日孤儿对账任务。 */

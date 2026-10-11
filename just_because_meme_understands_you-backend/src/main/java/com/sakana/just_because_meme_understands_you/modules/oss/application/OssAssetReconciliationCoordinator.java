@@ -37,14 +37,15 @@ public class OssAssetReconciliationCoordinator {
     @Transactional
     public Observation observe(String objectKey, LocalDateTime objectModifiedAt) {
         if (cleanupProperties == null || !cleanupProperties.isReconcileEnabled()
-                || !cleanupProperties.isSafeDeleteKey(objectKey)) {
+                || !cleanupProperties.isSafeOrphanDeleteKey(objectKey)) {
             return Observation.SKIPPED;
         }
         LocalDateTime now = LocalDateTime.now();
         FileOrphanCandidate candidate = candidateMapper.selectByObjectKeyForUpdate(objectKey);
         FileAsset registered = fileAssetMapper.selectByObjectKeyForUpdate(objectKey);
         if (registered != null) {
-            if (candidate != null && !"REFERENCED".equals(candidate.getStatus())) {
+            if (candidate != null && !"REFERENCED".equals(candidate.getStatus())
+                    && !"QUEUED".equals(candidate.getStatus())) {
                 candidate.setStatus("REFERENCED");
                 candidate.setLastCheckResult("对象已登记为文件资产；禁止孤儿删除");
                 candidate.setUpdatedAt(now);
@@ -68,6 +69,12 @@ public class OssAssetReconciliationCoordinator {
         }
         if ("QUEUED".equals(candidate.getStatus())) {
             return Observation.SKIPPED;
+        }
+        if ("REFERENCED".equals(candidate.getStatus())) {
+            // 中文注释：对象曾受业务保护，若登记消失则重新开始完整观察期。
+            candidate.setStatus("DISCOVERED");
+            candidate.setFirstSeenAt(now);
+            candidate.setConfirmedAt(null);
         }
         candidate.setLastSeenAt(now);
         candidate.setUpdatedAt(now);

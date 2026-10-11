@@ -31,13 +31,13 @@
 | `OSS_RECONCILE_PAGE_SIZE` | `500` | 每页列举对象数，上限 1000。 |
 | `OSS_ORPHAN_REVIEW_DAYS` | `7` | 候选首次发现和对象最近修改时间均需早于该观察期；程序最少强制 7 天。 |
 | `OSS_RECONCILE_DRY_RUN` | `true` | 为真时仅确认候选，不创建删除任务。 |
-| `oss.cleanup.reconcile-prefixes` | `tmp/`、`avatar/`、`memes/`、`comments/`、`home/`、`common/` | 允许列举的业务前缀；需同时落在删除白名单内。 |
+| `oss.cleanup.reconcile-prefixes` | `tmp/`、`avatar/`、`memes/`、`comments/` | 允许列举的业务前缀；需同时落在删除白名单内。`home/`、`common/` 可能被未登记的公共链接复用，即使手动加入也禁止孤儿自动删除。 |
 | `oss.cleanup.allowed-prefixes` | 同上 | Worker 和对账共同使用的可删除对象前缀白名单。 |
 | `oss.cleanup.protected-prefixes` | `system/`、`homepage/static/` | 即使误加入白名单也禁止对账入队和物理删除的前缀。 |
 
 ## 每日检查
 
-对账结束日志包含本轮 `scanned`、`discovered`、`confirmed`、`queued`、`skipped` 和 `assetsTemp`、`assetsActive`、`assetsPending`、`candidatesDiscovered`、`candidatesQueued`。单对象日志按可用值记录 `assetId`、`objectKey`、`bizType`、`bizId`、`reason`、`taskId`、`retryCount`。首次上线应核对扫描量是否接近预期；`skipped` 或 `queued` 突增时先把 dry-run 设回 `true` 并调查来源。
+对账结束日志包含本轮 `scanned`、`discovered`、`confirmed`、`queued`、`skipped` 和 `assetsTemp`、`assetsActive`、`assetsPending`、`deleteTasksFailed`、`candidatesDiscovered`、`candidatesQueued`。单对象日志按可用值记录 `assetId`、`objectKey`、`bizType`、`bizId`、`reason`、`taskId`、`retryCount`。首次上线应核对扫描量是否接近预期；`skipped` 或 `queued` 突增时先把 dry-run 设回 `true` 并调查来源。
 
 数据库检查时逐项查看：
 
@@ -47,3 +47,7 @@
 - `file_asset_backfill_state`：每个来源以及 `__runner__` 都须为 `COMPLETED`，否则物理删除门禁保持关闭。
 
 确认误判时，先关闭对账入队并保留日志；不要直接删除数据库记录。若任务仍未开始，核对并恢复业务引用可使 Worker 在删除前取消任务。若任务已经 `DONE`，需从备份或源文件恢复对象。OSS 生命周期 `tmp/` 的过期删除不经过应用 Worker，因此临时文件不能作为长期业务引用。
+
+## 变更验证
+
+后端执行 `mvnw.cmd test`；只有未设置 `MIGRATION_TEST_MYSQL_URL` 时，MySQL 迁移集成测试才按项目既有条件跳过。用户端和管理端各执行 `npm run lint` 与 `npm run build`。上线前再检查项目代码中仅专用删除 Worker 调用 OSS `deleteObject`，且旧 `/v1/uploads/policies` 路由没有残留。

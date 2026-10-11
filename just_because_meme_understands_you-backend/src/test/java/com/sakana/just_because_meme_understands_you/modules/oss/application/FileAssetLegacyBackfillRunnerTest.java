@@ -101,18 +101,20 @@ class FileAssetLegacyBackfillRunnerTest {
         when(legacyReferenceMapper.selectMemeRevisionBatch(null, 20)).thenReturn(List.of(
                 revisionRow(31L, "{\"image\":\"https://cdn.example.test/memes/cover.png\","
                         + "\"resourceUrls\":[\"https://bucket.oss-cn-hangzhou.aliyuncs.com/comments/a.png\","
-                        + "\"https://remote.example.org/video\"]}")));
+                        + "\"https://remote.example.org/video\"],"
+                        + "\"resources\":[{\"url\":\"https://cdn.example.test/memes/link.png\"}]}")));
         when(fileAssetMapper.selectByObjectKey("memes/cover.png")).thenReturn(activeAsset(91L));
         when(fileAssetMapper.selectByObjectKey("comments/a.png")).thenReturn(activeAsset(92L));
+        when(fileAssetMapper.selectByObjectKey("memes/link.png")).thenReturn(activeAsset(93L));
 
         runner.runNextBatch();
 
         ArgumentCaptor<FileAssetReference> captor = ArgumentCaptor.forClass(FileAssetReference.class);
-        verify(fileAssetReferenceMapper, org.mockito.Mockito.times(2))
+        verify(fileAssetReferenceMapper, org.mockito.Mockito.times(3))
                 .insertIgnoreLegacyReference(captor.capture());
-        assertEquals(List.of("COVER", "RESOURCE:0"),
+        assertEquals(List.of("COVER", "RESOURCE:0", "LINK:0"),
                 captor.getAllValues().stream().map(FileAssetReference::getFieldKey).toList());
-        assertEquals(List.of(91L, 92L), captor.getAllValues().stream().map(FileAssetReference::getAssetId).toList());
+        assertEquals(List.of(91L, 92L, 93L), captor.getAllValues().stream().map(FileAssetReference::getAssetId).toList());
     }
 
     @Test

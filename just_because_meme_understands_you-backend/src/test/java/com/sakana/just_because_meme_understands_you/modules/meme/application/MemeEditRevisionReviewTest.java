@@ -132,6 +132,7 @@ class MemeEditRevisionReviewTest {
         verify(fileAssetService).releaseReference("MEME_RESOURCE", 31L, "URL", "MEME_RESOURCES_REPLACED");
         verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "COVER", "MEME_REVISION_APPROVED");
         verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "RESOURCE:0", "MEME_REVISION_APPROVED");
+        verify(fileAssetService).releaseReference("MEME_REVISION", 77L, "LINK:0", "MEME_REVISION_APPROVED");
         verify(memePublishAsyncHandler).decrementTagRelatedQuantity(List.of(1));
         verify(memePublishAsyncHandler).incrementTagRelatedQuantity(List.of(2, 3));
         assertReviewNotification("APPROVED", null);

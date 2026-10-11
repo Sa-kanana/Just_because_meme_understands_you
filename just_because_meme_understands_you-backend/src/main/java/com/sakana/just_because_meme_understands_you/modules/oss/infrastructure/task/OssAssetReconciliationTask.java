@@ -7,6 +7,7 @@ import com.aliyun.oss.model.OSSObjectSummary;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssAssetReconciliationCoordinator;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssCleanupProperties;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetMapper;
+import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileAssetDeleteTaskMapper;
 import com.sakana.just_because_meme_understands_you.modules.oss.infrastructure.persistence.mapper.FileOrphanCandidateMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,8 @@ public class OssAssetReconciliationTask {
     @Resource private OssCleanupProperties cleanupProperties;
     /** 中文注释：读取资产各生命周期状态的每日统计。 */
     @Resource private FileAssetMapper fileAssetMapper;
+    /** 中文注释：读取删除失败任务数量，供运维关注。 */
+    @Resource private FileAssetDeleteTaskMapper deleteTaskMapper;
     /** 中文注释：读取孤儿候选各状态的每日统计。 */
     @Resource private FileOrphanCandidateMapper candidateMapper;
     /** 中文注释：存储业务文件的OSS Bucket名称。 */
@@ -61,7 +64,7 @@ public class OssAssetReconciliationTask {
         int pageSize = Math.min(1000, Math.max(1, cleanupProperties.getReconcilePageSize()));
         for (String prefix : prefixes) {
             if (!StringUtils.hasText(prefix) || !prefix.endsWith("/")
-                    || !cleanupProperties.isSafeDeleteKey(prefix + "probe")) {
+                    || !cleanupProperties.isSafeOrphanDeleteKey(prefix + "probe")) {
                 log.warn("跳过不安全的OSS对账前缀 prefix={}", prefix);
                 continue;
             }
@@ -72,7 +75,7 @@ public class OssAssetReconciliationTask {
                 for (OSSObjectSummary object : page.getObjectSummaries()) {
                     scanned++;
                     String key = object.getKey();
-                    if (!key.startsWith(prefix) || !cleanupProperties.isSafeDeleteKey(key)) {
+                    if (!key.startsWith(prefix) || !cleanupProperties.isSafeOrphanDeleteKey(key)) {
                         skipped++;
                         continue;
                     }
@@ -102,10 +105,12 @@ public class OssAssetReconciliationTask {
         }
         ReconciliationSummary summary = new ReconciliationSummary(scanned, discovered, confirmed, queued, skipped);
         log.info("OSS对账完成 dryRun={}, scanned={}, discovered={}, confirmed={}, queued={}, skipped={}, "
-                        + "assetsTemp={}, assetsActive={}, assetsPending={}, candidatesDiscovered={}, candidatesQueued={}",
+                        + "assetsTemp={}, assetsActive={}, assetsPending={}, deleteTasksFailed={}, "
+                        + "candidatesDiscovered={}, candidatesQueued={}",
                 cleanupProperties.isReconcileDryRun(), scanned, discovered, confirmed, queued, skipped,
                 fileAssetMapper.countByStatus("TEMP"), fileAssetMapper.countByStatus("ACTIVE"),
-                fileAssetMapper.countByStatus("PENDING_DELETE"), candidateMapper.countByStatus("DISCOVERED"),
+                fileAssetMapper.countByStatus("PENDING_DELETE"), deleteTaskMapper.countByStatus("FAILED"),
+                candidateMapper.countByStatus("DISCOVERED"),
                 candidateMapper.countByStatus("QUEUED"));
         return summary;
     }

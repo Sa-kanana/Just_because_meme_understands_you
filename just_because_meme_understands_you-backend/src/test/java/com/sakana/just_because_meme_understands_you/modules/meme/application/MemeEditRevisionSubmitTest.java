@@ -170,6 +170,19 @@ class MemeEditRevisionSubmitTest {
     }
 
     @Test
+    void revisionTracksStructuredLinkThatMayPointToOwnedOssImage() throws Exception {
+        when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
+        String url = "https://cdn.example.test/memes/linked.png";
+
+        invokeSubmit(21L, 1001L,
+                request("链接图片", null, List.of(), List.of(),
+                        List.of(resourceItem("link", url, "图片来源"))));
+
+        verify(fileAssetService).replaceReference(url, "MEME_REVISION", 700L, "LINK:0",
+                "MEME_REVISION_CREATED");
+    }
+
+    @Test
     void nonOwnerCannotSubmitAnEdit() throws Exception {
         when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
 

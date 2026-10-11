@@ -63,7 +63,8 @@ public class MemeController {
     /**
      * 发布梗（需登录）
      * POST /v1/memes
-     * 图片资源采用两阶段法：前端先调 /v1/uploads/policies 直传 OSS 拿到 URL，再随表单提交。
+     * 图片资源先通过 /v1/uploads/tickets 获取上传票据并直传 OSS，
+     * 再调用 /v1/uploads/{assetId}/confirm 确认上传，最后随发布表单提交资源地址。
      */
     @PostMapping("/memes")
     public Result<MemeCreateResponseVO> publish(@RequestBody MemeCreateRequestDTO request,

@@ -150,7 +150,7 @@ public class FileAssetLegacyBackfillRunner {
         };
     }
 
-    /** 中文注释：解析待审核 JSON 中的 image 和 resourceUrls，保持数组索引作为资源字段键。 */
+    /** 中文注释：解析待审核 JSON 中的封面、媒体和结构化链接，保持数组索引作为资源字段键。 */
     private void backfillRevision(LegacyFileAssetReferenceRow row, Map<String, FileAsset> assetCache) {
         if (row.getBizId() == null || !StringUtils.hasText(row.getContentJson())) {
             return;
@@ -168,6 +168,16 @@ public class FileAssetLegacyBackfillRunner {
                     if (value != null && value.isTextual()) {
                         backfillValue("MEME_REVISION", row.getBizId(), value.asText(),
                                 "RESOURCE:" + index, assetCache);
+                    }
+                }
+            }
+            JsonNode links = content.path("resources");
+            if (links.isArray()) {
+                for (int index = 0; index < links.size(); index++) {
+                    JsonNode url = links.get(index).path("url");
+                    if (url.isTextual()) {
+                        backfillValue("MEME_REVISION", row.getBizId(), url.asText(),
+                                "LINK:" + index, assetCache);
                     }
                 }
             }
