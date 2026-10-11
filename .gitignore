@@ -25,6 +25,7 @@ docs/db/*
 !docs/superpowers/specs/
 docs/superpowers/specs/*
 !docs/superpowers/specs/2026-10-09-database-schema-clarity-design.md
+!docs/superpowers/specs/2026-10-11-oss-file-asset-management-design.md
 !docs/superpowers/plans/
 docs/superpowers/plans/*
 !docs/superpowers/plans/2026-10-09-database-schema-clarity.md
