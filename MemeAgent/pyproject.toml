@@ -29,6 +29,10 @@ dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+# 仅将服务代码作为发行包，避免把运行报告目录自动识别为顶层 Python 包。
+[tool.setuptools.packages.find]
+include = ["app*"] # 发布 app 及其子包，不包含 reports 等辅助目录
+
 # 将可独立维护的 Markdown 系统提示作为 app.agents 包资源发布。
 [tool.setuptools.package-data]
 "app.agents" = ["prompt_files/*.md"]

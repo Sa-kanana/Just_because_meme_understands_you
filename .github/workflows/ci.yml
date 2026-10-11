@@ -98,15 +98,15 @@ jobs:
 
       - name: 安装锁定的 npm 依赖
         run: npm ci # 根据 package-lock.json 可重复安装依赖
-        working-directory: just_because_meme_understands_you-frontend # 使用用户端模块目录
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
 
       - name: 运行用户端 Node 测试
         run: node --test tests/*.test.mjs # 执行用户端内置 Node 测试
-        working-directory: just_because_meme_understands_you-frontend # 使用用户端模块目录
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
 
       - name: 构建用户端
         run: npm run build # 验证生产环境前端构建
-        working-directory: just_because_meme_understands_you-frontend # 使用用户端模块目录
+        working-directory: Just_because_meme_understands_you-frontend # 使用用户端模块目录，目录名区分大小写
 
   admin-frontend:
     name: 管理端测试与构建 # 管理后台检查任务名称

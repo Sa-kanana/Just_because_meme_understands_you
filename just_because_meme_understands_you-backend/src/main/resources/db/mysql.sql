@@ -472,6 +472,7 @@ create table user_stats
 (
     user_id        bigint        not null comment '关联user的id'
         primary key,
+    meme_count     int default 0 not null comment '发布梗数量（后续迁移清理的冗余字段）',
     like_received  int default 0 not null comment '获得的获赞总数',
     favorite_count int default 0 not null comment '收藏的梗数量',
     follow_count   int default 0 not null comment '关注人数',
