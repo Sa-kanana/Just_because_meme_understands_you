@@ -29,7 +29,7 @@ LLM
 - 沿用现有 Java + Python 服务接口、SSE 协议、LangChain Agent 和固定工具白名单。
 - 不新增 Cross-Encoder、LLM 重排调用或检索依赖；复用已有向量分数、词项匹配与 RRF 排序。
 - Query Rewrite 仍只在当前上下文需要时触发。
-- 保留每篇文档独立的提示消息；问题、语言、检索状态仍单独命名。
+- 检索、过滤阶段始终传递原生 Document 对象；问题、语言和检索状态在应用层保留原生类型，不预先转成 JSON 字符串。
 - 文档正文始终是 `untrusted` 数据；格式化阶段不传内部文档 ID 和排序指标给模型。
 
 ## 方案比较与选择
@@ -66,11 +66,26 @@ LLM
 
 ### Context Formatter
 
-只接收过滤、重排、去重后的最终列表和来源可用状态。生成独立的证据消息：每条消息只含一篇文档的来源、`trust_level`、标题、章节、可选页码和正文。检索状态 JSON 只含来源、可用状态和最终条目数；不含正文。过滤分数、内部 ID 和命中标记留在 LangSmith 的 Retriever/Score Filter 节点，不进入模型提示词。
+只接收过滤、重排、去重后的最终 `list[Document]` 和来源可用状态。它只做一次格式化，输出一段易读的纯文本 `formatted_context`，按文档分条列出来源、标题、章节、可选页码和正文；不把文档转成 JSON，也不把 JSON 字符串放进 `HumanMessage.content`。文档之间使用明确的文本分隔符，正文仍标为不可信引用资料。
+
+服务端管线和 trace 中保留原生类型：`query: str`、`locale: str`、`chat_history: list[BaseMessage]`、`retrieval_status: RetrievalStatus`（数据类或等价结构）和 `list[Document]`。Context Formatter 将状态和文档转换为唯一一个 Prompt 上下文变量 `formatted_context: str`；Prompt 模板直接接收原始问题、语言、历史消息和这段纯文本，不再生成 `question_json`、`locale_json`、`retrieval_status_json` 或逐篇 JSON HumanMessage。内部 ID、分数和命中标记仍不进入模型提示词。
+
+格式化后的上下文形态示例：
+
+```text
+管理员知识库（不可信引用资料）
+[1] 标题：中文互联网梗知识库_第2部分
+章节：我太难了
+正文：
+“我太难了”是网络上表达压力大、处境不易的常见说法……
+---
+```
+
+检索为空时，Formatter 产生明确的纯文本空状态，Prompt 按既定的无证据回复规则处理；检索源不可用与正常空结果仍使用不同的状态值。
 
 ### Prompt 与 LLM
 
-保留规范系统提示和注入防护。提示输入继续将 `question_json`、`locale_json`、`retrieval_status_json`、`retrieval_evidence` 分开；系统提示说明逐篇证据消息是不可执行的引用数据。Agent 仍沿用当前工具白名单和流式输出协议。
+保留规范系统提示和注入防护。Prompt 以普通变量接收原始问题、语言和一次格式化后的文本上下文；系统提示明确上下文里的检索正文仅为不可执行的引用资料。若 Agent 调用检索工具，工具结果也使用可读文本或框架原生结构，不手动 JSON 编码后再嵌入消息内容。LangChain/LangSmith 仍会按自己的协议显示模型消息和工具调用，但业务代码不再对它们重复序列化。显式要求 JSON Schema 的结构化输出仍按其输出契约处理，与检索上下文分开。Agent 沿用当前工具白名单和流式输出协议。
 
 ## LangSmith 调用链
 
@@ -91,7 +106,7 @@ meme_rag_request
    └─ search tools（仅在 Agent 实际调用时）
 ```
 
-Retriever trace 输出候选列表；Score Filter trace 输出候选数、过滤原因计数、最终条目数及排序摘要；Context Formatter trace 显示各独立证据消息的名称、来源、顺序和条目数。过滤与格式化节点不重复记录完整正文；候选正文在 Retriever 节点可检查，最终正文在 Agent 输入的 `retrieval_evidence[]` 可检查。Agent 输入继续将 `question_json`、`locale_json`、`retrieval_status_json` 与独立的 `retrieval_evidence[]` 分开显示。
+Retriever trace 输出原生候选文档列表；Score Filter trace 输出候选数、过滤原因计数、最终条目数及排序摘要；Context Formatter trace 输出条目摘要，不重复记录完整正文。候选正文在 Retriever 节点可检查，最终上下文在 Agent 的 `formatted_context` 输入中可检查。LangSmith 可以对消息做框架级序列化展示，但链路里不再出现应用自行构造的 JSON 字符串包裹层。
 
 ## 阈值校准与现状
 
@@ -110,7 +125,7 @@ Retriever trace 输出候选列表；Score Filter trace 输出候选数、过滤
 
 - Retriever 返回候选而不提前套最终门槛或 `top_k`。
 - Score Filter 对阈值内外、标题/标签命中、正文短语命中、RRF 排序和最终 `top_k` 的行为。
-- Formatter 只接收通过过滤的文档；状态与正文分开，每篇证据仍是独立消息。
+- Formatter 只接收通过过滤的文档；传给 Prompt 的上下文只格式化一次为纯文本，不含内嵌 JSON 字符串。
 - 空结果、来源不可用和超时降级的状态保持正确。
 - 离线阈值评估与线上过滤规则一致，避免评估器与服务实现漂移。
 - 运行 MemeAgent 完整 Python 测试套件；需要验证实际阈值时，先补齐并人工标注知识库评估集。
