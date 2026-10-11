@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /** 中文注释：集中配置 OSS 文件删除、临时资产和孤儿对账的安全参数。 */
@@ -56,10 +57,47 @@ public class OssCleanupProperties {
     /** 中文注释：孤儿对象清理是否默认仅记录候选而不创建删除任务。 */
     private boolean reconcileDryRun = true;
 
+    /** 中文注释：是否启用每日OSS孤儿对象列举；默认关闭以避免意外扫描整个Bucket。 */
+    private boolean reconcileEnabled = false;
+
+    /** 中文注释：每页最多列举的OSS对象数量，最大不超过OSS接口允许的1000个。 */
+    private int reconcilePageSize = 500;
+
+    /** 中文注释：孤儿对账仅扫描这些业务前缀，仍需同时满足删除白名单。 */
+    private List<String> reconcilePrefixes = new ArrayList<>(List.of(
+            "tmp/", "avatar/", "memes/", "comments/", "home/", "common/"));
+
     /** 中文注释：允许 Worker 删除的 OSS 对象键前缀白名单。 */
     private List<String> allowedPrefixes = new ArrayList<>(List.of(
             "tmp/", "avatar/", "memes/", "comments/", "home/", "common/"));
 
     /** 中文注释：即使出现在允许列表中也始终禁止删除的 OSS 对象键前缀。 */
     private List<String> protectedPrefixes = new ArrayList<>(List.of("system/", "homepage/static/"));
+
+    /** 中文注释：统一校验对账与Worker的对象键安全规则，防止前缀绕过和路径穿越。 */
+    public boolean isSafeDeleteKey(String objectKey) {
+        if (objectKey == null || objectKey.isBlank() || objectKey.length() > 512
+                || objectKey.startsWith("/") || objectKey.indexOf((char) 92) >= 0
+                || objectKey.contains("://") || objectKey.codePoints().anyMatch(Character::isISOControl)) {
+            return false;
+        }
+        String normalized = objectKey.toLowerCase(Locale.ROOT);
+        if (protectedPrefixes != null && protectedPrefixes.stream()
+                .filter(prefix -> prefix != null && !prefix.isBlank())
+                .map(prefix -> prefix.toLowerCase(Locale.ROOT))
+                .anyMatch(normalized::startsWith)) {
+            return false;
+        }
+        if (allowedPrefixes == null || allowedPrefixes.stream()
+                .filter(prefix -> prefix != null && prefix.endsWith("/"))
+                .noneMatch(objectKey::startsWith)) {
+            return false;
+        }
+        for (String segment : objectKey.split("/", -1)) {
+            if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

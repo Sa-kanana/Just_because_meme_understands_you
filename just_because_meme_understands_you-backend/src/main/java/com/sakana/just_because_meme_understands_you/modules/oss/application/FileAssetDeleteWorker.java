@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
-import java.util.Locale;
 
 /** 中文注释：在历史引用回填完成后，安全、幂等地执行 OSS 延迟删除任务。 */
 @Slf4j
@@ -67,7 +66,7 @@ public class FileAssetDeleteWorker {
                     continue;
                 }
                 String objectKey = asset.getObjectKey();
-                if (!isSafeDeleteKey(objectKey) || !objectKey.equals(task.getObjectKey())) {
+                if (!cleanupProperties.isSafeDeleteKey(objectKey) || !objectKey.equals(task.getObjectKey())) {
                     taskCoordinator.markPermanentlyFailed(task.getId(), leaseOwner,
                             "对象键不在删除白名单内、包含路径穿越或与任务快照不一致");
                     log.error("拒绝不安全的 OSS 删除任务 assetId={}, objectKey={}, taskId={}, retryCount={}",
@@ -101,33 +100,4 @@ public class FileAssetDeleteWorker {
         return fileAssetBackfillStateMapper.countIncompleteStates(FileAssetLegacyBackfillRunner.BACKFILL_KEY) == 0;
     }
 
-    /** 中文注释：只允许白名单业务前缀，并拦截外链、反斜杠、控制字符和路径穿越。 */
-    private boolean isSafeDeleteKey(String objectKey) {
-        if (!StringUtils.hasText(objectKey) || objectKey.length() > 512
-                || objectKey.startsWith("/") || objectKey.indexOf((char) 92) >= 0
-                || objectKey.contains("://")
-                || objectKey.codePoints().anyMatch(Character::isISOControl)) {
-            return false;
-        }
-        String normalized = objectKey.toLowerCase(Locale.ROOT);
-        List<String> protectedPrefixes = cleanupProperties.getProtectedPrefixes();
-        if (protectedPrefixes != null && protectedPrefixes.stream()
-                .filter(StringUtils::hasText)
-                .map(prefix -> prefix.toLowerCase(Locale.ROOT))
-                .anyMatch(normalized::startsWith)) {
-            return false;
-        }
-        List<String> allowedPrefixes = cleanupProperties.getAllowedPrefixes();
-        if (allowedPrefixes == null || allowedPrefixes.stream()
-                .filter(prefix -> StringUtils.hasText(prefix) && prefix.endsWith("/"))
-                .noneMatch(objectKey::startsWith)) {
-            return false;
-        }
-        for (String segment : objectKey.split("/")) {
-            if (".".equals(segment) || "..".equals(segment) || !StringUtils.hasText(segment)) {
-                return false;
-            }
-        }
-        return true;
-    }
 }
