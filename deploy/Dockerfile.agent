@@ -1,0 +1,31 @@
+# MemeAgent 依赖 Python 3.11；源码从仓库根目录的 MemeAgent 模块复制。
+FROM python:3.11-slim-bookworm AS runtime
+
+# 统一容器工作路径，应用日志输出到标准输出供 Docker 收集。
+WORKDIR /app
+
+# 关闭字节码文件和 pip 缓存，保持镜像内容可复现且体积较小。
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# 复制依赖清单、说明和应用源码，避免把开发机的 .env 或虚拟环境带入镜像。
+COPY MemeAgent/pyproject.toml MemeAgent/README.md ./
+COPY MemeAgent/app ./app
+COPY MemeAgent/scripts ./scripts
+
+# 安装项目声明的运行依赖。
+RUN pip install --upgrade pip \
+    && pip install . \
+    && groupadd --system app \
+    && useradd --system --gid app --home-dir /app app \
+    && chown -R app:app /app
+
+# 以非 root 账号运行 FastAPI。
+USER app:app
+
+# 声明 FastAPI 默认监听端口；该端口仅在 Docker 网络内可访问。
+EXPOSE 8000
+
+# 保留应用的可配置优雅关闭时间，便于停止时取消在途 SSE/HTTP 请求。
+CMD ["sh", "-c", "exec uvicorn app.main:app --host \"${APP_HOST:-0.0.0.0}\" --port \"${APP_PORT:-8000}\" --timeout-graceful-shutdown \"${UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:-5}\""]
