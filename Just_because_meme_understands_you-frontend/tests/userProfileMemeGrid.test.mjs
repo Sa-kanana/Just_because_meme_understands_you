@@ -69,5 +69,3 @@ test('replaces the published-list hint with accessible work search controls', ()
   assert.match(componentSource, /publishedDisplayTotal\(\) \{[\s\S]*?if \(this\.publishedSearchKeyword\) return this\.publishedPageTotal/)
   assert.match(componentSource, /applyPublishedSearch\([\s\S]*publishedPageNo = 1/)
 })
-
-\n
