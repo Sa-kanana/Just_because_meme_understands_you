@@ -1,7 +1,12 @@
 package com.sakana.just_because_meme_understands_you.modules.integration.outbox;
 
 import com.sakana.just_because_meme_understands_you.modules.ai.application.IAiIngestService;
+import com.sakana.just_because_meme_understands_you.modules.ai.application.AiIngestPublisher;
+import com.sakana.just_because_meme_understands_you.modules.ai.application.impl.AiIngestServiceImpl;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.config.MemeAgentProperties;
+import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.MemeAgentClient;
+import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentIngestRequestDTO;
+import com.sakana.just_because_meme_understands_you.modules.meme.contract.MemeCatalogPort;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -12,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
@@ -58,6 +64,36 @@ class OutboxEventRelayTest {
         verify(aiIngestService).synchronizeMemeIndex(31L);
         verify(mapper).markDelivered(eq(10L), eq(event.getLockedAt()), any(LocalDateTime.class));
         verify(outboxFailureRecorder, never()).record(any(), anyString(), anyInt(), any(), anyString());
+    }
+
+    @Test
+    void removalEventRechecksCurrentPublishedStateBeforeDeletingVector() {
+        OutboxEvent event = event("MEME_INDEX_REMOVE");
+        when(claimService.claim(anyInt())).thenReturn(List.of(event));
+
+        MemeAgentClient client = mock(MemeAgentClient.class);
+        MemeCatalogPort catalog = mock(MemeCatalogPort.class);
+        when(client.isConfigured()).thenReturn(true);
+        when(client.ingestAsync(any(MemeAgentIngestRequestDTO.class))).thenReturn(reactor.core.publisher.Mono.empty());
+        when(catalog.findById(31L)).thenReturn(new MemeCatalogPort.MemeCard(
+                31L, 7L, "重新发布的梗", "仍然公开", "image", 1, 2, 3,
+                1, null, null, 0));
+        when(catalog.findTagsByMemeIds(List.of(31L))).thenReturn(Map.of(31L, List.of()));
+        IAiIngestService currentStateSynchronizer = new AiIngestServiceImpl(
+                catalog, new AiIngestPublisher(client), client);
+        OutboxEventRelay raceRelay = new OutboxEventRelay(
+                claimService, mapper, currentStateSynchronizer,
+                commentNotificationOutboxHandler, knowledgeIndexOutboxHandler, outboxFailureRecorder);
+        when(mapper.markDelivered(eq(10L), eq(event.getLockedAt()), any(LocalDateTime.class))).thenReturn(1);
+
+        try {
+            assertEquals(1, raceRelay.relayOnce());
+            ArgumentCaptor<MemeAgentIngestRequestDTO> request = ArgumentCaptor.forClass(MemeAgentIngestRequestDTO.class);
+            verify(client).ingestAsync(request.capture());
+            assertEquals("published", request.getValue().getDocuments().get(0).getStatus());
+        } finally {
+            raceRelay.shutdownDispatchExecutor();
+        }
     }
 
     @Test
