@@ -93,6 +93,7 @@
       </a-descriptions>
     </a-card>
 
+    <AiVectorReconciliationCard style="margin-top: 16px" />
     <a-card title="向量回填" style="margin-top: 16px">
       <p class="desc">
         按 ID 升序扫描已发布梗并提交灌库队列，用于补齐历史向量。受
@@ -183,6 +184,7 @@ import {
 } from '@/api/adminAiOps'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import { toastError, toastSuccess } from '@/utils/uiFeedback'
+import AiVectorReconciliationCard from './AiVectorReconciliationCard.vue'
 
 const statusLoading = ref(false)
 const crawlLoading = ref(false)
