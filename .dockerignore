@@ -1,0 +1,35 @@
+# 排除 Git 历史，缩小构建上下文并避免把仓库元数据放进镜像构建环境。
+.git
+.github
+
+# 排除 IDE 配置和本地临时目录。
+.idea
+.vscode
+**/.idea
+**/.vscode
+tmp-apifox
+
+# 排除本地依赖与已有构建产物；容器构建会在镜像内重新安装和编译。
+**/node_modules
+**/target
+**/dist
+**/build
+**/out
+deploy/artifacts
+
+# 排除所有本地密钥文件，只保留不含真实凭据的示例模板。
+.env
+**/.env
+**/.env.*
+!**/.env.example
+MemeAgent/.env
+deploy/meme-agent.env
+**/application-dev.yml
+**/application-local.yml
+
+# 排除 Python 缓存、测试缓存和日志文件。
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.log
