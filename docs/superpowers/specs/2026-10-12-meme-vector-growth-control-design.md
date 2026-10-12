@@ -27,12 +27,12 @@
 
 校准分成两个可恢复阶段：
 
-1. **Java → pgvector 补齐与更新**：Java 按 `meme_id` 游标分页读取已发布梗及其标签，每页最多 50 条，将梗索引 upsert 事件写入现有 outbox。现有 outbox relay 仍以 Java 当前业务状态为准调用 MemeAgent。Python 对 `content_hash` 未变化的文档跳过 embedding；缺失或内容变化的文档按现有入库逻辑生成向量。
+1. **Java → pgvector 补齐与更新**：Java 按 `meme_id` 游标分页读取已发布梗及其标签，每页最多 50 条，将梗索引 upsert 事件写入现有 outbox。现有 outbox relay 仍以 Java 当前业务状态为准调用 MemeAgent。Python 对 `content_hash` 未变化且已有 chunk 数不超过 6 的文档跳过 embedding；缺失、内容变化或已有 chunk 超过 6 的文档按新分块规则重新生成并事务性替换向量。这样校准可修复历史上超过新上限的梗；只有这类旧梗即使内容未变化也会再次调用 embedding。
 2. **pgvector → Java 清理无效向量**：MemeAgent 通过仅供内部写密钥访问的游标接口，按 `meme_id` 分页返回向量库中存在的梗 ID，不返回正文或 embedding。Java 批量查询每页 ID 的已发布状态；不存在或未发布的梗写入现有 `MEME_INDEX_REMOVE` outbox 事件。事件 relay 在真正删除前重新读取 Java 当前状态；若梗已重新发布则执行 upsert，避免并发重发时误删有效向量。
 
 任务与管理方式：
 
-- 管理端在 AI 运维页提供“梗向量库校准”操作，展示最近任务状态、阶段、已扫描梗数、已写入 outbox 的补齐/更新事件数、待清理事件数及失败阶段。点击前提示：任务可能为缺失或已变更梗调用 embedding；相同内容会跳过。
+- 管理端在 AI 运维页提供“梗向量库校准”操作，展示最近任务状态、阶段、已扫描梗数、已写入 outbox 的补齐/更新事件数、待清理事件数及失败阶段。点击前提示：缺失或已变更梗会调用 embedding；相同内容且现有 chunk 数不超过 6 时跳过，历史超限梗会重新生成向量。
 - `POST /admin/v1/ai/vector-index/reconciliation-jobs` 由 `ADMIN` 或 `SUPER_ADMIN` 启动校准并返回任务 ID；`GET /admin/v1/ai/vector-index/reconciliation-jobs/{jobId}` 查询任务进度。普通用户和浏览器侧 MemeAgent 接口均无权访问内部向量 ID 分页 API。
 - 只允许一个校准任务处于活动状态，防止管理员重复点击造成扫描和 embedding 并发。重复启动返回当前活动任务；完成后管理员可再次手动启动。
 - 校准任务状态、阶段、两侧游标、计数、创建人和时间写入 Java MySQL 任务表，以便刷新页面后查看进度，并在 Java 重启后从最后确认游标继续。后台 worker 只处理管理员创建的校准任务；它可以轮询并恢复未完成任务，但不会自行创建或定时启动全量校准。新建表的每一列都写中文 `COMMENT`；迁移字段如复制其他字段，逐项说明来源和目标。本设计不需要复制字段。
@@ -59,7 +59,7 @@
 2. 接近字段上限的有效梗最多生成 6 个 chunk；chunker 永远不会因长前缀将正文宽度退化为 1 字。
 3. 超过分块上限时 embedding 调用次数为 0，向量表不产生部分写入。
 4. 校准只能由管理员显式启动；不存在定时全量校准配置或任务。
-5. Java 已发布梗按稳定游标分页写入 outbox；未变化内容不会再次调用 embedding；任务重启后从确认游标继续。
+5. Java 已发布梗按稳定游标分页写入 outbox；同哈希且已有 chunk 数不超过 6 的内容不会再次调用 embedding，超限旧数据经新分块规则重建后不超过 6 块；任务重启后从确认游标继续。
 6. Python 向量 ID 分页稳定且无重复/漏页；只为不存在或非公开的 ID 生成删除事件。
 7. 校准扫描后若梗重新发布，outbox relay 重新读取业务状态并保留/重建向量，不误删新发布梗。
 8. 活动任务不能重复启动；页面刷新后可查询同一任务及进度。任务失败保留进度并可由管理员继续。
