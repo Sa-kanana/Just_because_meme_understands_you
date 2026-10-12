@@ -14,6 +14,7 @@
 | `smoke_crawl_pipeline.py` | 检查完整采集链路并校验候选内容 | 会调用采集服务 |
 | `verify_crawl_e2e.py` | 校验端到端采集候选的来源和结构 | 会调用采集服务 |
 | `init_pgvector.sql` | 初始化 pgvector 扩展、向量表和索引 | 会在目标 PostgreSQL 创建或更新结构 |
+| `inspect_meme_vector_capacity.sql` | 查看梗向量表、索引、HNSW 和自动清理统计 | 只读查询 PostgreSQL |
 
 ## 运行方式
 
@@ -26,6 +27,16 @@ python scripts/benchmark_ai_stream.py --requests 1 --concurrency 1
 ```
 
 采集脚本使用 `.env` 中的 Firecrawl 和模型配置。压测脚本默认访问本机 `http://127.0.0.1:8000/stream`，可用 `--url`、`--body-file`、`--api-key` 和 `--bearer-token` 覆盖请求配置；压测脚本支持 `--help` 查看参数。
+
+## 梗向量容量诊断
+
+从 `MemeAgent` 目录使用配置好的 PostgreSQL 连接运行只读脚本：
+
+```powershell
+psql $env:VECTOR_DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/inspect_meme_vector_capacity.sql
+```
+
+脚本输出梗记录和向量片段数量、单梗最大/平均分块数、表与索引占用、HNSW 索引大小、估算死元组数量，以及最近自动清理时间。死元组统计属于估算值；PostgreSQL autovacuum 通常会回收并复用这些页面空间，不会自动缩小操作系统看到的文件大小。若容量观察确认 HNSW 索引膨胀，可由管理员单独评估 `REINDEX INDEX CONCURRENTLY`；本脚本不修改数据、不重建索引，也不会调用 Embedding 服务。
 
 ## 结果文件
 

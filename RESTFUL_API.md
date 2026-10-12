@@ -142,6 +142,20 @@
 | POST | `/v1/admin/ai/ingestion-jobs/memes/{memeId}/approvals` | 创建指定梗的知识审核/入库任务 |
 | GET | `/v1/admin/ai/operations` | 查询 AI 运维状态 |
 
+### 管理员梗向量双向校准
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/v1/admin/ai/vector-index/reconciliation-jobs` | 创建管理员触发的梗向量双向校准任务 |
+| GET | `/v1/admin/ai/vector-index/reconciliation-jobs/{jobId}` | 查询任务状态、扫描进度和已加入 Outbox 的事件数 |
+| POST | `/v1/admin/ai/vector-index/reconciliation-jobs/{jobId}/resume` | 从失败页游标恢复任务 |
+
+校准先分页扫描 Java 已发布梗，再分页扫描 MemeAgent 中的向量 ID；两侧发现的差异都通过 Java 现有 Outbox 排队修复。`COMPLETED` 表示两侧扫描结束且差异事件已入队，不表示 Python 已完成所有向量写入。相同内容且向量分块不超过 6 的梗会跳过 Embedding；历史上超过 6 块的记录会重新生成向量并替换。MemeAgent 内部 ID 分页接口只供 Java 服务端调用，使用 `X-Internal-Api-Key` 认证，不应由浏览器直接访问。
+
+以上管理端接口仅允许 `ADMIN`、`SUPER_ADMIN`。每次 Java 已发布梗分页最多 50 条，Python 向量 ID 分页最多 500 条；任务状态为 `PENDING`、`RUNNING`、`FAILED`、`COMPLETED`。启动请求遇到活动任务时返回该任务；仅 `FAILED` 任务可恢复，恢复后从失败页游标继续。后台 worker 每秒检查已有活动任务，但不会自动创建校准任务。任务完成只代表扫描结束、修复事件已加入 Outbox；后续仍由现有 Outbox relay 异步提交给 MemeAgent。
+
+Java 服务端使用 MemeAgent 的 `GET /ingest/meme-ids?cursor={cursor}&limit={limit}` 分页读取索引 ID（上限 500），请求头为 `X-Internal-Api-Key`，响应仅含 `meme_ids` 和 `next_cursor`。该内部接口不向浏览器开放。
+
 ## 主要方法变更
 
 - 登录、刷新、退出统一为会话资源：`POST /auth/sessions`、`PUT /auth/sessions/current`、`DELETE /auth/sessions/current`。
