@@ -23,7 +23,7 @@ def test_build_chunks_includes_title():
     assert "音乐" in chunks[0]
 
 
-def test_long_document_chunks_repeat_title_and_tags_for_vector_retrieval():
+def test_long_document_chunks_repeat_title_without_repeating_tags():
     doc = IngestDocument(
         meme_id="43",
         title="不明觉厉",
@@ -37,7 +37,54 @@ def test_long_document_chunks_repeat_title_and_tags_for_vector_retrieval():
 
     assert len(chunks) > 1
     assert all("标题: 不明觉厉" in chunk for chunk in chunks)
-    assert all("标签: 网络用语 评价" in chunk for chunk in chunks)
+    assert "标签: 网络用语 评价" in chunks[0]
+    assert all("标签:" not in chunk for chunk in chunks[1:])
+
+
+def test_build_chunks_respects_global_limit_with_maximum_fields():
+    doc = IngestDocument(
+        meme_id="44",
+        title="题" * 200,
+        introduction="正文" * 2500,
+        tags=["标" * 12 for _ in range(20)],
+        updated_at=datetime.now(timezone.utc),
+        content_hash="hashhash14",
+    )
+
+    chunks = build_chunks(doc)
+
+    assert 1 <= len(chunks) <= 6
+    assert all(len(chunk) <= 1200 for chunk in chunks)
+    assert "标签:" in chunks[0]
+    assert all("标签:" not in chunk for chunk in chunks[1:])
+
+
+def test_chunker_rejects_more_than_six_chunks():
+    doc = IngestDocument(
+        meme_id="45",
+        title="不明觉厉",
+        introduction="正文" * 500,
+        tags=[],
+        updated_at=datetime.now(timezone.utc),
+        content_hash="hashhash15",
+    )
+
+    with pytest.raises(ValueError, match="6"):
+        build_chunks(doc, max_chunk_chars=80)
+
+
+@pytest.mark.parametrize("chunk_size", [0, 1201])
+def test_chunk_size_must_be_within_global_bounds(chunk_size):
+    doc = IngestDocument(
+        meme_id="46",
+        title="梗",
+        introduction="正文",
+        updated_at=datetime.now(timezone.utc),
+        content_hash="hashhash16",
+    )
+
+    with pytest.raises(ValueError):
+        build_chunks(doc, max_chunk_chars=chunk_size)
 
 
 def test_openai():
