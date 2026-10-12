@@ -24,6 +24,9 @@ public interface MemeCatalogPort {
     /** 批量查询已发布梗图。 */
     List<MemeCard> findPublishedByIds(Collection<Long> memeIds);
 
+    /** 按梗 ID 游标分页读取已发布梗 ID；仅返回 ID，单页数量最多为 50。 */
+    List<Long> pagePublishedIdsAfterId(long afterMemeId, int limit);
+
     /** 查询用户主页梗图，并由梗图模块执行状态可见性规则。 */
     MemePage pageByAuthor(long userId, boolean owner, Integer status, int page, int size, MemeSort sort);
 

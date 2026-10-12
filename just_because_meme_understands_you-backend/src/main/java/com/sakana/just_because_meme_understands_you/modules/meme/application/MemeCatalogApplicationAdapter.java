@@ -33,6 +33,8 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
 
     private static final int DEFAULT_SEARCH_LIMIT = 8;
     private static final int MAX_SEARCH_LIMIT = 100;
+    /** 中文注释：梗向量双向校准每次从 Java 已发布梗目录读取的最大 ID 数。 */
+    private static final int MAX_PUBLISHED_ID_PAGE_SIZE = 50;
 
     private final MemeMapper memeMapper;
     private final MemeEditRevisionMapper memeEditRevisionMapper;
@@ -119,6 +121,13 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
                         .in(Meme::getId, ids)
                         .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL))
                 .stream().map(this::toCard).toList();
+    }
+
+    @Override
+    public List<Long> pagePublishedIdsAfterId(long afterMemeId, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, MAX_PUBLISHED_ID_PAGE_SIZE));
+        List<Long> ids = memeMapper.selectPublishedIdsAfterId(Math.max(0, afterMemeId), safeLimit);
+        return ids == null ? List.of() : ids;
     }
 
     @Override
