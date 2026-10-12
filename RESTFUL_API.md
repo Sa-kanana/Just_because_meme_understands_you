@@ -21,7 +21,7 @@
 | POST | `/v1/auth/password-reset-verifications` | 校验密码重置验证码 |
 | PUT | `/v1/auth/password-resets` | 提交新密码 |
 | GET | `/v1/users/{userId}` | 查询用户资料 |
-| GET | `/v1/users/{userId}/memes` | 查询用户发布的梗；支持分页和状态筛选 |
+| GET | `/v1/users/{userId}/memes` | 查询用户发布的梗；支持关键词搜索、分页、状态筛选与排序 |
 | GET | `/v1/users/{userId}/favorites` | 查询用户公开收藏；支持 `folderId`、分页 |
 | GET | `/v1/users/me` | 查询当前用户资料 |
 | PUT | `/v1/users/me` | 更新当前用户资料 |
@@ -130,6 +130,8 @@
 | PUT | `/v1/admin/sensitive-words/{id}` | 更新敏感词 |
 | PATCH | `/v1/admin/sensitive-words/{id}` | 更新敏感词状态 |
 | DELETE | `/v1/admin/sensitive-words/{id}` | 删除敏感词 |
+
+敏感词写入请求使用 `word`、`category`、`level`、`replacement`、`status` 字段。`level` 为 `NORMAL`、`REVIEW`、`BLOCK`：`NORMAL` 可配置替换文本，`REVIEW` 在梗发布和修改稿中进入已有审核队列，`BLOCK` 阻止提交；评论、昵称和签名没有待审队列，命中 `REVIEW` 时也会拒绝保存。命中检查在服务内存 DFA 快照中完成，敏感词管理事务提交后通过 Redis 发布词库版本；实例定时核对版本以补偿离线时错过的通知。
 | GET | `/v1/admin/tags` | 查询标签 |
 | POST | `/v1/admin/tags` | 新建标签 |
 | PUT | `/v1/admin/tags/{id}` | 更新标签 |
@@ -137,9 +139,6 @@
 | GET | `/v1/admin/users` | 查询用户 |
 | PATCH | `/v1/admin/users/{id}` | 修改用户状态或角色；请求体必须且只能包含其中一项 |
 | POST | `/v1/admin/ai/crawl-jobs` | 创建 AI 爬取任务；支持 `limit` |
-| POST | `/v1/admin/ai/ingestion-jobs` | 创建 AI 知识回填任务；支持 `limit` |
-| POST | `/v1/admin/ai/ingestion-jobs/memes/{memeId}` | 为指定梗创建 AI 入库任务 |
-| POST | `/v1/admin/ai/ingestion-jobs/memes/{memeId}/approvals` | 创建指定梗的知识审核/入库任务 |
 | GET | `/v1/admin/ai/operations` | 查询 AI 运维状态 |
 
 ### 管理员梗向量双向校准

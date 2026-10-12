@@ -1,6 +1,7 @@
 package com.sakana.just_because_meme_understands_you.modules.meme.application;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -83,6 +84,33 @@ class MemeCatalogApplicationAdapterSortTest {
     }
 
     @Test
+    void filtersAuthorPageByTrimmedNameKeywordAndKeepsPublicVisibility() throws Exception {
+        when(memeMapper.selectPage(any(Page.class), any(Wrapper.class))).thenAnswer(invocation -> {
+            Page<Meme> page = invocation.getArgument(0);
+            page.setRecords(List.of());
+            page.setTotal(0);
+            return page;
+        });
+
+        Method pageByAuthor = MemeCatalogPort.class.getMethod("pageByAuthor",
+                long.class, boolean.class, Integer.class, int.class, int.class,
+                MemeCatalogPort.MemeSort.class, String.class);
+        pageByAuthor.invoke(adapter, 7L, false, null, 1, 12,
+                MemeCatalogPort.MemeSort.LATEST, "  测试梗  ");
+
+        ArgumentCaptor<Wrapper<Meme>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(memeMapper).selectPage(any(Page.class), wrapperCaptor.capture());
+        Wrapper<Meme> wrapper = wrapperCaptor.getValue();
+        String sql = wrapper.getSqlSegment();
+
+        assertTrue(sql.contains("user_id"), () -> "查询必须限定作者: " + sql);
+        assertTrue(sql.contains("status"), () -> "访客查询必须仅含公开作品: " + sql);
+        assertTrue(sql.contains("name LIKE"), () -> "查询必须按作品名称匹配: " + sql);
+        assertTrue(((LambdaQueryWrapper<Meme>) wrapper).getParamNameValuePairs().containsValue("%测试梗%"),
+                "搜索关键字需去除首尾空格并按子串匹配");
+    }
+
+    @Test
     void loadsAllResourcesInDisplayOrderIncludingOfflineResources() throws Exception {
         MemeResource resource = new MemeResource()
                 .setId(104L)
@@ -126,7 +154,7 @@ class MemeCatalogApplicationAdapterSortTest {
             page.setTotal(0);
             return page;
         });
-        adapter.pageByAuthor(7L, false, null, 1, 12, sort);
+        adapter.pageByAuthor(7L, false, null, 1, 12, sort, null);
 
         ArgumentCaptor<Wrapper<Meme>> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(memeMapper).selectPage(any(Page.class), wrapperCaptor.capture());

@@ -19,8 +19,19 @@ public class SensitiveWord {
 
     private String category;
 
-    @TableField("action_type")
-    private Integer actionType;
+    /** 中文注释：风险等级，取值 NORMAL、REVIEW 或 BLOCK。 */
+    @TableField("risk_level")
+    private String riskLevel;
+
+    /** 中文注释：规则匹配类型；当前支持标准化后的字面匹配 NORMAL。 */
+    @TableField("match_type")
+    private String matchType;
+
+    /** 中文注释：NORMAL 等级命中后的替换文本；为空表示保留原文。 */
+    private String replacement;
+
+    /** 中文注释：该敏感词记录的修订版本。 */
+    private Long version;
 
     private Integer status;
 

@@ -91,7 +91,6 @@ meme:
     cache-ttl-seconds: 120
     rate-limit-per-minute: 20
     chars-per-token-estimate: 3
-    backfill-enabled: true
 
 # ---------- Firecrawl 热梗采集 ----------
   crawl:

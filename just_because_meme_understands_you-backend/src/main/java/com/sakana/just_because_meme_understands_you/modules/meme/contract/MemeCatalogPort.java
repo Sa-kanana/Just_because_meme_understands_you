@@ -27,8 +27,8 @@ public interface MemeCatalogPort {
     /** 按梗 ID 游标分页读取已发布梗 ID；仅返回 ID，单页数量最多为 50。 */
     List<Long> pagePublishedIdsAfterId(long afterMemeId, int limit);
 
-    /** 查询用户主页梗图，并由梗图模块执行状态可见性规则。 */
-    MemePage pageByAuthor(long userId, boolean owner, Integer status, int page, int size, MemeSort sort);
+    /** 查询用户主页梗图；关键字按作品名称模糊匹配，并由梗图模块执行状态可见规则。 */
+    MemePage pageByAuthor(long userId, boolean owner, Integer status, int page, int size, MemeSort sort, String keyword);
 
     /** 汇总用户主页的梗图状态数量。 */
     MemeStatusCounts countByAuthor(long userId);
@@ -38,9 +38,6 @@ public interface MemeCatalogPort {
 
     /** 查询用户最近发布的梗图。 */
     List<MemeCard> findLatestPublishedByAuthor(long userId, int limit);
-
-    /** 按 ID 升序查询一批已发布梗图，用于全量回填。 */
-    List<MemeCard> findPublished(int limit);
 
     /** 批量查询梗图标签，并按梗图 ID 分组。 */
     Map<Long, List<MemeTagSummary>> findTagsByMemeIds(Collection<Long> memeIds);
@@ -95,7 +92,10 @@ public interface MemeCatalogPort {
     }
 
     /** 梗图模块跨模块返回的标签摘要。 */
-    record MemeTagSummary(Long id, String name, Integer relatedQuantity) {
+    record MemeTagSummary(Long id, String name, Integer relatedQuantity, String category, Boolean isPrimary) {
+        public MemeTagSummary(Long id, String name, Integer relatedQuantity) {
+            this(id, name, relatedQuantity, null, false);
+        }
     }
 
     /** 梗图关联资源摘要，不向调用方暴露梗图模块的持久化实体。 */

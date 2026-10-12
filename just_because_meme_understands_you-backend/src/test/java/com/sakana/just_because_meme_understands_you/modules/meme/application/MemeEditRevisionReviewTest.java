@@ -30,6 +30,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
@@ -122,7 +123,11 @@ class MemeEditRevisionReviewTest {
         assertEquals(false, sqlSet.contains("comments"));
         assertEquals(false, sqlSet.contains("page_views"));
         verify(tagRelationMapper).delete(any(Wrapper.class));
-        verify(tagRelationMapper, times(2)).insert(any(MemeTagRelation.class));
+        org.mockito.ArgumentCaptor<MemeTagRelation> relationCaptor =
+                org.mockito.ArgumentCaptor.forClass(MemeTagRelation.class);
+        verify(tagRelationMapper, times(2)).insert(relationCaptor.capture());
+        assertEquals(1, relationCaptor.getAllValues().stream()
+                .filter(relation -> Integer.valueOf(1).equals(relation.getIsPrimary())).count());
         verify(resourceMapper).update(isNull(), any(Wrapper.class));
         verify(resourceMapper, times(2)).insert(any(MemeResource.class));
         verify(fileAssetService).replaceReference("memes/new-cover.png", "MEME", 1001L, "COVER",
@@ -268,15 +273,10 @@ class MemeEditRevisionReviewTest {
     }
 
     private String currentHash() throws Exception {
-        MemeEditRequestDTO current = new MemeEditRequestDTO();
-        current.setName("旧名称");
-        current.setIntroduction("旧介绍");
-        current.setImage("memes/old-cover.png");
-        current.setTagIds(List.of(1));
-        current.setResourceUrls(List.of("memes/old-media.png"));
-        current.setResources(List.of());
         byte[] digest = MessageDigest.getInstance("SHA-256")
-                .digest(new ObjectMapper().writeValueAsBytes(current));
+                .digest(("{\"name\":\"旧名称\",\"introduction\":\"旧介绍\",\"image\":\"memes/old-cover.png\","
+                        + "\"tagIds\":[1],\"resourceUrls\":[\"memes/old-media.png\"],\"resources\":[]}")
+                        .getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(digest);
     }
 

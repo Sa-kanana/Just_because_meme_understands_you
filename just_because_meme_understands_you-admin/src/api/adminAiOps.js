@@ -50,29 +50,3 @@ export function triggerAiCrawl(limit) {
     timeout: 180000,
   }).then((res) => assertData(res, '触发爬虫失败'))
 }
-
-export function triggerAiIngestBackfill(limit) {
-  const query = new URLSearchParams()
-  if (limit != null && limit !== '') query.set('limit', String(limit))
-  const qs = query.toString()
-  return request(`/admin/ai/ingestion-jobs${qs ? `?${qs}` : ''}`, {
-    method: 'POST',
-    timeout: 120000,
-  }).then((res) => assertData(res, '触发回填失败'))
-}
-
-export function triggerAiIngestSync(memeId) {
-  const id = memeId != null ? String(memeId).trim() : ''
-  if (!id) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/ai/ingestion-jobs/memes/${encodeURIComponent(id)}`, { method: 'POST' }).then((res) =>
-    assertData(res, '同步向量失败')
-  )
-}
-
-export function triggerAiIngestApprove(memeId) {
-  const id = memeId != null ? String(memeId).trim() : ''
-  if (!id) return Promise.reject(new Error('缺少 memeId'))
-  return request(`/admin/ai/ingestion-jobs/memes/${encodeURIComponent(id)}/approvals`, { method: 'POST' }).then((res) =>
-    assertData(res, '审核灌库失败')
-  )
-}

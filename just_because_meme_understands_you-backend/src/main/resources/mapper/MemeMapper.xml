@@ -36,6 +36,12 @@
                   WHERE r.meme_id = m.id AND t.name LIKE CONCAT('%', #{keyword}, '%')
               )
           )
+          <if test="tagId != null and tagId &gt; 0">
+              AND EXISTS (
+                  SELECT 1 FROM meme_tag_relation selected_tag
+                  WHERE selected_tag.meme_id = m.id AND selected_tag.meme_tag_id = #{tagId}
+              )
+          </if>
         ORDER BY
         <choose>
             <when test="mostLikes != null and mostLikes != ''">m.likes DESC</when>

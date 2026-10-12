@@ -28,7 +28,5 @@ public class AiOpsStatusVO {
 
     private int crawlDefaultLimit;
 
-    private boolean backfillEnabled;
-
     private String agentBaseUrl;
 }

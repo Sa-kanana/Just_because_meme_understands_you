@@ -176,21 +176,6 @@ export async function cancelAiSearchTask(taskId) {
 }
 
 /**
- * 回填已发布梗到向量库（运维）
- * POST /admin/ai/ingestion-jobs
- */
-export function backfillAiIngest(limit) {
-  const query = new URLSearchParams()
-  if (limit != null && Number(limit) > 0) {
-    query.set('limit', String(Math.min(Number(limit), 2000)))
-  }
-  const suffix = query.toString() ? `?${query}` : ''
-  return request(`/admin/ai/ingestion-jobs${suffix}`, { method: 'POST' }).then((res) =>
-    unwrap(res, '回填失败')
-  )
-}
-
-/**
  * AI 搜索流式（SSE）
  * POST /ai/searches
  *

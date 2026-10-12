@@ -7,6 +7,7 @@ import com.sakana.just_because_meme_understands_you.modules.user.application.pro
 import com.sakana.just_because_meme_understands_you.api.user.vo.AccountProfileVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.EditProfileEchoVO;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 import com.sakana.just_because_meme_understands_you.api.user.vo.UploadAvatarVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.UserFavoriteItemVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.UserMemePageVO;
@@ -23,7 +24,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import com.sakana.just_because_meme_understands_you.common.validation.RequestIdParser;
 
 @RestController
 @RequestMapping("/v1/users")
@@ -45,10 +45,12 @@ public class UserProfileController {
                                                  @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
                                                  @RequestParam(value = "size", required = false, defaultValue = "10") Integer size,
                                                  @RequestParam(value = "status", required = false) Integer status,
-                                                 @RequestParam(value = "sort", required = false, defaultValue = "latest") String sort) {
+                                                 @RequestParam(value = "sort", required = false, defaultValue = "latest") String sort,
+                                                 @RequestParam(value = "keyword", required = false) String keyword) {
         Long targetUserId = RequestIdParser.parseLong(userId, "userId");
         Long currentUserId = AuthContext.currentUserId(request);
-        return Result.success(userProfileService.pageUserMemes(targetUserId, currentUserId, page, size, status, sort));
+        return Result.success(userProfileService.pageUserMemes(
+                targetUserId, currentUserId, page, size, status, sort, keyword));
     }
 
     @GetMapping("/{userId}/favorites")

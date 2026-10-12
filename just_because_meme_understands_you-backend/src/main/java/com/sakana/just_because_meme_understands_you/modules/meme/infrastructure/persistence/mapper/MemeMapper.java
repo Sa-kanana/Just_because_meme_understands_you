@@ -35,13 +35,15 @@ public interface MemeMapper extends BaseMapper<Meme> {
      * @param mostLikes  最多点赞（有值则按点赞降序）
      * @param mostViews  最多浏览（有值则按浏览降序）
      * @param mostComments 最多评论（有值则按评论降序）
+     * @param tagId        可选标签 ID；提供时仅返回关联该标签的梗
      * @return 分页结果
      */
     IPage<Meme> searchByKeyword(Page<Meme> page,
                                @Param("keyword") String keyword,
                                @Param("mostLikes") String mostLikes,
                                @Param("mostViews") String mostViews,
-                               @Param("mostComments") String mostComments);
+                               @Param("mostComments") String mostComments,
+                               @Param("tagId") Long tagId);
 
     IPage<Meme> selectFollowedTagPage(Page<Meme> page, @Param("userId") Long userId);
 

@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.modules.meme.application;
 
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.MemeResourceType;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeTagSelectionPolicy;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeCreateRequestDTO;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeResourceItemDTO;
@@ -15,6 +16,8 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.domain.SensitiveScene;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCreateResponseVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -74,6 +77,10 @@ public class MemePublishService {
     @Resource
     private FileAssetService fileAssetService;
 
+    /** 中文注释：发布中的 REVIEW 命中进入当前新梗审核队列，BLOCK 命中在写库和 OSS 操作前拒绝。 */
+    @Resource
+    private SensitiveWordFilterService sensitiveWordFilterService;
+
     /**
      * 发布梗。
      *
@@ -84,11 +91,10 @@ public class MemePublishService {
     @Transactional(rollbackFor = Exception.class)
     public MemeCreateResponseVO publish(Long userId, MemeCreateRequestDTO request) {
         validate(userId, request);
+        filterReviewableText(request);
 
-        List<Integer> tagIds = normalizeTagIds(request.getTagIds());
-        if (!tagIds.isEmpty()) {
-            validateTagsExist(tagIds);
-        }
+        MemeTagSelectionPolicy.Selection tagSelection = validateTagSelection(request.getPrimaryTagId(), request.getTagIds());
+        List<Integer> tagIds = tagSelection.allTagIds();
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -125,7 +131,7 @@ public class MemePublishService {
         saveStructuredLinks(memeId, request.getResources());
 
         // 3. 写入 meme_tag_relation 关联表
-        saveTagRelations(memeId, tagIds);
+        saveTagRelations(memeId, tagSelection);
 
         // 4. 非核心：标签计数 + 布隆热加载 + 缓存清理，事务提交后异步执行
         scheduleAfterPublishCommitted(userId, memeId, tagIds);
@@ -135,6 +141,36 @@ public class MemePublishService {
         vo.setStatus(DEFAULT_STATUS);
         vo.setStatusDesc(DEFAULT_STATUS_DESC);
         return vo;
+    }
+
+    /** 中文注释：在上传或持久化前统一检查新梗文字字段，并保存 NORMAL 等级的替换结果。 */
+    private void filterReviewableText(MemeCreateRequestDTO request) {
+        String name = sensitiveWordFilterService.filterForReviewableContent(
+                request.getName().trim(), SensitiveScene.MEME_TITLE);
+        if (name.length() > 255) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "梗名称最多 255 个字符");
+        }
+        request.setName(name);
+        String introduction = request.getIntroduction() == null ? "" : request.getIntroduction().trim();
+        introduction = sensitiveWordFilterService.filterForReviewableContent(
+                introduction, SensitiveScene.MEME_DESCRIPTION);
+        if (introduction.length() > 255) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "梗介绍最多 255 个字符");
+        }
+        request.setIntroduction(introduction);
+        if (request.getResources() != null) {
+            request.getResources().stream().filter(java.util.Objects::nonNull)
+                    .filter(resource -> StringUtils.hasText(resource.getTitle()))
+                    .forEach(resource -> {
+                        String title = sensitiveWordFilterService.filterForReviewableContent(
+                                resource.getTitle().trim(), SensitiveScene.MEME_RESOURCE_TITLE);
+                        if (title.length() > MAX_TITLE_LENGTH) {
+                            throw new BizException(Result.CODE_BAD_REQUEST,
+                                    "相关链接标题最多 " + MAX_TITLE_LENGTH + " 个字符");
+                        }
+                        resource.setTitle(title);
+                    });
+        }
     }
 
     private void validate(Long userId, MemeCreateRequestDTO request) {
@@ -149,40 +185,20 @@ public class MemePublishService {
         }
     }
 
-    private List<Integer> normalizeTagIds(List<Integer> tagIds) {
-        if (tagIds == null || tagIds.isEmpty()) {
-            return List.of();
+    /** 中文注释：将主标签和普通标签合并查询，统一执行数量、唯一性及标签存在性校验。 */
+    private MemeTagSelectionPolicy.Selection validateTagSelection(Integer primaryTagId, List<Integer> secondaryTagIds) {
+        Set<Integer> candidateIds = new HashSet<>();
+        if (primaryTagId != null && primaryTagId > 0) {
+            candidateIds.add(primaryTagId);
         }
-        Set<Integer> distinct = new HashSet<>();
-        for (Integer id : tagIds) {
-            if (id != null && id > 0) {
-                distinct.add(id);
-            }
+        if (secondaryTagIds != null) {
+            secondaryTagIds.stream().filter(id -> id != null && id > 0).forEach(candidateIds::add);
         }
-        if (distinct.isEmpty()) {
-            return List.of();
-        }
-        return distinct.stream().toList();
-    }
-
-    /**
-     * 校验传入的标签 id 全部存在，任一不存在则拒绝发布，保证关联表数据完整。
-     */
-    private void validateTagsExist(List<Integer> tagIds) {
-        List<MemeTag> existTags = memeTagMapper.selectBatchIds(tagIds);
-        if (existTags == null || existTags.size() != tagIds.size()) {
-            Set<Integer> existIds = new HashSet<>();
-            for (MemeTag t : existTags) {
-                if (t != null && t.getId() != null) {
-                    existIds.add(t.getId());
-                }
-            }
-            for (Integer id : tagIds) {
-                if (!existIds.contains(id)) {
-                    throw new BizException(Result.CODE_BAD_REQUEST, "标签不存在, tagId=" + id);
-                }
-            }
-        }
+        List<MemeTag> existingTags = candidateIds.isEmpty() ? List.of() : memeTagMapper.selectBatchIds(candidateIds);
+        Set<Integer> existingIds = existingTags == null ? Set.of() : existingTags.stream()
+                .filter(java.util.Objects::nonNull).map(MemeTag::getId).filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        return MemeTagSelectionPolicy.normalizeAndValidate(primaryTagId, secondaryTagIds, existingIds);
     }
 
     private void saveMediaResources(Long userId, Long memeId, List<String> resourceUrls,
@@ -285,11 +301,14 @@ public class MemePublishService {
         }
     }
 
-    private void saveTagRelations(Long memeId, List<Integer> tagIds) {
-        for (Integer tagId : tagIds) {
+    private void saveTagRelations(Long memeId, MemeTagSelectionPolicy.Selection selection) {
+        for (Integer tagId : selection.allTagIds()) {
             MemeTagRelation relation = new MemeTagRelation();
             relation.setMemeId(memeId);
             relation.setMemeTagId(tagId);
+            boolean isPrimary = tagId.equals(selection.primaryTagId());
+            relation.setIsPrimary(isPrimary ? 1 : 0);
+            relation.setPrimaryMemeId(isPrimary ? memeId : null);
             memeTagRelationMapper.insert(relation);
         }
     }

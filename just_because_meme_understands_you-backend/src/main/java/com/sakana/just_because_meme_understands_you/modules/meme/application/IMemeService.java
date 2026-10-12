@@ -72,7 +72,8 @@ public interface IMemeService extends IService<Meme> {
      * @param mostComments 最多评论（有值则按评论降序）
      * @return SimpleMeme 列表，符合接口 DataResponse.data
      */
-    List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews, String mostComments);
+    List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews, String mostComments,
+                                             Long tagId);
 
     /**
      * 梗的详细页面：根据 memeId 查询梗的详细信息（包含标签和相关链接）

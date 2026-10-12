@@ -214,7 +214,9 @@
             <span class="detail-section-count">{{ (detail.tags || []).length }} 个</span>
           </div>
           <a-space v-if="detail.tags && detail.tags.length" wrap class="detail-tag-list">
-            <a-tag v-for="tag in detail.tags" :key="tag.id" class="detail-tag">{{ tag.name }}</a-tag>
+            <a-tag v-for="tag in detail.tags" :key="tag.id" class="detail-tag">
+              {{ tag.isPrimary ? '主 · ' : '' }}{{ tagCategoryNames[tag.category] || '' }} {{ tag.name }}
+            </a-tag>
           </a-space>
           <p v-else class="detail-empty-note">暂无关联标签</p>
         </section>
@@ -350,16 +352,27 @@
             </div>
           </div>
         </a-form-item>
-        <a-form-item label="标签">
+        <a-form-item label="主分类标签" required>
+          <a-select
+            v-model="createForm.primaryTagId"
+            allow-search
+            allow-clear
+            :loading="tagsLoading"
+            :options="tagOptions"
+            placeholder="选择最能代表这个梗的标签"
+          />
+        </a-form-item>
+        <a-form-item label="补充标签" required>
           <a-select
             v-model="createForm.tagIds"
             multiple
             allow-search
             allow-clear
             :loading="tagsLoading"
-            :options="tagOptions"
-            placeholder="选择标签（选填）"
+            :options="secondaryTagOptions"
+            placeholder="选择 3～7 个标签"
           />
+          <p class="create-meme-review-hint">已选 {{ createForm.tagIds.length }} 个；主标签不会计入数量。</p>
         </a-form-item>
         <p class="create-meme-review-hint">提交后进入审核中，审核通过后会展示在网站上。</p>
       </a-form>
@@ -399,6 +412,17 @@ const coverFileInput = ref(null)
 const tagsLoading = ref(false)
 const tagsLoaded = ref(false)
 const tagOptions = ref([])
+const tagCategoryNames = {
+  SOURCE: '来源', // 中文注释：标签来源分类显示名称。
+  FORMAT: '形式', // 中文注释：标签形式分类显示名称。
+  EMOTION: '情绪', // 中文注释：标签情绪分类显示名称。
+  SCENARIO: '场景', // 中文注释：标签场景分类显示名称。
+  CONTENT: '内容', // 中文注释：标签内容分类显示名称。
+  ERA: '时代', // 中文注释：标签时代分类显示名称。
+  PROPAGATION: '传播特征', // 中文注释：标签传播分类显示名称。
+  TONE: '使用语气', // 中文注释：标签语气分类显示名称。
+  UNCATEGORIZED: '待归类', // 中文注释：历史标签分类显示名称。
+}
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
@@ -409,8 +433,10 @@ const createForm = reactive({
   name: '', // 梗名称，提交前去除首尾空格。
   introduction: '', // 梗介绍，最多 255 个字符。
   image: '', // OSS 临时封面地址，提交后由后端转入正式目录。
-  tagIds: [], // 关联标签 ID，可为空。
+  primaryTagId: null, // 主分类标签 ID。
+  tagIds: [], // 3～7 个普通标签 ID。
 })
+const secondaryTagOptions = computed(() => tagOptions.value.filter((option) => option.value !== Number(createForm.primaryTagId)))
 const keyword = ref('')
 const status = ref(undefined)
 const pagination = reactive({
@@ -522,6 +548,7 @@ function resetCreateForm() {
   createForm.name = ''
   createForm.introduction = ''
   createForm.image = ''
+  createForm.primaryTagId = null
   createForm.tagIds = []
 }
 
@@ -538,7 +565,10 @@ async function loadTagOptions() {
       hasMore = result.hasMore
       page += 1
     }
-    tagOptions.value = allTags.map((tag) => ({ label: tag.name, value: Number(tag.id) }))
+    tagOptions.value = allTags.map((tag) => ({
+      label: `${tagCategoryNames[tag.category] || tagCategoryNames.UNCATEGORIZED} · ${tag.name}`,
+      value: Number(tag.id),
+    }))
     tagsLoaded.value = true
   } catch (e) {
     if (!isAuthErrorHandled(e)) toastError(e.message || '获取标签失败')
@@ -591,6 +621,14 @@ async function submitCreate() {
     toastError('请先上传封面图')
     return
   }
+  if (!createForm.primaryTagId) {
+    toastError('请选择主分类标签')
+    return
+  }
+  if (createForm.tagIds.length < 3 || createForm.tagIds.length > 7) {
+    toastError('请选择 3～7 个补充标签')
+    return
+  }
 
   saving.value = true
   try {
@@ -598,6 +636,7 @@ async function submitCreate() {
       name: createForm.name.trim(),
       introduction: createForm.introduction.trim(),
       image: createForm.image,
+      primaryTagId: Number(createForm.primaryTagId),
       tagIds: [...new Set(createForm.tagIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))],
     })
     toastSuccess(`梗已提交审核${created && created.memeId ? `，ID：${created.memeId}` : ''}`)

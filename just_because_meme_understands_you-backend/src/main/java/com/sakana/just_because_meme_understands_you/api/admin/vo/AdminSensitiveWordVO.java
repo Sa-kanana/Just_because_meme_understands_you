@@ -11,7 +11,10 @@ public class AdminSensitiveWordVO {
     private Long id;
     private String word;
     private String category;
-    private Integer actionType;
+    /** 中文注释：风险等级，取值 NORMAL、REVIEW 或 BLOCK。 */
+    private String riskLevel;
+    /** 中文注释：NORMAL 等级命中后的替换文本。 */
+    private String replacement;
     private Integer status;
     private String creator;
 

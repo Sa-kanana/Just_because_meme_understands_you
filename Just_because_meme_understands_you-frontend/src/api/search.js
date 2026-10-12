@@ -1,6 +1,6 @@
 /**
  * 关键字搜索接口
- * GET /meme-searches?keyword=xxx&mostViews=1|mostLikes=1|mostComments=1
+ * GET /meme-searches?keyword=xxx&tagId=1&mostViews=1|mostLikes=1|mostComments=1
  * @see https://api.apifox.com/temp-links/api/424411854
  */
 import { request } from './request'
@@ -31,13 +31,14 @@ import { request } from './request'
  * 关键字搜索
  * @param {Object} params
  * @param {string} params.keyword - 关键字（必填）
+ * @param {number|string} [params.tagId] - 限定关联标签 ID
  * @param {string} [params.mostViews] - 最多浏览排序时传 '1'
  * @param {string} [params.mostLikes] - 最多点赞排序时传 '1'
  * @param {string} [params.mostComments] - 最多评论排序时传 '1'
  * @returns {Promise<SimpleMeme[]>}
  */
 export function searchMeme(params = {}) {
-  const { keyword, mostViews, mostLikes, mostComments } = params
+  const { keyword, tagId, mostViews, mostLikes, mostComments } = params
   const kw = keyword != null ? String(keyword).trim() : ''
 
   // 接口要求 keyword 为必填参数，若缺失则不发起请求
@@ -47,6 +48,7 @@ export function searchMeme(params = {}) {
 
   const query = new URLSearchParams()
   query.set('keyword', kw)
+  if (tagId != null && String(tagId).trim()) query.set('tagId', String(tagId).trim())
   if (mostViews) query.set('mostViews', mostViews)
   if (mostLikes) query.set('mostLikes', mostLikes)
   if (mostComments) query.set('mostComments', mostComments)

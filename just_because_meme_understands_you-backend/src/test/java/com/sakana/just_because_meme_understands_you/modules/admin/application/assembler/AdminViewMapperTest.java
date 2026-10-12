@@ -26,7 +26,7 @@ class AdminViewMapperTest {
         source.setId(42L);
         source.setWord("测试词");
         source.setCategory("SPAM");
-        source.setActionType(2);
+        source.setRiskLevel("REVIEW");
         source.setStatus(1);
         source.setCreator("admin");
         source.setCreateTime(createTime);
@@ -37,7 +37,7 @@ class AdminViewMapperTest {
         assertEquals(42L, result.getId());
         assertEquals("测试词", result.getWord());
         assertEquals("SPAM", result.getCategory());
-        assertEquals(2, result.getActionType());
+        assertEquals("REVIEW", result.getRiskLevel());
         assertEquals(1, result.getStatus());
         assertEquals("admin", result.getCreator());
         assertEquals(createTime, result.getCreateTime());

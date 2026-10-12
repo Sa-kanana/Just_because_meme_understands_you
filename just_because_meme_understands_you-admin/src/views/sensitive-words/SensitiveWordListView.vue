@@ -16,6 +16,13 @@
         :options="categoryOptions"
       />
       <a-select
+        v-model="level"
+        placeholder="风险等级"
+        allow-clear
+        style="width: 150px"
+        :options="levelOptions"
+      />
+      <a-select
         v-model="status"
         placeholder="状态"
         allow-clear
@@ -37,8 +44,11 @@
       @page-change="onPageChange"
       @page-size-change="onPageSizeChange"
     >
-      <template #actionType="{ record }">
-        {{ actionLabel(record.actionType) }}
+      <template #riskLevel="{ record }">
+        {{ levelLabel(record.riskLevel) }}
+      </template>
+      <template #replacement="{ record }">
+        {{ record.replacement || '—' }}
       </template>
       <template #status="{ record }">
         <a-tag :color="record.status === 1 ? 'green' : 'gray'">
@@ -71,15 +81,21 @@
         <a-form-item label="分类" required>
           <a-select v-model="form.category" :options="categoryOptions" />
         </a-form-item>
-        <a-form-item label="处理策略" required>
+        <a-form-item label="风险等级" required>
           <a-select
-            v-model="form.actionType"
+            v-model="form.level"
             :options="[
-              { label: '替换 ***', value: 1 },
-              { label: '人工审核', value: 2 },
-              { label: '直接拒绝', value: 3 },
+              { label: '普通：允许或替换', value: 'NORMAL' },
+              { label: '需要人工审核', value: 'REVIEW' },
+              { label: '直接拒绝', value: 'BLOCK' },
             ]"
           />
+        </a-form-item>
+        <p class="policy-hint">
+          梗发布和修改稿命中“需要人工审核”会进入审核队列；评论、昵称和签名没有待审队列，会拒绝本次提交。
+        </p>
+        <a-form-item v-if="form.level === 'NORMAL'" label="替换文本">
+          <a-input v-model="form.replacement" maxlength="20" placeholder="留空表示允许原文通过" />
         </a-form-item>
         <a-form-item label="状态">
           <a-radio-group v-model="form.status">
@@ -109,13 +125,15 @@ const saving = ref(false)
 const list = ref([])
 const keyword = ref('')
 const category = ref(undefined)
+const level = ref(undefined)
 const status = ref(undefined)
 const modalVisible = ref(false)
 const editingId = ref('')
 const form = reactive({
   word: '',
   category: 'CUSTOM',
-  actionType: 1,
+  level: 'NORMAL',
+  replacement: '***',
   status: 1,
 })
 const pagination = reactive({
@@ -133,22 +151,28 @@ const categoryOptions = [
   { label: 'AD', value: 'AD' },
   { label: 'CUSTOM', value: 'CUSTOM' },
 ]
+const levelOptions = [
+  { label: '普通', value: 'NORMAL' },
+  { label: '人工审核', value: 'REVIEW' },
+  { label: '直接拒绝', value: 'BLOCK' },
+]
 
 const columns = [
   { title: 'ID', dataIndex: 'id', width: 90 },
   { title: '词语', dataIndex: 'word' },
   { title: '分类', dataIndex: 'category', width: 110 },
-  { title: '策略', slotName: 'actionType', width: 110 },
+  { title: '风险等级', slotName: 'riskLevel', width: 140 },
+  { title: '替换文本', slotName: 'replacement', width: 130 },
   { title: '状态', slotName: 'status', width: 90 },
   { title: '创建人', dataIndex: 'creator', width: 120 },
   { title: '操作', slotName: 'actions', width: 220 },
 ]
 
-function actionLabel(type) {
-  if (type === 1) return '替换'
-  if (type === 2) return '审核'
-  if (type === 3) return '拒绝'
-  return String(type ?? '')
+function levelLabel(level) {
+  if (level === 'NORMAL') return '普通 / 替换'
+  if (level === 'REVIEW') return '人工审核'
+  if (level === 'BLOCK') return '直接拒绝'
+  return String(level ?? '')
 }
 
 async function load() {
@@ -159,6 +183,7 @@ async function load() {
       size: pagination.pageSize,
       keyword: keyword.value,
       category: category.value,
+      level: level.value,
       status: status.value,
     })
     list.value = data.list
@@ -190,7 +215,8 @@ function openCreate() {
   editingId.value = ''
   form.word = ''
   form.category = 'CUSTOM'
-  form.actionType = 1
+  form.level = 'NORMAL'
+  form.replacement = '***'
   form.status = 1
   modalVisible.value = true
 }
@@ -199,7 +225,8 @@ function openEdit(record) {
   editingId.value = String(record.id)
   form.word = record.word || ''
   form.category = record.category || 'CUSTOM'
-  form.actionType = record.actionType ?? 1
+  form.level = record.riskLevel || 'NORMAL'
+  form.replacement = record.replacement || ''
   form.status = record.status ?? 1
   modalVisible.value = true
 }
@@ -214,7 +241,8 @@ async function save() {
     const payload = {
       word: form.word.trim(),
       category: form.category,
-      actionType: form.actionType,
+      level: form.level,
+      replacement: form.level === 'NORMAL' ? form.replacement.trim() : '',
       status: form.status,
     }
     if (editingId.value) {
@@ -261,5 +289,12 @@ onMounted(load)
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+}
+
+.policy-hint {
+  margin: -8px 0 16px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

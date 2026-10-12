@@ -2,6 +2,15 @@
   <div class="page search-page">
     <!-- 排序筛选栏：参考 B 站式横向 tab -->
     <div class="search-toolbar">
+      <label class="tag-filter">
+        <span>按标签筛选</span>
+        <select v-model="selectedTagId" @change="changeTag">
+          <option value="">全部标签</option>
+          <option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">
+            {{ tagCategoryLabel(tag.category) }} · {{ tag.name }}
+          </option>
+        </select>
+      </label>
       <div class="sort-tabs">
         <button
           v-for="tab in sortTabs"
@@ -77,6 +86,7 @@
 
 <script>
 import { searchMeme } from '@/api/search'
+import { getMemeTags } from '@/api/meme'
 import MemeCard from '@/components/meme/MemeCard.vue'
 import { buildMemeDetailLocation } from '@/utils/pageBreadcrumb'
 
@@ -98,6 +108,8 @@ export default {
     return {
       sortTabs: SORT_TABS,
       sortBy: '',
+      selectedTagId: '', // 中文注释：当前选中的标签筛选 ID。
+      tags: [], // 中文注释：后端提供的标准标签列表。
       list: [],
       fullList: null,
       page: 1,
@@ -114,6 +126,9 @@ export default {
     fromHome() {
       return String(this.$route.query.from || '').trim() === 'home'
     },
+    tagId() {
+      return String(this.$route.query.tagId || '').trim()
+    },
     noMore() {
       if (!this.fullList) return true
       return this.list.length >= this.fullList.length
@@ -129,9 +144,15 @@ export default {
     sortBy() {
       this.fetchList()
     },
+    tagId(value) {
+      this.selectedTagId = value
+      this.fetchList()
+    },
   },
   mounted() {
     this.initObserver()
+    this.selectedTagId = this.tagId
+    this.loadTags()
   },
   beforeUnmount() {
     this.observer?.disconnect()
@@ -163,6 +184,26 @@ export default {
     changeSort(value) {
       this.sortBy = value
     },
+    changeTag() {
+      this.$router.replace({
+        query: { ...this.$route.query, tagId: this.selectedTagId || undefined },
+      })
+    },
+    async loadTags() {
+      try {
+        this.tags = await getMemeTags()
+      } catch (_) {
+        this.tags = []
+      }
+    },
+    tagCategoryLabel(category) {
+      const labels = {
+        SOURCE: '来源', FORMAT: '形式', EMOTION: '情绪', SCENARIO: '场景',
+        CONTENT: '内容', ERA: '时代', PROPAGATION: '传播特征', TONE: '使用语气',
+        UNCATEGORIZED: '待归类',
+      }
+      return labels[category] || labels.UNCATEGORIZED
+    },
     async fetchList() {
       if (!this.keyword) {
         this.list = []
@@ -178,6 +219,7 @@ export default {
       try {
         const params = {
           keyword: this.keyword,
+          tagId: this.tagId || undefined,
         }
         if (this.sortBy === 'mostViews') params.mostViews = '1'
         else if (this.sortBy === 'mostLikes') params.mostLikes = '1'
@@ -221,6 +263,30 @@ export default {
 /* 排序 tab 栏：类似参考图 */
 .search-toolbar {
   margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tag-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--meme-text-secondary);
+  font-size: 14px;
+}
+
+.tag-filter select {
+  max-width: min(360px, 70vw);
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--meme-border-accent);
+  border-radius: 10px;
+  background: var(--meme-bg-card);
+  color: var(--meme-text);
+  outline-color: var(--meme-primary);
 }
 
 .sort-tabs {

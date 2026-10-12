@@ -23,7 +23,10 @@ public class MemeEditRequestDTO {
     @Size(max = 500)
     private String image;
 
-    /** 中文注释：梗关联的标签ID列表。 */
+    /** 中文注释：代表梗主要分类的标签 ID。 */
+    private Integer primaryTagId;
+
+    /** 中文注释：梗关联的普通标签 ID，提交新修改稿时要求选择 3～7 个。 */
     @Size(max = 64)
     private List<Integer> tagIds;
 

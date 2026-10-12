@@ -89,10 +89,12 @@ public class HomeController {
             @RequestParam("keyword") String keyword,
             @RequestParam(value = "mostLikes", required = false) String mostLikes,
             @RequestParam(value = "mostViews", required = false) String mostViews,
-            @RequestParam(value = "mostComments", required = false) String mostComments
+            @RequestParam(value = "mostComments", required = false) String mostComments,
+            @RequestParam(value = "tagId", required = false) Long tagId
     ) {
-        log.info("请求关键字搜索, keyword={}, mostLikes={}, mostViews={}, mostComments={}", keyword, mostLikes, mostViews, mostComments);
-        List<SimpleMemeVO> data = memeService.searchByKeywordForApi(keyword, mostLikes, mostViews, mostComments);
+        log.info("请求梗搜索, keyword={}, tagId={}, mostLikes={}, mostViews={}, mostComments={}",
+                keyword, tagId, mostLikes, mostViews, mostComments);
+        List<SimpleMemeVO> data = memeService.searchByKeywordForApi(keyword, mostLikes, mostViews, mostComments, tagId);
         return Result.success(data);
     }
 

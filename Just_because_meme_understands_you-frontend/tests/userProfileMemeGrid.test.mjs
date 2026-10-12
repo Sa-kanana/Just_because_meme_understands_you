@@ -6,6 +6,7 @@ import postcss from 'postcss'
 
 const componentPath = new URL('../src/views/UserProfile.vue', import.meta.url) // 被测个人主页组件
 const componentSource = readFileSync(componentPath, 'utf8') // 个人主页 Vue 源码
+const userApiSource = readFileSync(new URL('../src/api/user.js', import.meta.url), 'utf8') // 用户主页接口源码
 const { descriptor, errors } = parse(componentSource) // 解析模板与样式块
 assert.equal(errors.length, 0)
 
@@ -52,3 +53,21 @@ test('keeps profile meme cards left-aligned in a responsive grid', () => {
   const mobileGridRule = mobileRule && findRule(mobileRule, '.meme-grid') // 手机端单列网格
   assert.equal(findDeclaration(mobileGridRule, 'grid-template-columns'), '1fr')
 })
+
+test('replaces the published-list hint with accessible work search controls', () => {
+  const template = descriptor.template.content // 个人主页发布作品模板
+
+  assert.doesNotMatch(template, /点击卡片看详情/)
+  assert.match(template, /type="search"/)
+  assert.match(template, /v-model="publishedSearchInput"/)
+  assert.match(template, /@keyup\.enter\.prevent="applyPublishedSearch"/)
+  assert.match(template, /@search="!publishedSearchInput && clearPublishedSearch\(\)"/)
+  assert.match(template, /@click="clearPublishedSearch"/)
+  assert.match(template, /aria-label="搜索作品名称"/)
+  assert.match(componentSource, /keyword: this\.publishedSearchKeyword/)
+  assert.match(userApiSource, /query\.set\('keyword', searchKeyword\)/)
+  assert.match(componentSource, /publishedDisplayTotal\(\) \{[\s\S]*?if \(this\.publishedSearchKeyword\) return this\.publishedPageTotal/)
+  assert.match(componentSource, /applyPublishedSearch\([\s\S]*publishedPageNo = 1/)
+})
+
+\n

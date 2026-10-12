@@ -22,8 +22,10 @@ public interface IUserProfileService {
      * 状态隔离：currentUserId 与 targetUserId 一致返回所有状态（可按 status 筛选），否则只返回 status=1。
      * @param status 可选；仅本人有效：1已发布 / 2审核中(含6) / 3主动下架 / 5锁定；null 表示全部
      * @param sort 可选排序：latest / views / likes / comments；空值或无效值按最新发布排序
+     * @param keyword 可选作品名称关键字，空值时不增加名称筛选
      */
-    UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size, Integer status, String sort);
+    UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size,
+                                 Integer status, String sort, String keyword);
 
     /**
      * 分页获取用户收藏的梗。

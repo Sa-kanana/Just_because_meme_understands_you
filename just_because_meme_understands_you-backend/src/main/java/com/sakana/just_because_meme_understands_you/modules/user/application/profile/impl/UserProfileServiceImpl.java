@@ -19,6 +19,8 @@ import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserStatsMapper;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.domain.SensitiveScene;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.favorite.IUserFavoriteFolderService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
@@ -116,6 +118,10 @@ public class UserProfileServiceImpl implements IUserProfileService {
     @Resource
     private FileAssetService fileAssetService;
 
+    /** 中文注释：用户昵称和个性签名没有人工审核队列，按即时资料策略校验。 */
+    @Resource
+    private SensitiveWordFilterService sensitiveWordFilterService;
+
     @Resource
     private IUserFavoriteFolderService userFavoriteFolderService;
 
@@ -188,7 +194,8 @@ public class UserProfileServiceImpl implements IUserProfileService {
     }
 
     @Override
-    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size, Integer status, String sort) {
+    public UserMemePageVO pageUserMemes(Long targetUserId, Long currentUserId, Integer page, Integer size,
+                                        Integer status, String sort, String keyword) {
         if (targetUserId == null || targetUserId <= 0) {
             throw new BizException(Result.CODE_BAD_REQUEST, "userId 不合法");
         }
@@ -204,7 +211,8 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 && currentUserId != null && currentUserId.equals(targetUserId);
 
         MemeCatalogPort.MemePage result = memeCatalogPort.pageByAuthor(
-                targetUserId, isOwner, status, pageNo, pageSize, MemeCatalogPort.MemeSort.fromValue(sort));
+                targetUserId, isOwner, status, pageNo, pageSize,
+                MemeCatalogPort.MemeSort.fromValue(sort), keyword);
 
         AuthorVO author = authorSupport.toAuthorVO(targetUserId, targetUser, true);
 
@@ -288,6 +296,7 @@ public class UserProfileServiceImpl implements IUserProfileService {
             UserMemeTagVO vo = new UserMemeTagVO();
             vo.setTagId(t.id() == null ? null : t.id().intValue());
             vo.setName(t.name());
+            vo.setCategory(t.category());
             list.add(vo);
         }
         return list;
@@ -457,7 +466,12 @@ public class UserProfileServiceImpl implements IUserProfileService {
                 throw new BizException(Result.CODE_BAD_REQUEST, "昵称长度最多 50 个字符");
             }
             if (StringUtils.hasText(nickname)) {
-                user.setNickname(nickname);
+                String filteredNickname = sensitiveWordFilterService.filterForImmediateContent(
+                        nickname, SensitiveScene.USER_NICKNAME);
+                if (filteredNickname.length() > 50) {
+                    throw new BizException(Result.CODE_BAD_REQUEST, "替换后的昵称长度最多 50 个字符");
+                }
+                user.setNickname(filteredNickname);
             }
         }
         if (request.getGender() != null) {
@@ -483,7 +497,16 @@ public class UserProfileServiceImpl implements IUserProfileService {
             if (signature.length() > 255) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "签名最多 255 个字符");
             }
-            user.setSignature(StringUtils.hasText(signature) ? signature : null);
+            if (!StringUtils.hasText(signature)) {
+                user.setSignature(null);
+            } else {
+                String filteredSignature = sensitiveWordFilterService.filterForImmediateContent(
+                        signature, SensitiveScene.USER_SIGNATURE);
+                if (filteredSignature.length() > 255) {
+                    throw new BizException(Result.CODE_BAD_REQUEST, "替换后的签名最多 255 个字符");
+                }
+                user.setSignature(filteredSignature);
+            }
         }
         if (request.getAvatar() != null) {
             String avatarRaw = request.getAvatar().trim();

@@ -35,9 +35,10 @@ public class AdminTagController {
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "size", required = false) Integer size,
             @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "category", required = false) String category,
             HttpServletRequest request) {
         AdminAuthSupport.requireAdmin(request);
-        return Result.success(adminTagService.page(page, size, keyword));
+        return Result.success(adminTagService.page(page, size, keyword, category));
     }
 
     @PostMapping

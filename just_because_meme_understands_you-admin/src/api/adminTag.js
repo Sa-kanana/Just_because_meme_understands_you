@@ -21,6 +21,7 @@ export function fetchAdminTags(params = {}) {
   if (params.page != null) query.set('page', String(params.page))
   if (params.size != null) query.set('size', String(params.size))
   if (params.keyword) query.set('keyword', String(params.keyword).trim())
+  if (params.category) query.set('category', String(params.category).trim())
   const qs = query.toString()
   return request(`/admin/tags${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) =>
     normalizePage(assertData(res, '获取标签失败'))

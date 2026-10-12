@@ -70,21 +70,24 @@ export function getUserProfile(userId, token) {
 
 /**
  * 分页获取用户发布的梗
- * GET /users/{userId}/memes?page=&size=&status=&sort=
+ * GET /users/{userId}/memes?page=&size=&status=&sort=&keyword=
  * 返回 { author, list, page, size, total, isOwner, hasMore, statusCounts? }
  * list 项含 id/memeId、status、author、releaseTime 等
  * status：本人可选 1/2/3；他人忽略
  * sort：latest/views/likes/comments，按最新、浏览、点赞或评论排序
+ * keyword：可选，按作品名称模糊搜索
  */
 export function pageUserMemes(userId, params = {}) {
   const id = userId != null ? String(userId).trim() : ''
   if (!id) {
     return Promise.reject(new Error('缺少用户ID'))
   }
-  const { page = 1, size = 10, status, sort = 'latest' } = params
+  const { page = 1, size = 10, status, sort = 'latest', keyword } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
   const validSorts = ['latest', 'views', 'likes', 'comments']
   query.set('sort', validSorts.includes(String(sort).toLowerCase()) ? String(sort).toLowerCase() : 'latest')
+  const searchKeyword = keyword != null ? String(keyword).trim() : ''
+  if (searchKeyword) query.set('keyword', searchKeyword)
   if (
     status === 1 || status === 2 || status === 3 || status === 5 || status === 6
     || status === '1' || status === '2' || status === '3' || status === '5' || status === '6'

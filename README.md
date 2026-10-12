@@ -9,7 +9,7 @@
 - **梗社区**：首页推荐与热门标签、关键词搜索、梗详情、发布、点赞、评论与回复。
 - **用户中心**：注册登录、GitHub OAuth、个人主页、关注、收藏夹、通知与账号设置。
 - **AI 搜梗**：向量检索、SSE 流式回答、历史会话、知识库入库。
-- **管理后台**：用户、梗内容、标签、轮播图、敏感词、知识库与 AI 运维管理。
+- **管理后台**：用户、梗内容、标签、轮播图、敏感词、知识库、AI 状态和梗向量库校准。
 - **热梗采集**：Java 调度 MemeAgent，通过 Firecrawl 采集并处理内容，可按需启用。
 
 ## 整体架构
@@ -51,7 +51,7 @@ MemeAgent ── PostgreSQL + pgvector
 
 ### Java 后端架构
 
-后端按 Controller、Service、Mapper、Entity/DTO/VO 分层。Controller 暴露 REST API，Service 处理业务规则和事务，Mapper 使用 MyBatis-Plus 访问 MySQL。`WebMvcConfig` 注册 JWT 和可选登录拦截器，`SecurityConfig`、限流组件和敏感词过滤器负责访问控制与内容安全。
+后端采用模块化单体结构：`api` 放用户端和管理端接口，`modules` 按用户、梗、AI、知识库、OSS 等业务拆分，模块内部由应用服务、领域模型和基础设施代码协作；`common` 放通用组件，`infrastructure` 放跨模块配置。接口层负责参数校验和响应，应用服务处理业务规则与事务，持久层通过 MyBatis-Plus 访问 MySQL。`WebMvcConfig` 注册 JWT 和可选登录拦截器，`SecurityConfig`、限流组件和敏感词过滤器负责访问控制与内容安全。
 
 后端还包含几条独立链路：
 
@@ -68,6 +68,7 @@ MemeAgent ── PostgreSQL + pgvector
 - `/stream` 接收 Java 转发的搜索请求，调用 LangChain Agent、Embedding 和模型 API，返回 SSE 事件。
 - `/ingest`、`/ingest/delete` 处理梗向量的新增、更新和删除。
 - `/ingest/knowledge` 处理管理后台上传的知识文档。
+- `/ingest/meme-ids` 供 Java 内部分页读取现有向量 ID，用于梗向量双向校准；浏览器不直接调用。
 - `/crawl/hot-memes` 在开启 Firecrawl 时采集并整理热梗。
 - 服务启动时通过 `asyncpg` 连接 PostgreSQL，并自动创建 `meme_vector_chunk`、`knowledge_vector_chunk` 表。
 
@@ -81,7 +82,8 @@ MemeAgent 的 `.env` 位于 `MemeAgent/.env`，不会读取根目录 `.env`。Ja
 | 用户端 | `POST /v1/auth/sessions`、`POST /v1/users`、`/v1/users/**` | 登录注册、个人资料、关注和收藏 |
 | 用户端 | `/v1/ai/**` | AI 搜索、会话和流式回答 |
 | 管理端 | `/v1/admin/users`、`/v1/admin/memes`、`/v1/admin/knowledge-documents` | 管理用户、梗和知识库 |
-| 管理端 | `/v1/admin/ai/operations`、`/v1/admin/ai/ingestion-jobs`、`/v1/admin/ai/crawl-jobs` | AI 状态、向量回填和热梗采集 |
+| 管理端 | `/v1/admin/ai/operations`、`/v1/admin/ai/crawl-jobs` | AI 状态和热梗采集 |
+| 管理端 | `/v1/admin/ai/vector-index/reconciliation-jobs` | 手动校准已发布梗与向量库差异，并查看或续跑任务 |
 | Java → Agent | `/health`、`/stream`、`/ingest`、`/ingest/knowledge` | 探活、生成、灌库和知识入库 |
 
 Java 业务 API 统一使用 `/v1` 前缀。两个前端默认请求 `/api/v1/...`，开发代理和生产反向代理应移除 `/api` 后转发到 Java，例如将 `/api/v1/memes` 转发为 `/v1/memes`。完整路由以仓库根目录的 `RESTFUL_API.md` 为准。
@@ -98,7 +100,8 @@ Java 业务 API 统一使用 `/v1` 前缀。两个前端默认请求 `/api/v1/..
 │       ├── application-dev.yml.example
 │       ├── application-prod.yml
 │       └── db/
-│           └── mysql.sql                        # MySQL 完整建表脚本
+│           ├── mysql.sql                        # MySQL 基础表结构
+│           └── migration/                       # Flyway 增量迁移
 ├── MemeAgent/
 │   ├── app/                                   # AI 服务代码
 │   ├── scripts/init_pgvector.sql
@@ -187,9 +190,7 @@ ORDER BY installed_rank;
 
 ## 3. 配置并启动 Java 后端
 
-在 `just_because_meme_understands_you-backend/src/main/resources/` 下创建 `application-dev.yml`。
-
-仓库的 `application-dev.yml.example` 可用于了解配置项，但当前模板包含两个顶层 `meme:` 节点，直接复制可能产生重复键错误。首次配置可使用下面的合并版，替换所有 `CHANGE_ME` 值：
+将 `just_because_meme_understands_you-backend/src/main/resources/application-dev.yml.example` 复制为同目录下的 `application-dev.yml`，再填写本机 MySQL、Redis、邮件和 OSS 配置。该本地文件已被 `.gitignore` 忽略，不要提交真实凭据。也可以按下面的配置创建文件；将所有 `CHANGE_ME` 替换为本地值：
 
 ```yaml
 server:
@@ -235,8 +236,6 @@ meme:
   agent:
     base-url: http://127.0.0.1:8000
     api-key: "CHANGE_ME_SHARED_INTERNAL_KEY"
-  ai:
-    backfill-enabled: false
   crawl:
     enabled: false
     schedule-enabled: false
@@ -249,7 +248,7 @@ meme:
 - SMTP 用于验证码、找回密码等功能；QQ 邮箱需使用 SMTP 授权码。反馈收件地址改为自己的邮箱。
 - OSS 使用自己的 Bucket 与凭据，按桶地域调整 Endpoint，并为浏览器直传配置 CORS。项目使用 `tmp/` 临时对象前缀，可按模板说明设置生命周期。
 - JWT 密钥使用至少 32 字节的随机字符串。上面的内容仅是占位符。
-- 首次运行关闭批量回填入口和采集，待 AI 服务配置完成后再按需启用。
+- 首次运行先关闭热梗采集及定时采集；梗向量校准由管理员在 AI 运维页手动启动，不会随 Java 或 Agent 启动自动扫描全库。
 
 Windows PowerShell：
 
@@ -269,7 +268,7 @@ sh ./mvnw spring-boot:run
 
 ## 4. 启动 MemeAgent
 
-MemeAgent 只在使用 AI 搜梗、知识库或向量回填时需要启动。它单独使用 PostgreSQL + pgvector，和 Java 使用的 MySQL 不是同一个数据库。
+MemeAgent 只在使用 AI 搜梗、知识库或梗向量索引时需要启动。它单独使用 PostgreSQL + pgvector，和 Java 使用的 MySQL 不是同一个数据库。
 
 ### 4.1 准备 PostgreSQL + pgvector
 
@@ -286,14 +285,14 @@ docker run -d --name memeagent-pg \
   pgvector/pgvector:pg16
 ```
 
-初始化表结构：
+初始化表结构（SQL 脚本默认按 1024 维创建向量列）：
 
 ```bash
 psql -h 127.0.0.1 -p 5433 -U memeagent -d memeagent_vector \
   -f MemeAgent/scripts/init_pgvector.sql
 ```
 
-Agent 启动时也会执行建表逻辑，但数据库账号必须有创建 `vector` 扩展和表的权限。权限受限时，先由数据库管理员执行上面的 SQL。脚本和配置默认使用 `1536` 维向量，Embedding 模型的输出维度、`VECTOR_EMBEDDING_DIM` 和 PostgreSQL 向量列必须一致；已有表不会因为修改环境变量自动迁移。
+Agent 启动时也会执行建表逻辑，但数据库账号必须有创建 `vector` 扩展和表的权限。权限受限时，先由数据库管理员执行上面的 SQL。仓库 `.env.example` 使用 1024 维向量和 `qwen3.7-text-embedding-flash`；Embedding 服务的实际输出维度、`VECTOR_EMBEDDING_DIM` 和 PostgreSQL 向量列必须一致。已有表不会因为修改环境变量自动迁移。
 
 ### 4.2 创建 Python 环境
 
@@ -336,10 +335,10 @@ APP_HOST=127.0.0.1
 APP_PORT=8000
 INTERNAL_API_KEY=CHANGE_ME_SHARED_INTERNAL_KEY
 VECTOR_DATABASE_URL=postgresql://memeagent:CHANGE_ME_POSTGRES_PASSWORD@127.0.0.1:5433/memeagent_vector
-VECTOR_EMBEDDING_DIM=1536
+VECTOR_EMBEDDING_DIM=1024
 OPENAI_API_KEY=CHANGE_ME_MODEL_API_KEY
 OPENAI_CHAT_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_MODEL=qwen3.7-text-embedding-flash
 FIRECRAWL_ENABLED=false
 LANGSMITH_TRACING=false
 ```
@@ -386,9 +385,11 @@ meme:
 
 推荐启动顺序是 MySQL、Redis、PostgreSQL → MemeAgent → Java 后端 → 两个前端。Java 通过 `X-Internal-Api-Key` 调用 Agent；读接口使用 `api-key`，灌库和采集使用 `write-api-key`，为空时才回退到读密钥。
 
-向量库初始为空。将 Java 配置中的 `meme.ai.backfill-enabled` 设为 `true` 后重启 Java，再登录管理后台的「AI 运维 → 向量回填」触发已有梗入库。这个开关只控制是否允许回填接口，不会在 Agent 或 Java 启动时自动导入全部梗。
+梗在发布、审核通过或更新后会由 Java 自动同步到向量库。对于历史数据缺失或需要核对孤儿向量的情况，管理员可在「AI 运维 → 梗向量库校准」手动启动双向扫描；失败任务可以从已保存的位置继续。任务完成表示差异修复事件已进入 Java Outbox，后续由异步投递写入或删除向量，不代表 Agent 已处理完所有事件。校准细节见 [接口说明](RESTFUL_API.md#管理员梗向量双向校准)。
 
-如果只体验社区基础功能，可以不启动 MemeAgent，并将 Java 的 `meme.agent.api-key` 留空；此时 AI 搜索、知识库入库和向量回填不可用。
+需要查看向量分块、表和索引占用或 HNSW 容量时，可运行只读诊断脚本 `MemeAgent/scripts/inspect_meme_vector_capacity.sql`；步骤见 [MemeAgent 运维脚本说明](MemeAgent/scripts/README.md#梗向量容量诊断)。
+
+如果只体验社区基础功能，可以不启动 MemeAgent，并将 Java 的 `meme.agent.api-key` 留空；此时 AI 搜索、知识库入库和向量同步不可用。
 
 ## 5. 启动用户前端
 
@@ -452,11 +453,9 @@ frontend-callback-url: http://localhost/login/oauth/callback
 4. 使用管理员账号登录管理后台，确认权限与数据加载正常。
 5. 使用 AI 功能时检查 Agent 探活、内容入库和一次实际 AI 搜梗。
 
-## 自动化检查
+## 本地检查
 
-`.github/workflows/ci.yml` 在推送、Pull Request 和手动触发时运行四组检查：Java 后端测试及 Flyway 重复迁移测试、用户端和管理端 Node 测试与生产构建、MemeAgent pytest。后端任务使用临时 MySQL 8.4 与 Redis 服务，并从 `mysql.sql` 初始化基础 schema；CI 不连接开发机服务，也不需要模型、Firecrawl 或云存储密钥。
-
-MemeAgent 的固定检索问题集位于 `MemeAgent/app/eval/golden_queries.json`。离线自动化会检查评分逻辑和标签结构；连接本地 PostgreSQL/pgvector 后，可在 `MemeAgent` 目录运行 `python -m app.eval.retrieval_eval` 对真实检索排序、延迟做回归。需要额外评估完整回答时再使用 `--include-answers`；token usage 与价格统计按 [评估说明](MemeAgent/app/eval/README.md) 显式配置，不在 CI 中调用付费模型。
+各模块可以单独检查。在后端目录运行 `.\mvnw.cmd test`（macOS / Linux 使用 `sh ./mvnw test`）；在两个前端目录分别运行 `npm run lint` 和 `npm run build`；在已激活 `memeagent` 环境的 `MemeAgent` 目录运行 `pytest`。MemeAgent 的固定检索问题集位于 `MemeAgent/app/eval/golden_queries.json`；连接本地 PostgreSQL/pgvector 后，可运行 `python -m app.eval.retrieval_eval` 检查真实检索排序和延迟。需要评估完整回答时再加 `--include-answers`，并按 [评估说明](MemeAgent/app/eval/README.md) 配置 token 用量与费用统计。
 
 ## 构建与部署
 
@@ -497,7 +496,7 @@ java -jar target/just_because_meme_understands_you-0.0.1-SNAPSHOT.jar --spring.p
 
 | 现象 | 检查项 |
 | --- | --- |
-| `DuplicateKeyException` / YAML 重复键 | 开发模板的两个 `meme:` 必须合并为一个；可使用本文配置 |
+| `DuplicateKeyException` / YAML 重复键 | 检查 `application-dev.yml`，确保同一层级的配置键只定义一次；`meme` 下的设置应合并在同一个节点 |
 | 缺少 `DB_URL`、`JWT_SECRET` 等配置 | 确认本地 `application-dev.yml` 已创建并生效，或环境变量已注入 |
 | MySQL 报表不存在 | 确认已执行 `just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql`，并且 JDBC URL 使用的是同一个 `meme` 数据库 |
 | Redis 连接失败 | 检查服务、地址、端口、密码以及客户端实际配置 |
@@ -508,6 +507,6 @@ java -jar target/just_because_meme_understands_you-0.0.1-SNAPSHOT.jar --spring.p
 | Agent 返回 401 / 403 | 检查 Java 与 Agent 的读写密钥是否匹配；请求头名称必须是 `X-Internal-Api-Key` |
 | Agent 启动后 AI 生成失败 | 检查 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、对话模型和 Embedding 模型是否可用 |
 | 向量维度不匹配 | 模型输出、环境变量与已有向量表列维度必须相同 |
-| AI 检索为空或生成失败 | 检查内容是否已入库、模型凭据和模型服务日志 |
+| AI 检索为空或生成失败 | 检查内容是否已入库、模型凭据和模型服务日志；历史梗索引不完整时由管理员启动梗向量库校准 |
 | 上传图片失败 | 检查 OSS 凭据、Bucket 权限、地域、上传域名及浏览器直传 CORS |
 | 管理后台拒绝登录 | 检查账号是否拥有 `ROLE_ADMIN` |

@@ -7,6 +7,8 @@
         SELECT r.meme_id AS memeId,
                t.id      AS id,
                t.name    AS name,
+               t.category AS category,
+               r.is_primary AS isPrimary,
                t.related_quantity AS relatedQuantity
         FROM meme_tag_relation r
         INNER JOIN meme_tag t ON r.meme_tag_id = t.id
@@ -14,5 +16,6 @@
         <foreach collection="memeIds" item="memeId" open="(" separator="," close=")">
             #{memeId}
         </foreach>
+        ORDER BY r.meme_id ASC, r.is_primary DESC, t.category ASC, t.sort_order ASC, t.id ASC
     </select>
 </mapper>

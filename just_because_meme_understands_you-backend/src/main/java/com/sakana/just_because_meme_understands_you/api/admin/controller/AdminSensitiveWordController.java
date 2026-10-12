@@ -37,10 +37,11 @@ public class AdminSensitiveWordController {
             @RequestParam(value = "size", required = false) Integer size,
             @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "level", required = false) String level,
             @RequestParam(value = "status", required = false) Integer status,
             HttpServletRequest request) {
         AdminAuthSupport.requireAdmin(request);
-        return Result.success(adminSensitiveWordService.page(page, size, keyword, category, status));
+        return Result.success(adminSensitiveWordService.page(page, size, keyword, category, level, status));
     }
 
     @PostMapping

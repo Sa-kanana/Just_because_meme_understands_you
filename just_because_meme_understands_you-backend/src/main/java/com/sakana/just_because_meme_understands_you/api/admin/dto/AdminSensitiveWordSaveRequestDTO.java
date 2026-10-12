@@ -16,9 +16,13 @@ public class AdminSensitiveWordSaveRequestDTO {
     @Size(max = 32, message = "分类最多 32 字")
     private String category;
 
-    /** 1 替换，2 人工审核，3 直接拒绝 */
-    @NotNull(message = "actionType 不能为空")
-    private Integer actionType;
+    /** 中文注释：风险等级，支持 NORMAL、REVIEW、BLOCK。 */
+    @NotBlank(message = "level 不能为空")
+    private String level;
+
+    /** 中文注释：NORMAL 等级的命中替换文本，可为空。 */
+    @Size(max = 20, message = "替换文本最多 20 字")
+    private String replacement;
 
     /** 0 禁用，1 启用；默认 1 */
     private Integer status;

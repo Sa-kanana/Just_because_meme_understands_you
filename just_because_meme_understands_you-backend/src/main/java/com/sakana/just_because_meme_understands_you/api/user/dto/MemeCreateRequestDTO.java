@@ -21,7 +21,10 @@ public class MemeCreateRequestDTO {
     /** 封面图 URL（选填；前端直传 OSS 后回传） */
     private String image;
 
-    /** 关联标签 id 列表 */
+    /** 中文注释：代表梗主要分类的标签 ID。 */
+    private Integer primaryTagId;
+
+    /** 中文注释：梗关联的普通标签 ID，发布时要求选择 3～7 个。 */
     private List<Integer> tagIds;
 
     /** 相关资源 URL 列表（图片/视频/GIF，前端直传 OSS 后回传） */
