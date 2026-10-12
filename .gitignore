@@ -11,7 +11,10 @@ dist/
 .ci-validation-*/
 build/
 out/
-deploy/
+# 部署配置纳入版本管理，只忽略部署密钥和本机构建产物。
+deploy/.env
+deploy/meme-agent.env
+deploy/artifacts/
 docs/*
 # 数据库结构设计与只读核对文档纳入版本管理。
 !docs/architecture/
@@ -95,3 +98,9 @@ MemeAgent/.env
 
 # Local scratch
 tmp-apifox/
+
+# 忽略 GitHub Actions 工作流目录中的未跟踪文件。
+.github/workflows/
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/deploy.yml

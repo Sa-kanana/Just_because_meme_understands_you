@@ -1,0 +1,38 @@
+# 后端编译阶段使用与项目 Java 17 版本一致的 Maven/JDK 镜像。
+FROM maven:3.9-eclipse-temurin-17 AS build
+
+# Maven 项目在仓库根目录下的独立后端模块中构建。
+WORKDIR /workspace
+
+# 先复制依赖描述文件，使源码变化时仍可复用 Maven 依赖缓存。
+COPY just_because_meme_understands_you-backend/pom.xml ./pom.xml
+
+# 复制 Spring Boot 源码并生成可执行 Jar；镜像构建阶段不运行测试。
+COPY just_because_meme_understands_you-backend/src ./src
+RUN mvn --batch-mode --no-transfer-progress -DskipTests package
+
+# 运行阶段只保留 Java 17 JRE 与构建产物。
+FROM eclipse-temurin:17-jre-jammy AS runtime
+
+# 安装轻量 HTTP 客户端供 Compose 检查服务是否已监听 HTTP。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app \
+    && useradd --system --gid app --home-dir /app app
+
+# Spring Boot 工作目录只读运行 Jar，临时文件写入系统 /tmp。
+WORKDIR /app
+COPY --from=build --chown=app:app /workspace/target/*.jar /app/app.jar
+
+# 以非 root 账号运行后端进程。
+USER app:app
+
+# 默认 JVM 参数限制容器内堆内存，可通过 Compose 环境变量覆盖。
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# 声明 Spring Boot 默认监听端口；Compose 不会把该端口映射到宿主机。
+EXPOSE 8080
+
+# 使用 exec 让 Java 直接接收 Docker 的停止信号。
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
