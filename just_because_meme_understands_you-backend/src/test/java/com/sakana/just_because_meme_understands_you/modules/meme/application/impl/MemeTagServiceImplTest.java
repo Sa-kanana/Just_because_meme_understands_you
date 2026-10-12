@@ -18,7 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,20 +36,20 @@ class MemeTagServiceImplTest {
 
     @Test
     void listTagOptionsReturnsEmptyWhenMapperReturnsNull() {
-        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(null);
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>any())).thenReturn(null);
 
         assertEquals(List.of(), service.listTagOptions());
 
-        verify(memeTagMapper).selectList(isNull());
+        verify(memeTagMapper).selectList(any());
     }
 
     @Test
     void listTagOptionsReturnsEmptyWhenMapperReturnsEmpty() {
-        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull())).thenReturn(List.of());
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>any())).thenReturn(List.of());
 
         assertEquals(List.of(), service.listTagOptions());
 
-        verify(memeTagMapper).selectList(isNull());
+        verify(memeTagMapper).selectList(any());
     }
 
     @Test
@@ -58,7 +58,7 @@ class MemeTagServiceImplTest {
         MemeTag nullableFields = tag(null, null);
         MemeTag middle = tag(4, "alpha");
         MemeTag repeated = tag(11, "zeta");
-        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>isNull()))
+        when(memeTagMapper.selectList(ArgumentMatchers.<Wrapper<MemeTag>>any()))
                 .thenReturn(List.of(first, nullableFields, middle, repeated));
 
         List<MemeTagVO> result = service.listTagOptions();
@@ -72,7 +72,7 @@ class MemeTagServiceImplTest {
         assertEquals("alpha", result.get(2).getName());
         assertEquals(11, result.get(3).getId());
         assertEquals("zeta", result.get(3).getName());
-        verify(memeTagMapper).selectList(isNull());
+        verify(memeTagMapper).selectList(any());
     }
 
     private static MemeTag tag(Integer id, String name) {

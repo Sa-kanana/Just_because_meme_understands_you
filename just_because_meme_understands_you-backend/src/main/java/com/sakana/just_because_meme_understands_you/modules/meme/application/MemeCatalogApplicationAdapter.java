@@ -33,6 +33,8 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
 
     private static final int DEFAULT_SEARCH_LIMIT = 8;
     private static final int MAX_SEARCH_LIMIT = 100;
+    /** 中文注释：梗向量双向校准每次从 Java 已发布梗目录读取的最大 ID 数。 */
+    private static final int MAX_PUBLISHED_ID_PAGE_SIZE = 50;
 
     private final MemeMapper memeMapper;
     private final MemeEditRevisionMapper memeEditRevisionMapper;
@@ -70,7 +72,7 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
             searchKey = searchKey.substring(0, 64);
         }
         IPage<Meme> result = memeMapper.searchByKeyword(
-                new Page<>(1, normalizedLimit, false), searchKey, "1", null, null);
+                new Page<>(1, normalizedLimit, false), searchKey, "1", null, null, null);
         if (result == null || result.getRecords() == null) {
             return List.of();
         }
@@ -122,10 +124,21 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
     }
 
     @Override
-    public MemePage pageByAuthor(long userId, boolean owner, Integer status, int page, int size, MemeSort sort) {
+    public List<Long> pagePublishedIdsAfterId(long afterMemeId, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, MAX_PUBLISHED_ID_PAGE_SIZE));
+        List<Long> ids = memeMapper.selectPublishedIdsAfterId(Math.max(0, afterMemeId), safeLimit);
+        return ids == null ? List.of() : ids;
+    }
+
+    @Override
+    public MemePage pageByAuthor(long userId, boolean owner, Integer status, int page, int size,
+                                 MemeSort sort, String keyword) {
         int pageNumber = Math.max(1, page);
         int pageSize = Math.max(1, Math.min(size, 100));
         LambdaQueryWrapper<Meme> wrapper = new LambdaQueryWrapper<Meme>().eq(Meme::getUserId, userId);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(Meme::getName, keyword.trim());
+        }
         applyAuthorSort(wrapper, sort == null ? MemeSort.LATEST : sort);
         if (!owner) {
             wrapper.eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL);
@@ -180,19 +193,6 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
     }
 
     @Override
-    public List<MemeCard> findPublished(int limit) {
-        if (limit <= 0) {
-            return List.of();
-        }
-        int safeLimit = Math.min(limit, 2000);
-        return memeMapper.selectList(new LambdaQueryWrapper<Meme>()
-                        .eq(Meme::getStatus, MemeVisibilitySupport.STATUS_NORMAL)
-                        .orderByAsc(Meme::getId)
-                        .last("LIMIT " + safeLimit))
-                .stream().map(this::toCard).toList();
-    }
-
-    @Override
     public Map<Long, List<MemeTagSummary>> findTagsByMemeIds(Collection<Long> memeIds) {
         List<Long> ids = normalizeMemeIds(memeIds);
         if (ids.isEmpty()) {
@@ -209,7 +209,7 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
             }
             grouped.computeIfAbsent(row.getMemeId().longValue(), ignored -> new ArrayList<>())
                     .add(new MemeTagSummary(row.getId() == null ? null : row.getId().longValue(),
-                            row.getName().trim(), null));
+                            row.getName().trim(), null, row.getCategory(), Boolean.TRUE.equals(row.getIsPrimary())));
         }
         return grouped;
     }
@@ -404,6 +404,6 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
             return null;
         }
         return new MemeTagSummary(tag.getId() == null ? null : tag.getId().longValue(),
-                tag.getName(), tag.getRelatedQuantity());
+                tag.getName(), tag.getRelatedQuantity(), tag.getCategory(), false);
     }
 }

@@ -22,6 +22,7 @@ export function fetchAdminSensitiveWords(params = {}) {
   if (params.size != null) query.set('size', String(params.size))
   if (params.keyword) query.set('keyword', String(params.keyword).trim())
   if (params.category) query.set('category', String(params.category).trim())
+  if (params.level) query.set('level', String(params.level).trim())
   if (params.status != null && params.status !== '') query.set('status', String(params.status))
   const qs = query.toString()
   return request(`/admin/sensitive-words${qs ? `?${qs}` : ''}`, { method: 'GET' }).then((res) =>

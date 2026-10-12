@@ -16,13 +16,13 @@ test('saving and restoring a draft keeps only supported form fields', () => {
   const file = { name: 'private.png', size: 1234 }
   const form = {
     name: '测试梗', introduction: '出处', image: 'https://example.com/cover.png',
-    tagIds: [2, 3], resources: [{ type: 'video', title: '原视频', url: 'https://example.com', sortOrder: 0, file }],
+    primaryTagId: 8, tagIds: [2, 3], resources: [{ type: 'video', title: '原视频', url: 'https://example.com', sortOrder: 0, file }],
     resourceUrls: ['https://example.com/extra.png'], file,
   }
   assert.equal(savePublishDraft(storage, { id: 42 }, form), true)
   assert.deepEqual(readPublishDraft(storage, { userId: 42 }), {
     name: '测试梗', introduction: '出处', image: 'https://example.com/cover.png',
-    tagIds: [2, 3], resources: [{ type: 'video', title: '原视频', url: 'https://example.com', sortOrder: 0 }],
+    primaryTagId: 8, tagIds: [2, 3], resources: [{ type: 'video', title: '原视频', url: 'https://example.com', sortOrder: 0 }],
     resourceUrls: ['https://example.com/extra.png'],
   })
   assert.equal(JSON.stringify(readPublishDraft(storage, { id: 42 })).includes('private.png'), false)

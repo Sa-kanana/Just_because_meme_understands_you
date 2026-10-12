@@ -261,15 +261,15 @@ async def test_calibration_report_scores_ten_results_separately_from_serving_top
         ),
         encoding="utf-8",
     )
-    requested_top_k = []
+    requested_candidate_limits = []
     candidates = [
         RetrievedChunk(str(index), f"无关梗{index}", 0.99 - index * 0.05, f"无关梗{index}")
         for index in range(1, 7)
     ]
     candidates.append(RetrievedChunk("target", "目标梗", 0.5, "目标梗"))
 
-    async def fake_search(query, top_k):
-        requested_top_k.append(top_k)
+    async def fake_search(query, candidate_limit):
+        requested_candidate_limits.append(candidate_limit)
         return candidates
 
     async def no_pool(*_args, **_kwargs):
@@ -301,7 +301,7 @@ async def test_calibration_report_scores_ten_results_separately_from_serving_top
 
     report = await retrieval_eval.evaluate_dataset(dataset, calibrate_threshold=True)
 
-    assert requested_top_k == [10]
+    assert requested_candidate_limits == [60]
     assert report["summary"]["recall_at_5"] == 0.0
     assert report["summary"]["recall_at_10"] == 1.0
     assert report["queries"][0]["retrieved_meme_names"][-1] == "目标梗"

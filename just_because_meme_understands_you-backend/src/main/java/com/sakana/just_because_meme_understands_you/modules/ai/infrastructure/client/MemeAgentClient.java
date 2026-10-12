@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.cl
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentKnowledgeIngestRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentKnowledgeIngestErrorDTO;
+import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentMemeIdPageDTO;
 import com.sakana.just_because_meme_understands_you.modules.ai.infrastructure.client.dto.MemeAgentStreamRequestDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -98,6 +99,26 @@ public class MemeAgentClient {
                 .then()// ⑤ 转换为 Mono<Void>
 
                 .doOnError(e -> log.error("MemeAgent ingest failed", e));// ⑥ 错误日志
+    }
+
+    /** 分页读取 MemeAgent 向量库的梗 ID；使用写密钥访问内部校准接口。 */
+    public Mono<MemeAgentMemeIdPageDTO> listMemeIdsPage(String cursor, int limit) {
+        String path = properties.getAgent().getIngestPath().replaceAll("/+$", "") + "/meme-ids";
+        return memeAgentWebClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path(path).queryParam("limit", limit);
+                    if (StringUtils.hasText(cursor)) {
+                        builder.queryParam("cursor", cursor);
+                    }
+                    return builder.build();
+                })
+                .header(INTERNAL_API_KEY_HEADER, resolveWriteApiKey())
+                .retrieve()
+                .bodyToMono(MemeAgentMemeIdPageDTO.class)
+                .doOnError(error -> log.error(
+                        "MemeAgent meme ID page failed limit={} errorType={}",
+                        limit,
+                        error.getClass().getSimpleName()));
     }
 
     public Mono<Void> ingestKnowledgeAsync(MemeAgentKnowledgeIngestRequestDTO request) {

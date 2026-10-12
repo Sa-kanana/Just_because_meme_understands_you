@@ -43,7 +43,6 @@ public class AiOpsController {
 
         MemeAgentProperties.Agent agent = memeAgentProperties.getAgent();
         MemeCatalogPort.CrawlSettings crawl = memeCatalogPort.crawlSettings();
-        MemeAgentProperties.Ai ai = memeAgentProperties.getAi();
 
         AiOpsStatusVO vo = new AiOpsStatusVO();
         vo.setAgentConfigured(memeAgentClient.isConfigured());
@@ -51,8 +50,6 @@ public class AiOpsController {
         vo.setCrawlEnabled(crawl.enabled());
         vo.setCrawlScheduleEnabled(crawl.scheduleEnabled());
         vo.setCrawlDefaultLimit(Math.max(1, crawl.limit()));
-        vo.setBackfillEnabled(ai == null || ai.isBackfillEnabled());
-
         if (vo.isAgentConfigured()) {
             Map<String, Object> health = memeAgentClient.probeHealth().block();
             if (health != null && !health.isEmpty()) {

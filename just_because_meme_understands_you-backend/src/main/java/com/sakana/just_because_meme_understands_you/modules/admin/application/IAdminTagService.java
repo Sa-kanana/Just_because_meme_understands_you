@@ -6,7 +6,7 @@ import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminTagVO;
 
 public interface IAdminTagService {
 
-    PageVO<AdminTagVO> page(Integer page, Integer size, String keyword);
+    PageVO<AdminTagVO> page(Integer page, Integer size, String keyword, String category);
 
     AdminTagVO create(AdminTagSaveRequestDTO request);
 

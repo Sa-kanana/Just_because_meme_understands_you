@@ -37,5 +37,13 @@ public class MemeTagRelation implements Serializable {
     @TableField("meme_tag_id")
     private Integer memeTagId;
 
+    /** 中文注释：是否为该梗的主分类标签，1为主标签，0为普通标签。 */
+    @TableField("is_primary")
+    private Integer isPrimary;
+
+    /** 中文注释：主标签唯一约束辅助列，主标签行写入梗ID，普通标签行保持空值。 */
+    @TableField("primary_meme_id")
+    private Long primaryMemeId;
+
 
 }

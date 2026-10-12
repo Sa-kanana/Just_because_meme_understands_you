@@ -1,112 +1,98 @@
 import axios from 'axios'
 import { request } from './request'
 
-/**
- * 获取 OSS 前端直传凭证
- * GET /uploads/policies?fileType=avatar|meme|comment|home
- * 直传目录为 tmp/{type}/{userId}/…，业务提交时由后端 promote 到正式前缀
- * @param {string} fileType 文件类型，决定 OSS 临时目录
- * @returns {Promise<{accessKeyId, policy, signature, dir, host, publicBaseUrl, expire}>}
- */
-export function getOssPolicy(fileType = '') {
-  const query = new URLSearchParams()
-  if (fileType) query.set('fileType', String(fileType))
-  const qs = query.toString()
-  const url = `/uploads/policies${qs ? `?${qs}` : ''}`
-  return request(url, { method: 'GET' }).then((res) => {
-    if (res && Number(res.code) === 1 && res.data) {
-      return res.data
-    }
-    throw new Error((res && (res.message || res.msg)) || '获取上传凭证失败')
-  })
+/** 中文注释：浏览器允许选择并上传的图片 MIME 类型。 */
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+/** 中文注释：浏览器端预校验的单张图片最大字节数，与服务端上传策略保持一致。 */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** 中文注释：根据图片 MIME 类型生成与服务端校验相符的原始文件扩展名。 */
+const MIME_TYPE_EXTENSIONS = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
 }
 
 /**
- * 直传文件到 OSS（PostObject 表单模式）
- * @param {File|Blob} file 文件
- * @param {string} fileType 文件类型，用于分目录
- * @param {string} [fileName] 指定文件名（含扩展名），不传则自动生成
- * @returns {Promise<string>} 上传后的图片完整 URL
+ * 中文注释：申请上传票据、使用服务端对象键直传 OSS，并在成功后确认资产。
+ * @param {File|Blob} file 用户选择的图片文件。
+ * @param {string} fileType 上传业务场景，例如 avatar、meme 或 comment。
+ * @param {string} [fileName] 可选的展示文件名；扩展名会按 MIME 类型规范化。
+ * @returns {Promise<string>} 已确认上传资产对应的公开图片 URL。
  */
-export async function uploadToOss(file, fileType = 'common', fileName) {
+export async function uploadToOss(file, fileType = 'meme', fileName) {
   if (!file) {
     throw new Error('请选择要上传的文件')
   }
   assertImageFile(file)
-  const policy = await getOssPolicy(fileType)
-  const uploadHost = String(policy.host || '').replace(/\/$/, '')
-  const publicBaseUrl = String(policy.publicBaseUrl || policy.host || '').replace(/\/$/, '')
-  if (!uploadHost) {
-    throw new Error('上传凭证缺少 host')
+
+  const originalFilename = normalizeUploadFilename(fileName || file.name, file.type)
+  const ticketResponse = await request('/uploads/tickets', {
+    method: 'POST',
+    body: {
+      scene: fileType, // 上传票据对应的业务场景。
+      originalFilename, // 服务端记录并校验扩展名的原始文件名。
+      contentType: file.type, // 文件 MIME 类型，必须与扩展名相匹配。
+      fileSize: file.size, // 客户端声明的字节数，服务端会再核验 OSS 元数据。
+    },
+  })
+  const ticket = ticketResponse && ticketResponse.data
+  const uploadHost = String((ticket && ticket.host) || '').replace(/\/$/, '')
+  const publicBaseUrl = String((ticket && (ticket.publicBaseUrl || ticket.host)) || '').replace(/\/$/, '')
+  const objectKey = String((ticket && ticket.objectKey) || '')
+  if (!uploadHost || !objectKey || ticket.assetId == null) {
+    throw new Error('上传凭证缺少 host、objectKey 或 assetId')
   }
-  const dir = String(policy.dir || '')
-  // 强制图片 Content-Type，与后端 policy 的 starts-with $Content-Type image/ 对应
-  const contentType = ALLOWED_IMAGE_TYPES.includes(file.type) ? file.type : 'image/jpeg'
-  const suffix = pickSuffix(fileName || (file.name || ''), file.type)
-  const objectName = `${dir}${Date.now()}_${randomToken()}${suffix}`
-  const objectKey = objectName
 
   const formData = new FormData()
-  formData.append('key', objectKey)
-  formData.append('policy', policy.policy)
-  formData.append('OSSAccessKeyId', policy.accessKeyId)
-  // OSS PostObject 规范字段名为 Signature（首字母大写），小写会导致签名校验失败
-  formData.append('Signature', policy.signature)
-  formData.append('success_action_status', '200')
-  // object Content-Type 固定为图片，防止上传 HTML/SVG 被当作网页渲染导致 XSS
-  formData.append('Content-Type', contentType)
-  // 不设置 x-oss-object-acl，object 继承 Bucket 权限，由 Bucket ACL 统一控制访问
-  formData.append('file', file, fileName || objectName)
+  formData.append('key', objectKey) // 使用服务端签名策略锁定的唯一对象键。
+  formData.append('policy', ticket.policy) // OSS PostObject 上传策略。
+  formData.append('OSSAccessKeyId', ticket.accessKeyId) // 签发票据时返回的 AccessKey ID。
+  formData.append('Signature', ticket.signature) // 与 policy 对应的 OSS 签名。
+  formData.append('success_action_status', '200') // 上传成功后要求 OSS 返回 HTTP 200。
+  formData.append('Content-Type', file.type) // 必须与上传票据中签名的 MIME 类型一致。
+  formData.append('file', file, originalFilename) // 图片文件及规范化后的文件名。
 
   try {
     await axios.post(uploadHost, formData, {
-      // 不显式设 Content-Type，交由浏览器自动带 boundary，避免 boundary 缺失
-      timeout: 60000,
-      withCredentials: false,
+      timeout: 60000, // OSS 直传请求的超时时间，单位为毫秒。
+      withCredentials: false, // OSS 直传不携带本站 Cookie。
     })
-  } catch (err) {
-    // 调试信息：便于在浏览器控制台定位 OSS 返回的真实错误
-    console.error('[OSS upload] uploadHost=', uploadHost, 'objectKey=', objectKey, 'err=', err)
-    // 浏览器跨域/CORS 拦截或网络不通时 axios 抛 Network Error
-    const isNetwork = !err.response && (err.message === 'Network Error' || err.code === 'ERR_NETWORK')
-    if (isNetwork) {
-      throw new Error('图片直传 OSS 失败：可能是 OSS 未配置 CORS，或 host 不可达。请检查 OSS Bucket 跨域规则。')
+  } catch (error) {
+    const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK')
+    if (isNetworkError) {
+      throw new Error('图片直传 OSS 失败：请检查 OSS Bucket 跨域规则或上传域名是否可达。')
     }
-    const ossMsg = err.response && err.response.data
-      ? (typeof err.response.data === 'string' ? err.response.data : (err.response.data.Message || err.response.data.error || ''))
+    const responseBody = error.response && error.response.data
+    const ossMessage = responseBody
+      ? (typeof responseBody === 'string' ? responseBody : (responseBody.Message || responseBody.error || ''))
       : ''
-    throw new Error(ossMsg || err.message || '图片上传到 OSS 失败')
+    throw new Error(ossMessage || error.message || '图片上传到 OSS 失败')
   }
+
+  await request(`/uploads/${encodeURIComponent(ticket.assetId)}/confirm`, {
+    method: 'POST',
+  })
 
   return `${publicBaseUrl}/${objectKey}`
 }
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
-
+/** 中文注释：在请求票据前拦截空文件、非图片 MIME 和超过 10 MiB 的图片。 */
 function assertImageFile(file) {
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
     throw new Error('仅支持 JPG、PNG、WebP、GIF 图片')
   }
-  if (file.size > MAX_IMAGE_BYTES) {
-    throw new Error('图片不能超过 10MB')
+  if (!Number.isFinite(file.size) || file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
+    throw new Error('图片大小必须大于 0 且不能超过 10 MiB')
   }
 }
 
-function pickSuffix(name, mime) {
-  // 扩展名白名单，非图片扩展名一律回退为 .jpg，防止上传 .html/.svg 等可执行内容
-  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
-  const fromName = name && name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
-  if (allowed.includes(fromName)) return fromName
-  const map = {
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/webp': '.webp',
-    'image/gif': '.gif',
-  }
-  return map[mime] || '.jpg'
-}
-
-function randomToken() {
-  return Math.random().toString(36).slice(2, 10)
+/** 中文注释：保留文件名主体，并依据 MIME 类型设置服务端允许的扩展名。 */
+function normalizeUploadFilename(name, mimeType) {
+  const pathSafeName = String(name || 'upload').replace(/\\/g, '/').split('/').pop()
+  const lastDotIndex = pathSafeName.lastIndexOf('.')
+  const baseName = lastDotIndex > 0 ? pathSafeName.slice(0, lastDotIndex) : pathSafeName
+  return `${baseName || 'upload'}${MIME_TYPE_EXTENSIONS[mimeType] || '.jpg'}`
 }

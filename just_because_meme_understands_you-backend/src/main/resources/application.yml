@@ -133,6 +133,63 @@ oss:
   publicBaseUrl: ${OSS_PUBLIC_BASE_URL:}
   # 申请上传凭证限流：每用户每 IP 每分钟次数
   policy-rate-limit-per-minute: ${OSS_POLICY_RATE_LIMIT_PER_MINUTE:10}
+  # ---------- 文件资产清理 ----------
+  cleanup:
+    # 是否启用 OSS 延迟清理定时任务。
+    enabled: ${OSS_CLEANUP_ENABLED:true}
+    # 每轮最多领取的 OSS 删除任务数。
+    batch-size: ${OSS_CLEANUP_BATCH_SIZE:100}
+    # Worker 两轮轮询之间的间隔，单位为毫秒。
+    poll-interval-ms: ${OSS_CLEANUP_POLL_INTERVAL_MS:60000}
+    # 最后一个业务引用释放后等待删除的天数。
+    deletion-delay-days: ${OSS_CLEANUP_DELETION_DELAY_DAYS:2}
+    # 单个对象最多安排的 OSS 删除重试次数。
+    max-retries: ${OSS_CLEANUP_MAX_RETRIES:5}
+    # Worker 领取任务后的租约时长，单位为秒。
+    lease-seconds: ${OSS_CLEANUP_LEASE_SECONDS:300}
+    # 是否运行历史文件引用回填；关闭时 OSS 物理删除门禁保持关闭。
+    backfill-enabled: ${OSS_BACKFILL_ENABLED:true}
+    # 每个历史数据源每轮读取的最大记录数。
+    backfill-batch-size: ${OSS_BACKFILL_BATCH_SIZE:200}
+    # 历史数据源回填批次之间的间隔，单位为毫秒。
+    backfill-poll-interval-ms: ${OSS_BACKFILL_POLL_INTERVAL_MS:1000}
+    # 多实例共享的历史回填租约时长，单位为秒。
+    backfill-lease-seconds: ${OSS_BACKFILL_LEASE_SECONDS:300}
+    # 每日执行过期TEMP资产检查的Cron表达式。
+    temp-cleanup-cron: '${OSS_TEMP_CLEANUP_CRON:0 0 3 * * *}'
+    # 多实例部署时的当前 Worker 唯一标识；默认由应用启动时生成。
+    worker-id: ${OSS_CLEANUP_WORKER_ID:}
+    # 未确认上传资产保留天数，超时后进入删除队列。
+    temp-asset-ttl-days: ${OSS_TEMP_ASSET_TTL_DAYS:3}
+    # 孤儿对象进入复查阶段前要求的最短观察天数。
+    orphan-review-days: ${OSS_ORPHAN_REVIEW_DAYS:7}
+    # 孤儿对账默认仅登记候选，不创建物理删除任务。
+    reconcile-dry-run: ${OSS_RECONCILE_DRY_RUN:true}
+    # 是否启用每日OSS孤儿对象扫描；首次部署默认关闭。
+    reconcile-enabled: ${OSS_RECONCILE_ENABLED:false}
+    # 每日OSS孤儿对象扫描的Cron表达式。
+    reconcile-cron: '${OSS_RECONCILE_CRON:0 30 3 * * *}'
+    # OSS ListObjects每页读取的最多对象数，上限1000。
+    reconcile-page-size: ${OSS_RECONCILE_PAGE_SIZE:500}
+    # 孤儿对账实际扫描的业务对象前缀；仍受下方删除白名单约束。
+    reconcile-prefixes:
+      - tmp/ # 临时上传文件。
+      - avatar/ # 用户头像。
+      - memes/ # 梗图及媒体。
+      - comments/ # 评论图片。
+      # 首页和公共目录可由未登记链接引用，默认不参与孤儿自动删除。
+    # Worker 可以删除的业务对象前缀白名单。
+    allowed-prefixes:
+      - tmp/ # 直传产生的临时文件。
+      - avatar/ # 用户头像。
+      - memes/ # 梗图及其媒体。
+      - comments/ # 评论图片。
+      - home/ # 首页运营图片。
+      - common/ # 项目公共图片。
+    # 无论其他配置如何都禁止删除的系统对象前缀。
+    protected-prefixes:
+      - system/ # 系统级静态资源。
+      - homepage/static/ # 首页静态资源。
 
 # ---------- JWT ----------
 jwt:
@@ -249,7 +306,6 @@ meme:
     task-ttl-seconds: ${MEME_AI_TASK_TTL_SECONDS:600}
     rate-limit-per-minute: ${MEME_AI_RATE_LIMIT_PER_MINUTE:20}
     chars-per-token-estimate: ${MEME_AI_CHARS_PER_TOKEN:3}
-    backfill-enabled: ${MEME_AI_BACKFILL_ENABLED:true}
   crawl:
     enabled: ${MEME_CRAWL_ENABLED:true}
     schedule-enabled: ${MEME_CRAWL_SCHEDULE_ENABLED:true}

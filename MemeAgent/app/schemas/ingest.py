@@ -1,17 +1,36 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.limits import (
+    MAX_TAG_CHARS,
+    MAX_TAG_COUNT,
+    MAX_TOTAL_TAG_CHARS,
+)
 
 
 class IngestDocument(BaseModel):
     meme_id: str = Field(min_length=1, max_length=64)
     title: str = Field(min_length=1, max_length=200)
     introduction: str = Field(default="", max_length=5000)
-    tags: list[str] = Field(default_factory=list, max_length=20)
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAG_COUNT)
     status: Literal["published", "deleted"] = "published"
     updated_at: datetime
     content_hash: str = Field(min_length=8, max_length=128)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, tags: list[str]) -> list[str]:
+        normalized = [tag.strip() for tag in tags]
+        if any(len(tag) > MAX_TAG_CHARS for tag in normalized):
+            raise ValueError(f"单个标签去除首尾空白后不能超过 {MAX_TAG_CHARS} 个字符")
+        total_chars = sum(len(tag) for tag in normalized)
+        if total_chars > MAX_TOTAL_TAG_CHARS:
+            raise ValueError(
+                f"标签去除首尾空白后的累计长度不能超过 {MAX_TOTAL_TAG_CHARS} 个字符"
+            )
+        return normalized
 
 
 class IngestRequest(BaseModel):
@@ -35,3 +54,10 @@ class IngestDeleteRequest(BaseModel):
 
 class IngestDeleteResponse(BaseModel):
     deleted_count: int
+
+
+class MemeIdPageResponse(BaseModel):
+    meme_ids: list[str] = Field(description="按梗 ID 排序的向量库梗 ID 列表")
+    next_cursor: str | None = Field(
+        description="下一页游标；为 null 时表示当前页是最后一页"
+    )

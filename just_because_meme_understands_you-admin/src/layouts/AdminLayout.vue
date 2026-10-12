@@ -150,7 +150,29 @@ const navigationGroups = [
       { key: 'meme-edit-revisions', label: '修改稿审核', icon: IconEdit },
       { key: 'reports', label: '举报处理', icon: IconExclamationCircle },
       { key: 'tags', label: '标签管理', icon: IconTags },
-      { key: 'knowledge', label: '知识库', icon: IconBook },
+    ],
+  },
+  {
+    // 中文注释：集中展示 AI 检索知识和运行状态管理入口。
+    title: 'AI 服务',
+    // 中文注释：该分组只包含知识库与 AI 运维两个相关页面。
+    items: [
+      {
+        // 中文注释：路由名称用于定位知识库管理页面。
+        key: 'knowledge',
+        // 中文注释：侧栏显示的知识库入口名称。
+        label: '知识库',
+        // 中文注释：知识库入口使用书本图标。
+        icon: IconBook,
+      },
+      {
+        // 中文注释：路由名称用于定位 AI 运维页面。
+        key: 'ops',
+        // 中文注释：侧栏显示的 AI 运维入口名称。
+        label: 'AI 运维',
+        // 中文注释：AI 运维入口使用机器人图标。
+        icon: IconRobot,
+      },
     ],
   },
   {
@@ -159,7 +181,6 @@ const navigationGroups = [
       { key: 'users', label: '用户管理', icon: IconUserGroup },
       { key: 'home-images', label: '轮播管理', icon: IconApps },
       { key: 'sensitive-words', label: '敏感词', icon: IconSafe },
-      { key: 'ops', label: 'AI 运维', icon: IconRobot },
     ],
   },
 ]

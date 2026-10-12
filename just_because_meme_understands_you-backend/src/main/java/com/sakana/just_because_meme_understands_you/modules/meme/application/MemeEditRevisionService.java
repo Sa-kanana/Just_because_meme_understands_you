@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.api.user.vo.MemeEditRevision
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
+import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeTagSelectionPolicy;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.MemeResourceType;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeEditRevision;
@@ -19,7 +20,9 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.domain.SensitiveScene;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -83,11 +86,16 @@ public class MemeEditRevisionService {
     @Resource
     private ObjectMapper objectMapper;
 
+    /** 中文注释：提升编辑稿图片并记录等待审核期间的独立资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     @Resource
     private IUserProfileService userProfileService;
+
+    /** 中文注释：BLOCK 修改稿在复制 OSS 资产和写入审核记录前拒绝，REVIEW 沿用 PENDING 审核流程。 */
+    @Resource
+    private SensitiveWordFilterService sensitiveWordFilterService;
 
     /**
      * 中文注释：校验作者权限和正式梗状态后，保存规范化内容快照等待审核。
@@ -132,7 +140,10 @@ public class MemeEditRevisionService {
         revision.setContentJson(serialize(normalized));
         revision.setStatus(REVISION_PENDING);
         revision.setCreatedAt(LocalDateTime.now());
-        memeEditRevisionMapper.insert(revision);
+        if (memeEditRevisionMapper.insert(revision) != 1 || revision.getId() == null) {
+            throw new BizException(Result.CODE_ERROR, "保存梗修改稿失败");
+        }
+        registerRevisionAssetReferences(revision.getId(), normalized);
 
         scheduleProfileCacheEviction(userId);
 
@@ -155,14 +166,35 @@ public class MemeEditRevisionService {
         if (name.length() > MAX_NAME_LENGTH) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称最多 " + MAX_NAME_LENGTH + " 个字符");
         }
+        name = sensitiveWordFilterService.filterForReviewableContent(name, SensitiveScene.MEME_TITLE);
+        if (name.length() > MAX_NAME_LENGTH) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "替换后的梗名称最多 " + MAX_NAME_LENGTH + " 个字符");
+        }
         String introduction = request.getIntroduction() == null ? "" : request.getIntroduction().trim();
         if (introduction.length() > MAX_INTRODUCTION_LENGTH) {
             throw new BizException(Result.CODE_BAD_REQUEST,
                     "梗介绍最多 " + MAX_INTRODUCTION_LENGTH + " 个字符");
         }
-        List<Integer> tagIds = normalizeTagIds(request.getTagIds());
+        introduction = sensitiveWordFilterService.filterForReviewableContent(
+                introduction, SensitiveScene.MEME_DESCRIPTION);
+        if (introduction.length() > MAX_INTRODUCTION_LENGTH) {
+            throw new BizException(Result.CODE_BAD_REQUEST,
+                    "替换后的梗介绍最多 " + MAX_INTRODUCTION_LENGTH + " 个字符");
+        }
+        Set<Integer> candidateTagIds = new TreeSet<>();
+        if (request.getPrimaryTagId() != null && request.getPrimaryTagId() > 0) {
+            candidateTagIds.add(request.getPrimaryTagId());
+        }
+        if (request.getTagIds() != null) {
+            request.getTagIds().stream().filter(Objects::nonNull).filter(id -> id > 0).forEach(candidateTagIds::add);
+        }
         // 中文注释：先确认标签仍存在，再复制 OSS 对象，避免无效请求留下正式目录孤儿文件。
-        validateTagsExist(tagIds);
+        List<MemeTag> existingTags = candidateTagIds.isEmpty() ? List.of() : memeTagMapper.selectBatchIds(candidateTagIds);
+        Set<Integer> existingTagIds = existingTags == null ? Set.of() : existingTags.stream()
+                .filter(Objects::nonNull).map(MemeTag::getId).filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        MemeTagSelectionPolicy.Selection tagSelection = MemeTagSelectionPolicy.normalizeAndValidate(
+                request.getPrimaryTagId(), request.getTagIds(), existingTagIds);
         List<String> mediaUrls = normalizeMediaUrls(request.getResourceUrls());
         List<MemeResourceItemDTO> links = normalizeLinks(request.getResources());
 
@@ -170,28 +202,35 @@ public class MemeEditRevisionService {
         normalized.setName(name);
         normalized.setIntroduction(introduction);
         String image = request.getImage() == null ? "" : request.getImage().trim();
-        normalized.setImage(StringUtils.hasText(image)
-                ? ossObjectPromoteService.promoteMemeImage(image, userId)
-                : null);
-        normalized.setTagIds(tagIds);
+        String promotedImage = StringUtils.hasText(image) ? fileAssetService.promote(image, userId, "meme") : null;
+        normalized.setImage(promotedImage);
+        normalized.setPrimaryTagId(tagSelection.primaryTagId());
+        normalized.setTagIds(tagSelection.secondaryTagIds());
         normalized.setResourceUrls(mediaUrls.stream()
-                .map(url -> ossObjectPromoteService.promoteMemeMediaOrKeepExternal(url, userId))
+                .map(url -> url.equals(image) ? promotedImage
+                        : fileAssetService.promoteMemeMediaOrKeepExternal(url, userId))
                 .toList());
         normalized.setResources(links);
         return normalized;
     }
 
-    private List<Integer> normalizeTagIds(List<Integer> tagIds) {
-        if (tagIds == null || tagIds.isEmpty()) {
-            return List.of();
+    /** 中文注释：修改稿按自身 ID 和媒体数组下标持有资产，审核结束后再整体释放或迁移。 */
+    private void registerRevisionAssetReferences(Long revisionId, MemeEditRequestDTO revision) {
+        if (StringUtils.hasText(revision.getImage())) {
+            fileAssetService.replaceReference(revision.getImage(), "MEME_REVISION", revisionId, "COVER",
+                    "MEME_REVISION_CREATED");
         }
-        Set<Integer> distinct = new TreeSet<>();
-        for (Integer tagId : tagIds) {
-            if (tagId != null && tagId > 0) {
-                distinct.add(tagId);
-            }
+        List<String> mediaUrls = revision.getResourceUrls();
+        for (int index = 0; index < mediaUrls.size(); index++) {
+            fileAssetService.replaceReference(mediaUrls.get(index), "MEME_REVISION", revisionId,
+                    "RESOURCE:" + index, "MEME_REVISION_CREATED");
         }
-        return List.copyOf(distinct);
+        List<MemeResourceItemDTO> links = revision.getResources();
+        for (int index = 0; index < links.size(); index++) {
+            // 中文注释：站内OSS链接也可能是图片；外链由资产服务识别后不会建立引用。
+            fileAssetService.replaceReference(links.get(index).getUrl(), "MEME_REVISION", revisionId,
+                    "LINK:" + index, "MEME_REVISION_CREATED");
+        }
     }
 
     private List<String> normalizeMediaUrls(List<String> resourceUrls) {
@@ -243,6 +282,12 @@ public class MemeEditRevisionService {
             if (!StringUtils.hasText(title)) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "相关链接标题不能为空");
             }
+            title = sensitiveWordFilterService.filterForReviewableContent(title,
+                    SensitiveScene.MEME_RESOURCE_TITLE);
+            if (title.length() > MAX_TITLE_LENGTH) {
+                throw new BizException(Result.CODE_BAD_REQUEST,
+                        "替换后的相关链接标题最多 " + MAX_TITLE_LENGTH + " 个字符");
+            }
             if (title.length() > MAX_TITLE_LENGTH) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "相关链接标题最多 " + MAX_TITLE_LENGTH + " 个字符");
             }
@@ -279,26 +324,6 @@ public class MemeEditRevisionService {
         }
     }
 
-    private void validateTagsExist(List<Integer> tagIds) {
-        if (tagIds.isEmpty()) {
-            return;
-        }
-        List<MemeTag> existing = memeTagMapper.selectBatchIds(tagIds);
-        Set<Integer> existingIds = new LinkedHashSet<>();
-        if (existing != null) {
-            for (MemeTag tag : existing) {
-                if (tag != null && tag.getId() != null) {
-                    existingIds.add(tag.getId());
-                }
-            }
-        }
-        for (Integer tagId : tagIds) {
-            if (!existingIds.contains(tagId)) {
-                throw new BizException(Result.CODE_BAD_REQUEST, "标签不存在, tagId=" + tagId);
-            }
-        }
-    }
-
     private MemeEditRequestDTO buildCurrentSnapshot(Meme official) {
         MemeEditRequestDTO snapshot = new MemeEditRequestDTO();
         snapshot.setName(official.getName() == null ? "" : official.getName().trim());
@@ -308,13 +333,16 @@ public class MemeEditRevisionService {
         List<MemeTagRelation> relations = memeTagRelationMapper.selectList(new LambdaQueryWrapper<MemeTagRelation>()
                 .eq(MemeTagRelation::getMemeId, official.getId())
                 .orderByAsc(MemeTagRelation::getMemeTagId));
-        List<Integer> tagIds = relations == null ? List.of() : relations.stream()
-                .map(MemeTagRelation::getMemeTagId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .sorted()
-                .toList();
-        snapshot.setTagIds(tagIds);
+        List<MemeTagRelation> validRelations = relations == null ? List.of() : relations.stream()
+                .filter(Objects::nonNull).filter(relation -> relation.getMemeTagId() != null).toList();
+        Integer primaryTagId = validRelations.stream()
+                .filter(relation -> Objects.equals(relation.getIsPrimary(), 1))
+                .map(MemeTagRelation::getMemeTagId).findFirst()
+                .orElseGet(() -> validRelations.stream().map(MemeTagRelation::getMemeTagId)
+                        .min(Integer::compareTo).orElse(null));
+        snapshot.setPrimaryTagId(primaryTagId);
+        snapshot.setTagIds(validRelations.stream().map(MemeTagRelation::getMemeTagId)
+                .filter(id -> !Objects.equals(id, primaryTagId)).distinct().sorted().toList());
 
         int resourceStatus = Objects.equals(official.getStatus(), MemeVisibilitySupport.STATUS_OFFLINE)
                 ? RESOURCE_STATUS_INACTIVE : RESOURCE_STATUS_ACTIVE;

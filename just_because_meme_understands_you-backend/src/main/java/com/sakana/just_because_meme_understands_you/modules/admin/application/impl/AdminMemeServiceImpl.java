@@ -91,6 +91,7 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
         publishRequest.setName(name);
         publishRequest.setIntroduction(request.getIntroduction());
         publishRequest.setImage(request.getImage());
+        publishRequest.setPrimaryTagId(request.getPrimaryTagId());
         publishRequest.setTagIds(request.getTagIds());
         return memePublishService.publish(adminUserId, publishRequest);
     }
@@ -229,6 +230,8 @@ public class AdminMemeServiceImpl implements IAdminMemeService {
                     AdminMemeTagVO detailTag = new AdminMemeTagVO();
                     detailTag.setId(tag.id());
                     detailTag.setName(tag.name());
+                    detailTag.setCategory(tag.category());
+                    detailTag.setIsPrimary(tag.isPrimary());
                     detailTag.setRelatedQuantity(tag.relatedQuantity());
                     return detailTag;
                 })

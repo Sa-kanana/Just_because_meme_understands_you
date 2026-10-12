@@ -29,6 +29,8 @@ import com.sakana.just_because_meme_understands_you.api.user.vo.MemeListItemVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeResourceVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeTagVO;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import com.sakana.just_because_meme_understands_you.common.exception.BizException;
+import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.api.user.vo.SimpleMemeVO;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -185,7 +187,7 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
         String trimmed = keyword.trim();
         int pageSize = IMemeService.PAGE_SIZE;
         Page<Meme> mpPage = new Page<>(page, pageSize);
-        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, null, null, null);
+        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, null, null, null, null);
         List<Meme> memeList = resultPage.getRecords();
         if (memeList == null || memeList.isEmpty()) {
             return Collections.emptyList();
@@ -194,13 +196,17 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
     }
 
     @Override
-    public List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews, String mostComments) {
+    public List<SimpleMemeVO> searchByKeywordForApi(String keyword, String mostLikes, String mostViews,
+                                                     String mostComments, Long tagId) {
+        if (tagId != null && tagId <= 0) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "标签 ID 不合法");
+        }
         if (keyword == null || keyword.isBlank()) {
             return Collections.emptyList();
         }
         String trimmed = keyword.trim();
         Page<Meme> mpPage = new Page<>(1, IMemeService.PAGE_SIZE);
-        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, mostLikes, mostViews, mostComments);
+        IPage<Meme> resultPage = baseMapper.searchByKeyword(mpPage, trimmed, mostLikes, mostViews, mostComments, tagId);
         List<Meme> memeList = resultPage.getRecords();
         if (memeList == null || memeList.isEmpty()) {
             return Collections.emptyList();
@@ -366,6 +372,8 @@ public class MemeServiceImpl extends ServiceImpl<MemeMapper, Meme> implements IM
             MemeTag tag = new MemeTag();
             tag.setId(row.getId());
             tag.setName(row.getName());
+            tag.setCategory(row.getCategory());
+            tag.setIsPrimary(row.getIsPrimary());
             tag.setRelatedQuantity(row.getRelatedQuantity());
             memeIdToTags.computeIfAbsent(row.getMemeId(), k -> new ArrayList<>()).add(tag);
         }

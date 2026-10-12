@@ -21,7 +21,7 @@
 | POST | `/v1/auth/password-reset-verifications` | 校验密码重置验证码 |
 | PUT | `/v1/auth/password-resets` | 提交新密码 |
 | GET | `/v1/users/{userId}` | 查询用户资料 |
-| GET | `/v1/users/{userId}/memes` | 查询用户发布的梗；支持分页和状态筛选 |
+| GET | `/v1/users/{userId}/memes` | 查询用户发布的梗；支持关键词搜索、分页、状态筛选与排序 |
 | GET | `/v1/users/{userId}/favorites` | 查询用户公开收藏；支持 `folderId`、分页 |
 | GET | `/v1/users/me` | 查询当前用户资料 |
 | PUT | `/v1/users/me` | 更新当前用户资料 |
@@ -130,6 +130,8 @@
 | PUT | `/v1/admin/sensitive-words/{id}` | 更新敏感词 |
 | PATCH | `/v1/admin/sensitive-words/{id}` | 更新敏感词状态 |
 | DELETE | `/v1/admin/sensitive-words/{id}` | 删除敏感词 |
+
+敏感词写入请求使用 `word`、`category`、`level`、`replacement`、`status` 字段。`level` 为 `NORMAL`、`REVIEW`、`BLOCK`：`NORMAL` 可配置替换文本，`REVIEW` 在梗发布和修改稿中进入已有审核队列，`BLOCK` 阻止提交；评论、昵称和签名没有待审队列，命中 `REVIEW` 时也会拒绝保存。命中检查在服务内存 DFA 快照中完成，敏感词管理事务提交后通过 Redis 发布词库版本；实例定时核对版本以补偿离线时错过的通知。
 | GET | `/v1/admin/tags` | 查询标签 |
 | POST | `/v1/admin/tags` | 新建标签 |
 | PUT | `/v1/admin/tags/{id}` | 更新标签 |
@@ -137,10 +139,21 @@
 | GET | `/v1/admin/users` | 查询用户 |
 | PATCH | `/v1/admin/users/{id}` | 修改用户状态或角色；请求体必须且只能包含其中一项 |
 | POST | `/v1/admin/ai/crawl-jobs` | 创建 AI 爬取任务；支持 `limit` |
-| POST | `/v1/admin/ai/ingestion-jobs` | 创建 AI 知识回填任务；支持 `limit` |
-| POST | `/v1/admin/ai/ingestion-jobs/memes/{memeId}` | 为指定梗创建 AI 入库任务 |
-| POST | `/v1/admin/ai/ingestion-jobs/memes/{memeId}/approvals` | 创建指定梗的知识审核/入库任务 |
 | GET | `/v1/admin/ai/operations` | 查询 AI 运维状态 |
+
+### 管理员梗向量双向校准
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/v1/admin/ai/vector-index/reconciliation-jobs` | 创建管理员触发的梗向量双向校准任务 |
+| GET | `/v1/admin/ai/vector-index/reconciliation-jobs/{jobId}` | 查询任务状态、扫描进度和已加入 Outbox 的事件数 |
+| POST | `/v1/admin/ai/vector-index/reconciliation-jobs/{jobId}/resume` | 从失败页游标恢复任务 |
+
+校准先分页扫描 Java 已发布梗，再分页扫描 MemeAgent 中的向量 ID；两侧发现的差异都通过 Java 现有 Outbox 排队修复。`COMPLETED` 表示两侧扫描结束且差异事件已入队，不表示 Python 已完成所有向量写入。相同内容且向量分块不超过 6 的梗会跳过 Embedding；历史上超过 6 块的记录会重新生成向量并替换。MemeAgent 内部 ID 分页接口只供 Java 服务端调用，使用 `X-Internal-Api-Key` 认证，不应由浏览器直接访问。
+
+以上管理端接口仅允许 `ADMIN`、`SUPER_ADMIN`。每次 Java 已发布梗分页最多 50 条，Python 向量 ID 分页最多 500 条；任务状态为 `PENDING`、`RUNNING`、`FAILED`、`COMPLETED`。启动请求遇到活动任务时返回该任务；仅 `FAILED` 任务可恢复，恢复后从失败页游标继续。后台 worker 每秒检查已有活动任务，但不会自动创建校准任务。任务完成只代表扫描结束、修复事件已加入 Outbox；后续仍由现有 Outbox relay 异步提交给 MemeAgent。
+
+Java 服务端使用 MemeAgent 的 `GET /ingest/meme-ids?cursor={cursor}&limit={limit}` 分页读取索引 ID（上限 500），请求头为 `X-Internal-Api-Key`，响应仅含 `meme_ids` 和 `next_cursor`。该内部接口不向浏览器开放。
 
 ## 主要方法变更
 

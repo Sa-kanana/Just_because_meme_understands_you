@@ -104,24 +104,45 @@
               </div>
             </ui-form-item>
 
-            <ui-form-item label="标签">
+            <ui-form-item label="主分类标签" required>
               <vs-select
-                v-model="form.tagIds"
-                multiple
+                v-model="form.primaryTagId"
                 filter
                 block
-                placeholder="选择标签（选填）"
+                placeholder="选择最能代表这个梗的主标签"
                 class="tag-select"
               >
                 <vs-option
                   v-for="tag in tags"
                   :key="tag.id"
-                  :label="tag.name"
+                  :label="tagOptionLabel(tag)"
                   :value="tag.id"
                 >
-                  {{ tag.name }}
+                  {{ tagOptionLabel(tag) }}
                 </vs-option>
               </vs-select>
+              <p class="section-hint">主标签用于归类与推荐；再选 3～7 个补充标签。</p>
+            </ui-form-item>
+
+            <ui-form-item label="补充标签" required>
+              <vs-select
+                v-model="form.tagIds"
+                multiple
+                filter
+                block
+                placeholder="选择 3～7 个普通标签"
+                class="tag-select"
+              >
+                <vs-option
+                  v-for="tag in secondaryTagOptions"
+                  :key="tag.id"
+                  :label="tagOptionLabel(tag)"
+                  :value="tag.id"
+                >
+                  {{ tagOptionLabel(tag) }}
+                </vs-option>
+              </vs-select>
+              <p class="section-hint">已选 {{ form.tagIds.length }} 个；主标签不会重复计入。</p>
             </ui-form-item>
           </section>
 
@@ -354,16 +375,39 @@ function emptyForm() {
     name: '',
     introduction: '',
     image: '',
-    tagIds: [],
+    primaryTagId: null, // 中文注释：代表梗主要类别的标签。
+    tagIds: [], // 中文注释：3～7 个补充标签。
     resources: [],
     resourceUrls: [],
   }
 }
 
 const form = reactive(emptyForm())
+const TAG_CATEGORY_LABELS = {
+  SOURCE: '来源', // 中文注释：梗的首发或主要传播平台。
+  FORMAT: '形式', // 中文注释：梗的内容表达形式。
+  EMOTION: '情绪', // 中文注释：梗表达的情绪。
+  SCENARIO: '场景', // 中文注释：梗常见的使用场景。
+  CONTENT: '内容', // 中文注释：梗涉及的对象或题材。
+  ERA: '时代', // 中文注释：梗流行或出现的年代。
+  PROPAGATION: '传播特征', // 中文注释：梗的传播范围或生命周期。
+  TONE: '使用语气', // 中文注释：使用梗时的表达语气。
+  UNCATEGORIZED: '待归类', // 中文注释：旧标签暂未归入固定分类。
+}
+const secondaryTagOptions = computed(() => tags.value.filter((tag) => Number(tag.id) !== Number(form.primaryTagId)))
+
+function tagOptionLabel(tag) {
+  const categoryLabel = TAG_CATEGORY_LABELS[tag?.category] || TAG_CATEGORY_LABELS.UNCATEGORIZED
+  return `${categoryLabel} · ${tag?.name || ''}`
+}
+
+watch(() => form.primaryTagId, (primaryTagId) => {
+  if (primaryTagId == null) return
+  form.tagIds = form.tagIds.filter((tagId) => Number(tagId) !== Number(primaryTagId))
+})
 
 const hasDraftContent = computed(() => Boolean(
-  form.name.trim() || form.introduction.trim() || form.image ||
+  form.name.trim() || form.introduction.trim() || form.image || form.primaryTagId ||
   form.tagIds.length || form.resources.length || form.resourceUrls.length
 ))
 
@@ -407,7 +451,7 @@ function discardDraft() {
 
 const canSubmit = computed(
   () =>
-    form.name.trim() &&
+    form.name.trim() && form.primaryTagId && form.tagIds.length >= 3 && form.tagIds.length <= 7 &&
     !coverUploading.value
 )
 

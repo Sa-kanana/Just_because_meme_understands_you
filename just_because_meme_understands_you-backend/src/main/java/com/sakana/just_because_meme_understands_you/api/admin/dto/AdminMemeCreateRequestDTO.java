@@ -23,6 +23,9 @@ public class AdminMemeCreateRequestDTO {
     @Size(max = 500, message = "封面图地址过长")
     private String image;
 
-    /** 关联的标签 ID 列表，可不选择标签。 */
+    /** 中文注释：代表梗主要分类的标签 ID。 */
+    private Integer primaryTagId;
+
+    /** 中文注释：关联的普通标签 ID，要求选择 3～7 个。 */
     private List<Integer> tagIds;
 }

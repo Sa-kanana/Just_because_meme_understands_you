@@ -12,7 +12,7 @@ import com.sakana.just_because_meme_understands_you.modules.user.domain.UserDisp
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentImageMapper;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserService;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.oss.application.OssUrlHelper;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeCommentCreateResponseVO;
 import com.sakana.just_because_meme_understands_you.api.user.vo.MemeReplyCommentVO;
@@ -48,8 +48,9 @@ public class MemeCommentSupport {
     @Resource
     private OssUrlHelper ossUrlHelper;
 
+    /** 中文注释：提升评论图片并按评论图片记录 ID 维护文件资产引用。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     public void validateUser(Long userId) {
         if (userId == null || userId <= 0) {
@@ -203,16 +204,21 @@ public class MemeCommentSupport {
             return;
         }
         int sort = 0;
+        Map<String, String> promotedImages = new HashMap<>();
         for (String url : images) {
             if (!StringUtils.hasText(url)) {
                 continue;
             }
-            String key = ossObjectPromoteService.promoteCommentImage(url, userId);
+            String key = promotedImages.computeIfAbsent(url.trim(),
+                    submittedUrl -> fileAssetService.promote(submittedUrl, userId, "comment"));
             MemeCommentImage image = new MemeCommentImage();
             image.setMemeCommentId(commentId);
             image.setUrl(key);
             image.setSortOrder(sort++);
-            memeCommentImageMapper.insert(image);
+            if (memeCommentImageMapper.insert(image) != 1 || image.getId() == null) {
+                throw new BizException(Result.CODE_ERROR, "保存评论图片失败，请重试");
+            }
+            fileAssetService.replaceReference(key, "COMMENT_IMAGE", image.getId(), "URL", "COMMENT_IMAGE_CREATED");
         }
     }
 

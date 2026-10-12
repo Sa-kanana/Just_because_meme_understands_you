@@ -9,16 +9,20 @@ import com.sakana.just_because_meme_understands_you.api.admin.dto.AdminSensitive
 import com.sakana.just_because_meme_understands_you.modules.moderation.domain.entity.SensitiveWord;
 import com.sakana.just_because_meme_understands_you.modules.user.domain.entity.User;
 import com.sakana.just_because_meme_understands_you.modules.moderation.infrastructure.persistence.mapper.SensitiveWordMapper;
+import com.sakana.just_because_meme_understands_you.modules.moderation.infrastructure.persistence.mapper.SensitiveWordDictionaryVersionMapper;
 import com.sakana.just_because_meme_understands_you.modules.user.infrastructure.persistence.mapper.UserMapper;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.IAdminSensitiveWordService;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.assembler.AdminViewMapper;
 import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
+import lombok.extern.slf4j.Slf4j;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminSensitiveWordVO;
 import jakarta.annotation.Resource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -30,9 +34,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService {
 
-    private static final Set<Integer> ACTION_TYPES = Set.of(1, 2, 3);
+    private static final Set<String> LEVELS = Set.of("NORMAL", "REVIEW", "BLOCK");
     private static final Set<String> CATEGORIES = Set.of("POLITICS", "PORN", "ABUSE", "AD", "CUSTOM");
 
     @Resource
@@ -47,8 +52,12 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private SensitiveWordDictionaryVersionMapper versionMapper;
+
     @Override
-    public PageVO<AdminSensitiveWordVO> page(Integer page, Integer size, String keyword, String category, Integer status) {
+    public PageVO<AdminSensitiveWordVO> page(Integer page, Integer size, String keyword, String category,
+                                              String level, Integer status) {
         int pageNo = PageParamNormalizer.normalizePage(page);
         int pageSize = PageParamNormalizer.normalizeSize(size);
 
@@ -58,6 +67,9 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
         }
         if (StringUtils.hasText(category)) {
             wrapper.eq(SensitiveWord::getCategory, category.trim().toUpperCase(Locale.ROOT));
+        }
+        if (StringUtils.hasText(level)) {
+            wrapper.eq(SensitiveWord::getRiskLevel, level.trim().toUpperCase(Locale.ROOT));
         }
         if (status != null) {
             wrapper.eq(SensitiveWord::getStatus, status);
@@ -98,6 +110,8 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
         if (entity.getStatus() == null) {
             entity.setStatus(1);
         }
+        entity.setMatchType("NORMAL");
+        entity.setVersion(1L);
         sensitiveWordMapper.insert(entity);
         publishReload();
         return toVO(entity);
@@ -112,6 +126,7 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
         assertWordUnique(word, id);
         applySave(entity, request);
         entity.setUpdateTime(LocalDateTime.now());
+        entity.setVersion(entity.getVersion() == null ? 1L : entity.getVersion() + 1);
         sensitiveWordMapper.updateById(entity);
         publishReload();
         return toVO(entity);
@@ -134,6 +149,7 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
         SensitiveWord entity = requireEntity(id);
         entity.setStatus(status);
         entity.setUpdateTime(LocalDateTime.now());
+        entity.setVersion(entity.getVersion() == null ? 1L : entity.getVersion() + 1);
         sensitiveWordMapper.updateById(entity);
         publishReload();
         return toVO(entity);
@@ -142,7 +158,11 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
     private void applySave(SensitiveWord entity, AdminSensitiveWordSaveRequestDTO request) {
         entity.setWord(request.getWord().trim());
         entity.setCategory(request.getCategory().trim().toUpperCase(Locale.ROOT));
-        entity.setActionType(request.getActionType());
+        String level = request.getLevel() == null ? "" : request.getLevel().trim().toUpperCase(Locale.ROOT);
+        entity.setRiskLevel(level);
+        entity.setReplacement("NORMAL".equals(level) && StringUtils.hasText(request.getReplacement())
+                ? request.getReplacement().trim() : null);
+        entity.setMatchType("NORMAL");
         if (request.getStatus() != null) {
             if (!Objects.equals(request.getStatus(), 0) && !Objects.equals(request.getStatus(), 1)) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "status 仅支持 0 或 1");
@@ -162,8 +182,9 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
         if (!CATEGORIES.contains(category)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "category 不合法");
         }
-        if (!ACTION_TYPES.contains(request.getActionType())) {
-            throw new BizException(Result.CODE_BAD_REQUEST, "actionType 仅支持 1/2/3");
+        String level = request.getLevel() == null ? "" : request.getLevel().trim().toUpperCase(Locale.ROOT);
+        if (!LEVELS.contains(level)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "level 仅支持 NORMAL、REVIEW、BLOCK");
         }
     }
 
@@ -191,7 +212,32 @@ public class AdminSensitiveWordServiceImpl implements IAdminSensitiveWordService
     }
 
     private void publishReload() {
-        stringRedisTemplate.convertAndSend(SensitiveWordFilterService.RELOAD_CHANNEL, "reload");
+        if (versionMapper.incrementVersion() != 1) {
+            throw new BizException(Result.CODE_ERROR, "更新敏感词词库版本失败");
+        }
+        Long version = versionMapper.selectVersion();
+        if (version == null) {
+            throw new BizException(Result.CODE_ERROR, "读取敏感词词库版本失败");
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publishVersion(version);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishVersion(version);
+            }
+        });
+    }
+
+    private void publishVersion(Long version) {
+        try {
+            stringRedisTemplate.convertAndSend(SensitiveWordFilterService.RELOAD_CHANNEL, String.valueOf(version));
+        } catch (Exception exception) {
+            // 中文注释：数据库版本已提交，Redis 通知失败由各实例定时版本核对补偿。
+            log.warn("发布敏感词词库刷新通知失败, version={}", version, exception);
+        }
     }
 
     private AdminSensitiveWordVO toVO(SensitiveWord entity) {

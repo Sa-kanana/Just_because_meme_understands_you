@@ -33,7 +33,14 @@ class FlywayMigrationCatalogTest {
             "V2026100908__shared_user_roles.sql",
             "V2026101001__reliable_admin_knowledge_indexing.sql",
             "V2026101002__user_soft_delete.sql",
-            "V2026101003__meme_edit_revisions.sql"
+            "V2026101003__meme_edit_revisions.sql",
+            "V2026101101__file_asset_lifecycle.sql",
+            "V2026101102__file_asset_temp_expiry_index.sql",
+            "V2026101201__tag_taxonomy_and_primary.sql",
+            "V2026101202__sensitive_word_moderation_architecture.sql",
+            "V2026101203__meme_vector_reconciliation_jobs.sql",
+            "V2026101204__user_public_uuid.sql",
+            "V2026101205__remove_untracked_user_public_uuid.sql"
     );
 
     /** 中文注释：将动态 SQL 字符串中的双单引号还原为实际执行 SQL，避免断言依赖转义写法。 */
@@ -54,6 +61,58 @@ class FlywayMigrationCatalogTest {
     void keepsAllIncrementalFeaturesInVersionedMigrationResources() {
         for (String migration : MIGRATIONS) {
             assertNotNull(getClass().getClassLoader().getResource("db/migration/" + migration), migration);
+        }
+    }
+
+    @Test
+    void preservesAppliedPublicUuidMigrationAndAuditsItsCleanup() throws Exception {
+        var appliedMigration = getClass().getClassLoader()
+                .getResourceAsStream("db/migration/V2026101204__user_public_uuid.sql");
+        assertNotNull(appliedMigration, "数据库中已执行的 UUID 迁移必须保留在源码迁移目录");
+        String appliedSql;
+        try (appliedMigration) {
+            appliedSql = new String(appliedMigration.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        assertTrue(appliedSql.contains("LOWER(UUID())"), "历史迁移必须与已执行的 UUID 回填行为一致");
+        assertTrue(appliedSql.contains("uk_user_public_uuid"), "历史迁移必须记录 UUID 唯一索引的来源");
+
+        var cleanupMigration = getClass().getClassLoader()
+                .getResourceAsStream("db/migration/V2026101205__remove_untracked_user_public_uuid.sql");
+        assertNotNull(cleanupMigration, "误执行的 UUID 列必须通过后续迁移清理");
+        String cleanupSql;
+        try (cleanupMigration) {
+            cleanupSql = new String(cleanupMigration.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        int dropIndex = cleanupSql.indexOf("DROP INDEX uk_user_public_uuid ON user");
+        int dropColumn = cleanupSql.indexOf("DROP COLUMN public_uuid");
+        assertTrue(dropIndex >= 0 && dropColumn > dropIndex, "必须先删除唯一索引，再删除 UUID 列");
+        assertTrue(cleanupSql.contains("information_schema"), "清理迁移必须兼容列或索引已不存在的状态");
+    }
+
+    @Test
+    void memeVectorReconciliationMigrationCommentsEveryColumnAndRestrictsActiveJobs() throws Exception {
+        var migration = getClass().getClassLoader()
+                .getResourceAsStream("db/migration/V2026101203__meme_vector_reconciliation_jobs.sql");
+        assertNotNull(migration, "梗向量校准任务迁移必须存在");
+
+        String sql;
+        try (migration) {
+            sql = new String(migration.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        String normalizedSql = sql.replace("`", "");
+        assertTrue(normalizedSql.contains("CREATE TABLE IF NOT EXISTS meme_vector_reconciliation_job"), "迁移必须创建可恢复任务表");
+        assertTrue(normalizedSql.contains("UNIQUE KEY uq_mvrj_active_slot (active_slot)"), "数据库必须限制同时只有一个活动任务");
+        assertTrue(normalizedSql.contains("KEY idx_mvrj_status_lease (status, lease_until, id)"), "任务领取查询需有状态和租约索引");
+        assertTrue(sql.contains("ENGINE=InnoDB"), "任务游标与 outbox 事件需要同事务提交");
+
+        List<String> columns = List.of(
+                "id", "active_slot", "status", "phase", "published_cursor", "vector_cursor",
+                "published_scanned", "upsert_queued", "vector_scanned", "removal_queued",
+                "created_by", "lease_owner", "lease_until", "failure_stage",
+                "created_at", "updated_at", "started_at", "finished_at");
+        for (String column : columns) {
+            assertTrue(sql.matches("(?is).*`" + column + "`\\s+[^,\\n]+COMMENT\\s+'[^']+'.*"),
+                    "每个任务字段都必须包含中文 COMMENT: " + column);
         }
     }
 

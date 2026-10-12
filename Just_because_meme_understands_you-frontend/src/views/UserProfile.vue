@@ -112,7 +112,6 @@
                   <div class="published-panel-head">
                     <p class="meme-section-kicker">MY MEMES</p>
                     <h3 class="meme-section-title published-panel-title">我整的梗</h3>
-                    <p class="published-panel-hint">点击卡片看详情；想下架时点右上角 ⋮，公域刷不到后可在「已下架」里翻黑历史</p>
                   </div>
                   <vs-button
                     color="primary"
@@ -139,6 +138,36 @@
                     >
                       <span class="published-filter-label">{{ opt.label }}</span>
                       <span class="published-filter-count">{{ opt.count }}</span>
+                    </button>
+                  </div>
+                  <div class="published-search" role="search">
+                    <i class="ri-search-line published-search__icon" aria-hidden="true" />
+                    <input
+                      v-model="publishedSearchInput"
+                      type="search"
+                      class="published-search__input"
+                      maxlength="50"
+                      aria-label="搜索作品名称"
+                      placeholder="搜索作品名称"
+                      @keyup.enter.prevent="applyPublishedSearch"
+                      @search="!publishedSearchInput && clearPublishedSearch()"
+                    >
+                    <button
+                      v-if="publishedSearchInput"
+                      type="button"
+                      class="published-search__clear"
+                      aria-label="清空作品搜索"
+                      @click="clearPublishedSearch"
+                    >
+                      <i class="ri-close-line" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      class="published-search__submit"
+                      aria-label="搜索作品"
+                      @click="applyPublishedSearch"
+                    >
+                      <i class="ri-arrow-right-line" aria-hidden="true" />
                     </button>
                   </div>
                   <ui-dropdown
@@ -303,9 +332,9 @@
                   </div>
                 </div>
                 <ui-empty
-                  v-else-if="isOwnProfile && publishedStatusFilter !== 'all'"
+                  v-else-if="publishedSearchKeyword || (isOwnProfile && publishedStatusFilter !== 'all')"
                   :image-size="72"
-                  description="当前筛选下没有梗图"
+                  :description="publishedSearchKeyword ? '没有找到匹配的作品' : '当前筛选下没有梗图'"
                   class="published-filter-empty"
                 />
                 <ui-empty v-else description="这个用户还没有发布梗图" />
@@ -1316,6 +1345,10 @@ export default {
       publishedPageSize: 12,
       publishedLoading: false,
       publishedStatusFilter: 'all',
+      // 中文说明：作品搜索框当前显示的输入值，用户确认搜索后再提交到服务端。
+      publishedSearchInput: '',
+      // 中文说明：服务端实际使用的作品名称关键字，参与分页和状态筛选。
+      publishedSearchKeyword: '',
       publishedSort: 'latest',
       publishedSortOptions: [
         { value: 'latest', label: '最新发布', icon: 'ri-time-line' },
@@ -1417,6 +1450,7 @@ export default {
       return this.publishedSortOptions.find((option) => option.value === this.publishedSort)?.label || '最新发布'
     },
     publishedDisplayTotal() {
+      if (this.publishedSearchKeyword) return this.publishedPageTotal
       return Number(this.publishedStatusCounts.all) || this.publishedPageTotal
     },
     publishedFilterOptions() {
@@ -1566,6 +1600,8 @@ export default {
         this.followMutual = false
         this.publishedPageNo = 1
         this.publishedStatusFilter = 'all'
+        this.publishedSearchInput = ''
+        this.publishedSearchKeyword = ''
         this.publishedStatusCounts = { all: 0, live: 0, reviewing: 0, offline: 0, locked: 0 }
         this.loadPublishedMemes()
         this.applyRouteTab()
@@ -1745,7 +1781,7 @@ export default {
       }
     },
     async loadPublishedMemes() {
-      if (!this.requestUserId || !/^\d+$/.test(this.requestUserId)) return
+      if (!this.requestUserId || !this.isRequestUserIdValid) return
       this.publishedLoading = true
       try {
         const statusParam =
@@ -1757,6 +1793,7 @@ export default {
           size: this.publishedPageSize,
           status: statusParam,
           sort: this.publishedSort,
+          keyword: this.publishedSearchKeyword,
         })
         const list = Array.isArray(data.list) ? data.list : []
         const normalized = list.map((it) => ({
@@ -1819,6 +1856,20 @@ export default {
       const next = String(key)
       if (String(this.publishedStatusFilter) === next) return
       this.publishedStatusFilter = next
+      this.publishedPageNo = 1
+      this.loadPublishedMemes()
+    },
+    applyPublishedSearch() {
+      const next = String(this.publishedSearchInput || '').trim()
+      if (next === this.publishedSearchKeyword) return
+      this.publishedSearchKeyword = next
+      this.publishedPageNo = 1
+      this.loadPublishedMemes()
+    },
+    clearPublishedSearch() {
+      this.publishedSearchInput = ''
+      if (!this.publishedSearchKeyword) return
+      this.publishedSearchKeyword = ''
       this.publishedPageNo = 1
       this.loadPublishedMemes()
     },
@@ -2856,14 +2907,6 @@ export default {
   font-size: 20px;
 }
 
-.published-panel-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--meme-text-secondary);
-  max-width: 520px;
-}
-
 .published-create-btn {
   flex-shrink: 0;
   height: 36px !important;
@@ -2900,6 +2943,7 @@ export default {
 
 .published-list-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
@@ -2908,6 +2952,88 @@ export default {
 
 .published-list-toolbar.has-status-filter {
   justify-content: space-between;
+}
+
+.published-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 280px;
+  min-width: 190px;
+  min-height: 40px;
+  padding: 4px 5px 4px 12px;
+  border: 1px solid var(--meme-border);
+  border-radius: 999px;
+  background: var(--meme-bg-card);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.published-search:focus-within {
+  border-color: var(--meme-primary);
+  box-shadow: 0 0 0 3px var(--meme-focus-ring);
+}
+
+.published-search__icon {
+  flex: 0 0 auto;
+  color: var(--meme-text-muted);
+  font-size: 15px;
+}
+
+.published-search__input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  outline: 0;
+  color: var(--meme-text);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+.published-search__input::placeholder {
+  color: var(--meme-text-muted);
+}
+
+.published-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.published-search__clear,
+.published-search__submit {
+  display: inline-flex;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+
+.published-search__clear {
+  color: var(--meme-text-muted);
+  background: transparent;
+}
+
+.published-search__clear:hover {
+  color: var(--meme-text);
+  background: var(--meme-bg-muted);
+}
+
+.published-search__submit {
+  color: var(--meme-primary);
+  background: var(--meme-primary-soft);
+}
+
+.published-search__submit:hover {
+  color: var(--meme-text-inverse);
+  background: var(--meme-primary);
 }
 
 .published-sort-dropdown {
@@ -4297,6 +4423,11 @@ export default {
 
   .published-sort-dropdown {
     align-self: flex-end;
+  }
+
+  .published-search {
+    flex: 0 0 auto;
+    width: 100%;
   }
 
   .cropper-controls {

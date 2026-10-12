@@ -15,4 +15,7 @@ public class UserMemeTagVO {
 
     /** 标签名 */
     private String name;
+
+    /** 中文注释：标签所属分类代码。 */
+    private String category;
 }

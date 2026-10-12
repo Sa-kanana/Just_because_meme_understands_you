@@ -18,6 +18,12 @@ public class MemeTagVO {
      */
     private String name;
 
+    /** 中文注释：标签所属分类代码，例如 SOURCE、FORMAT、EMOTION。 */
+    private String category;
+
+    /** 中文注释：该标签是否是当前梗的主分类标签。标签选项接口中固定为 false。 */
+    private Boolean isPrimary;
+
     /**
      * 相关数量
      */

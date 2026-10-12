@@ -8,6 +8,7 @@ import com.sakana.just_because_meme_understands_you.common.pagination.PageParamN
 import com.sakana.just_because_meme_understands_you.api.admin.dto.AdminTagSaveRequestDTO;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTag;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.MemeTagRelation;
+import com.sakana.just_because_meme_understands_you.modules.meme.domain.MemeTagCategory;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.IAdminTagService;
@@ -36,7 +37,7 @@ public class AdminTagServiceImpl implements IAdminTagService {
     private MemeTagRelationMapper memeTagRelationMapper;
 
     @Override
-    public PageVO<AdminTagVO> page(Integer page, Integer size, String keyword) {
+    public PageVO<AdminTagVO> page(Integer page, Integer size, String keyword, String category) {
         int pageNo = PageParamNormalizer.normalizePage(page);
         int pageSize = PageParamNormalizer.normalizeSize(size);
 
@@ -44,7 +45,15 @@ public class AdminTagServiceImpl implements IAdminTagService {
         if (StringUtils.hasText(keyword)) {
             wrapper.like(MemeTag::getName, keyword.trim());
         }
-        wrapper.orderByDesc(MemeTag::getId);
+        if (StringUtils.hasText(category)) {
+            String categoryCode = category.trim().toUpperCase(java.util.Locale.ROOT);
+            if (!MemeTagCategory.supports(categoryCode)
+                    && !MemeTagCategory.UNCATEGORIZED.getCode().equals(categoryCode)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "标签分类不合法");
+            }
+            wrapper.eq(MemeTag::getCategory, categoryCode);
+        }
+        wrapper.orderByAsc(MemeTag::getCategory).orderByAsc(MemeTag::getSortOrder).orderByAsc(MemeTag::getId);
 
         Page<MemeTag> mpPage = memeTagMapper.selectPage(new Page<>(pageNo, pageSize), wrapper);
         List<MemeTag> records = mpPage.getRecords() != null ? mpPage.getRecords() : Collections.emptyList();
@@ -62,9 +71,12 @@ public class AdminTagServiceImpl implements IAdminTagService {
     @Transactional(rollbackFor = Exception.class)
     public AdminTagVO create(AdminTagSaveRequestDTO request) {
         String name = requireName(request);
+        String category = requireCategory(request, false);
         assertNameUnique(name, null);
         MemeTag tag = new MemeTag();
         tag.setName(name);
+        tag.setCategory(category);
+        tag.setSortOrder(request.getSortOrder() == null ? 0 : Math.max(request.getSortOrder(), 0));
         tag.setRelatedQuantity(0);
         memeTagMapper.insert(tag);
         return toVO(tag);
@@ -75,8 +87,13 @@ public class AdminTagServiceImpl implements IAdminTagService {
     public AdminTagVO update(Integer id, AdminTagSaveRequestDTO request) {
         MemeTag tag = requireTag(id);
         String name = requireName(request);
+        String category = requireCategory(request, true);
         assertNameUnique(name, id);
         tag.setName(name);
+        tag.setCategory(category);
+        if (request.getSortOrder() != null) {
+            tag.setSortOrder(Math.max(request.getSortOrder(), 0));
+        }
         memeTagMapper.updateById(tag);
         return toVO(tag);
     }
@@ -95,6 +112,17 @@ public class AdminTagServiceImpl implements IAdminTagService {
             throw new BizException(Result.CODE_BAD_REQUEST, "标签名不能为空");
         }
         return request.getName().trim();
+    }
+
+    /** 中文注释：拒绝未登记的分类代码，防止写入无法被用户端分组的标签。 */
+    private String requireCategory(AdminTagSaveRequestDTO request, boolean allowUncategorized) {
+        String category = request == null || request.getCategory() == null
+                ? "" : request.getCategory().trim().toUpperCase(java.util.Locale.ROOT);
+        boolean isUncategorized = MemeTagCategory.UNCATEGORIZED.getCode().equals(category);
+        if (!MemeTagCategory.supports(category) && !(allowUncategorized && isUncategorized)) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "请选择有效标签分类");
+        }
+        return category;
     }
 
     private void assertNameUnique(String name, Integer excludeId) {

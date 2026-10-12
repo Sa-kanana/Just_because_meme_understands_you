@@ -1,5 +1,5 @@
 const KEY_PREFIX = 'meme_publish_draft_v1:'
-const VERSION = 1
+const VERSION = 2 // 中文注释：草稿格式版本，当前版本新增了单独的主标签字段。
 
 function draftKey(user) {
   const id = user?.id ?? user?.userId
@@ -18,6 +18,9 @@ function normalizeForm(form) {
     name: stringValue(form.name),
     introduction: stringValue(form.introduction),
     image: stringValue(form.image),
+    primaryTagId: typeof form.primaryTagId === 'number' || typeof form.primaryTagId === 'string'
+      ? form.primaryTagId
+      : null, // 中文注释：主分类标签 ID。
     tagIds: Array.isArray(form.tagIds)
       ? form.tagIds.filter((id) => typeof id === 'string' || typeof id === 'number')
       : [],
@@ -37,7 +40,7 @@ function normalizeForm(form) {
 
 function hasContent(form) {
   return Boolean(
-    form.name.trim() || form.introduction.trim() || form.image ||
+    form.name.trim() || form.introduction.trim() || form.image || form.primaryTagId ||
     form.tagIds.length || form.resources.length || form.resourceUrls.length
   )
 }
@@ -49,8 +52,12 @@ export function readPublishDraft(storage, user) {
     const raw = storage.getItem(key)
     if (!raw) return null
     const stored = JSON.parse(raw)
-    if (stored?.version !== VERSION) return null
+    if (stored?.version !== VERSION && stored?.version !== 1) return null
     const form = normalizeForm(stored.form)
+    if (stored?.version === 1 && form.tagIds.length) {
+      form.primaryTagId = form.tagIds[0]
+      form.tagIds = form.tagIds.slice(1)
+    }
     return form && hasContent(form) ? form : null
   } catch (_) {
     return null

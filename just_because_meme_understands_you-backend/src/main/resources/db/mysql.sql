@@ -218,6 +218,8 @@ create table meme_tag
     id               int auto_increment comment '唯一标识'
         primary key,
     name             varchar(255)  not null comment '标签名',
+    category         varchar(24) default 'UNCATEGORIZED' not null comment '标签所属分类代码',
+    sort_order       int default 0 not null comment '分类内展示顺序，数值越小越靠前',
     related_quantity int default 0 not null comment '相关梗的数量'
 )
     comment '梗的标签';
@@ -228,11 +230,17 @@ create index idx_related_quantity
 create index idx_meme_tag_name
     on meme_tag (name);
 
+create index idx_meme_tag_category_order
+    on meme_tag (category, sort_order, id);
+
 create table meme_tag_relation
 (
-    meme_id     bigint not null comment '梗ID',
-    meme_tag_id int    not null comment '标签ID',
+    meme_id         bigint not null comment '梗ID',
+    meme_tag_id     int    not null comment '标签ID',
+    is_primary      tinyint default 0 not null comment '是否为该梗的主分类标签，1是0否',
+    primary_meme_id bigint null comment '主标签唯一约束辅助列，由应用在主标签关联中写入梗ID',
     primary key (meme_id, meme_tag_id),
+    unique key uk_meme_tag_primary_per_meme (primary_meme_id),
     constraint fk_meme_tag_relation_meme foreign key (meme_id) references meme (id) on delete cascade,
     constraint fk_meme_tag_relation_tag foreign key (meme_tag_id) references meme_tag (id) on delete cascade
 )
@@ -247,7 +255,10 @@ create table sensitive_word
         primary key,
     word        varchar(64)                           not null comment '敏感词/违规词汇（如：小黑子）',
     category    varchar(32) default 'GENERAL'         not null comment '敏感词类型（POLITICS:政治, PORN:色情, ABUSE:辱骂, AD:广告, CUSTOM:自定义玩梗）',
-    action_type tinyint     default 1                 not null comment '命中的处理策略（1:直接替换为***, 2:需要人工审核, 3:直接拒绝发评）',
+    risk_level  varchar(16) default 'NORMAL'          not null comment '风险等级（NORMAL:允许或替换, REVIEW:人工审核, BLOCK:直接拒绝）',
+    match_type  varchar(20) default 'NORMAL'          not null comment '匹配方式（NORMAL:标准化后按字面匹配）',
+    replacement varchar(20)                           null comment 'NORMAL 等级命中后的替换文本，空值表示保留原文',
+    version     bigint      default 0                 not null comment '该敏感词记录的修订版本',
     status      tinyint     default 1                 not null comment '状态（0:禁用, 1:启用）',
     creator     varchar(32) default ''                not null comment '创建人/运营人员',
     create_time datetime    default CURRENT_TIMESTAMP not null comment '创建时间',
@@ -259,6 +270,18 @@ create table sensitive_word
 
 create index idx_status_category
     on sensitive_word (status, category);
+
+create table sensitive_word_dictionary_meta
+(
+    id         tinyint     not null comment '单例元数据行主键，固定为1'
+        primary key,
+    version    bigint      default 0                 not null comment '全局词库版本，每次管理变更递增',
+    updated_at datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '全局词库最近更新时间'
+)
+    comment '敏感词词库全局版本表' collate = utf8mb4_general_ci;
+
+insert into sensitive_word_dictionary_meta (id, version)
+values (1, 0);
 
 create table user
 (

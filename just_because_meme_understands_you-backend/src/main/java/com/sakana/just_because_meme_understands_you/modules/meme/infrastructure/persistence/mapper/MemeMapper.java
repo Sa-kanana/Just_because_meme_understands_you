@@ -22,6 +22,11 @@ public interface MemeMapper extends BaseMapper<Meme> {
     @Select("SELECT * FROM meme WHERE id = #{memeId} LIMIT 1 FOR UPDATE")
     Meme selectByIdForUpdate(@Param("memeId") long memeId);
 
+    /** 按 ID 游标查询已发布梗，只读取 ID 列并限制返回数量。 */
+    @Select("SELECT id FROM meme WHERE status = 1 AND id > #{afterId} ORDER BY id ASC LIMIT #{limit}")
+    java.util.List<Long> selectPublishedIdsAfterId(@Param("afterId") long afterId,
+                                                    @Param("limit") int limit);
+
     /**
      * 关键字搜索梗（按名称、介绍或标签名模糊匹配），分页，支持排序
      *
@@ -30,13 +35,15 @@ public interface MemeMapper extends BaseMapper<Meme> {
      * @param mostLikes  最多点赞（有值则按点赞降序）
      * @param mostViews  最多浏览（有值则按浏览降序）
      * @param mostComments 最多评论（有值则按评论降序）
+     * @param tagId        可选标签 ID；提供时仅返回关联该标签的梗
      * @return 分页结果
      */
     IPage<Meme> searchByKeyword(Page<Meme> page,
                                @Param("keyword") String keyword,
                                @Param("mostLikes") String mostLikes,
                                @Param("mostViews") String mostViews,
-                               @Param("mostComments") String mostComments);
+                               @Param("mostComments") String mostComments,
+                               @Param("tagId") Long tagId);
 
     IPage<Meme> selectFollowedTagPage(Page<Meme> page, @Param("userId") Long userId);
 

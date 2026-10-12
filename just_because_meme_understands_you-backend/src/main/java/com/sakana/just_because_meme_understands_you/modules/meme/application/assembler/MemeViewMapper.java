@@ -32,5 +32,6 @@ public interface MemeViewMapper {
 
     /** 将梗标签实体映射为用户端标签视图，关联数由应用层按场景计算。 */
     @Mapping(target = "relatedQuantity", ignore = true)
+    @Mapping(target = "isPrimary", source = "isPrimary")
     MemeTagVO toMemeTagVO(MemeTag source);
 }

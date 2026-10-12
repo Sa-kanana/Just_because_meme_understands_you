@@ -17,8 +17,10 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeResourceMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
+import com.sakana.just_because_meme_understands_you.modules.moderation.domain.SensitiveScene;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,7 +55,7 @@ class MemeEditRevisionSubmitTest {
     private MemeResourceMapper resourceMapper;
     private MemeTagRelationMapper tagRelationMapper;
     private MemeTagMapper tagMapper;
-    private OssObjectPromoteService ossPromoteService;
+    private FileAssetService fileAssetService;
     private IUserProfileService userProfileService;
     private Object service;
     private Class<?> requestType;
@@ -71,8 +74,9 @@ class MemeEditRevisionSubmitTest {
         resourceMapper = mock(MemeResourceMapper.class);
         tagRelationMapper = mock(MemeTagRelationMapper.class);
         tagMapper = mock(MemeTagMapper.class);
-        ossPromoteService = mock(OssObjectPromoteService.class);
+        fileAssetService = mock(FileAssetService.class);
         userProfileService = mock(IUserProfileService.class);
+        SensitiveWordFilterService sensitiveWordFilterService = mock(SensitiveWordFilterService.class);
 
         service = serviceType.getDeclaredConstructor().newInstance();
         inject(service, "memeMapper", memeMapper);
@@ -81,17 +85,27 @@ class MemeEditRevisionSubmitTest {
         inject(service, "memeTagRelationMapper", tagRelationMapper);
         inject(service, "memeTagMapper", tagMapper);
         inject(service, "objectMapper", new ObjectMapper());
-        inject(service, "ossObjectPromoteService", ossPromoteService);
+        injectIfPresent(service, "fileAssetService", fileAssetService);
+        injectIfPresent(service, "sensitiveWordFilterService", sensitiveWordFilterService);
         inject(service, "userProfileService", userProfileService);
+        when(sensitiveWordFilterService.filterForReviewableContent(anyString(), any(SensitiveScene.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         when(revisionMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(resourceMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(tagRelationMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
-        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(new MemeTag().setId(9)));
-        when(ossPromoteService.promoteMemeImage(anyString(), any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(ossPromoteService.promoteMemeMediaOrKeepExternal(anyString(), any()))
+        when(tagMapper.selectBatchIds(anyCollection())).thenAnswer(invocation -> {
+            java.util.Collection<Integer> ids = invocation.getArgument(0);
+            return ids.stream().map(id -> new MemeTag().setId(id)).toList();
+        });
+        when(fileAssetService.promote(anyString(), any(), anyString())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(fileAssetService.promoteMemeMediaOrKeepExternal(anyString(), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(revisionMapper.insert(any(MemeEditRevision.class))).thenReturn(1);
+        java.util.concurrent.atomic.AtomicLong revisionIds = new java.util.concurrent.atomic.AtomicLong(700L);
+        when(revisionMapper.insert(any(MemeEditRevision.class))).thenAnswer(invocation -> {
+            ((MemeEditRevision) invocation.getArgument(0)).setId(revisionIds.getAndIncrement());
+            return 1;
+        });
     }
 
     @Test
@@ -117,6 +131,12 @@ class MemeEditRevisionSubmitTest {
         assertEquals("正式内容", official.getName());
         assertEquals("PENDING", getter(response, "status"));
         assertEquals("PENDING", getter(offlineResponse, "status"));
+        verify(fileAssetService).replaceReference("memes/cover.png", "MEME_REVISION", 700L, "COVER",
+                "MEME_REVISION_CREATED");
+        verify(fileAssetService).replaceReference("memes/cover.png", "MEME_REVISION", 701L, "COVER",
+                "MEME_REVISION_CREATED");
+        verify(fileAssetService).replaceReference("memes/extra.png", "MEME_REVISION", 700L, "RESOURCE:0",
+                "MEME_REVISION_CREATED");
 
         org.mockito.ArgumentCaptor<Wrapper> resourceQueries = org.mockito.ArgumentCaptor.forClass(Wrapper.class);
         verify(resourceMapper, org.mockito.Mockito.times(2)).selectList(resourceQueries.capture());
@@ -142,7 +162,34 @@ class MemeEditRevisionSubmitTest {
         JsonNode snapshot = new ObjectMapper().readTree(captor.getValue().getContentJson());
         assertEquals(true, snapshot.path("image").isNull() || snapshot.path("image").asText().isBlank());
         assertEquals("PENDING", getter(response, "status"));
-        verify(ossPromoteService, never()).promoteMemeImage(anyString(), any());
+        verify(fileAssetService, never()).promote(anyString(), any(), anyString());
+    }
+
+    @Test
+    void editRevisionReusesPromotedCoverWhenAlsoListedAsMedia() throws Exception {
+        String temporaryKey = "tmp/meme/21/shared.png";
+        when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
+        when(fileAssetService.promote(temporaryKey, 21L, "meme")).thenReturn("memes/shared.png");
+
+        invokeSubmit(21L, 1001L,
+                request("共享图片", temporaryKey, List.of(), List.of(temporaryKey), List.of()));
+
+        verify(fileAssetService, never()).promoteMemeMediaOrKeepExternal(temporaryKey, 21L);
+        verify(fileAssetService).replaceReference("memes/shared.png", "MEME_REVISION", 700L, "RESOURCE:0",
+                "MEME_REVISION_CREATED");
+    }
+
+    @Test
+    void revisionTracksStructuredLinkThatMayPointToOwnedOssImage() throws Exception {
+        when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
+        String url = "https://cdn.example.test/memes/linked.png";
+
+        invokeSubmit(21L, 1001L,
+                request("链接图片", null, List.of(), List.of(),
+                        List.of(resourceItem("link", url, "图片来源"))));
+
+        verify(fileAssetService).replaceReference(url, "MEME_REVISION", 700L, "LINK:0",
+                "MEME_REVISION_CREATED");
     }
 
     @Test
@@ -183,12 +230,31 @@ class MemeEditRevisionSubmitTest {
         assertThrows(BizException.class, () -> invokeSubmit(
                 21L, 1001L, request("新名称", "memes/cover.png", List.of(99), List.of(), List.of())));
 
-        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(new MemeTag().setId(9)));
+        when(tagMapper.selectBatchIds(anyCollection())).thenAnswer(invocation -> {
+            java.util.Collection<Integer> ids = invocation.getArgument(0);
+            return ids.stream().map(id -> new MemeTag().setId(id)).toList();
+        });
         Object invalidLink = resourceItem("javascript", "javascript:alert(1)", "外链");
         assertThrows(BizException.class, () -> invokeSubmit(
                 21L, 1001L, request("新名称", "memes/cover.png", List.of(), List.of(), List.of(invalidLink))));
 
         verify(revisionMapper, never()).insert(any(MemeEditRevision.class));
+    }
+
+    @Test
+    void blockLevelResourceTitleIsRejectedBeforeRevisionOrAssetPromotion() throws Exception {
+        when(memeMapper.selectOne(any(Wrapper.class))).thenReturn(meme(1, 21L));
+        SensitiveWordFilterService filter = (SensitiveWordFilterService) getField(service,
+                "sensitiveWordFilterService");
+        doThrow(new BizException(400, "梗内容包含违规词语，无法提交"))
+                .when(filter).filterForReviewableContent("违规标题", SensitiveScene.MEME_RESOURCE_TITLE);
+        Object request = request("安全名称", null, List.of(), List.of(),
+                List.of(resourceItem("link", "https://example.test", "违规标题")));
+
+        assertThrows(BizException.class, () -> invokeSubmit(21L, 1001L, request));
+
+        verify(revisionMapper, never()).insert(any(MemeEditRevision.class));
+        verify(fileAssetService, never()).promote(anyString(), any(), anyString());
     }
 
     private Object invokeSubmit(Long userId, Long memeId, Object request) throws Exception {
@@ -209,7 +275,9 @@ class MemeEditRevisionSubmitTest {
         set(request, "setName", String.class, name);
         set(request, "setIntroduction", String.class, "修改说明");
         set(request, "setImage", String.class, image);
-        set(request, "setTagIds", List.class, tagIds);
+        Integer primaryTagId = tagIds.isEmpty() ? 9 : tagIds.get(0);
+        set(request, "setPrimaryTagId", Integer.class, primaryTagId);
+        set(request, "setTagIds", List.class, List.of(10, 11, 12));
         set(request, "setResourceUrls", List.class, resourceUrls);
         set(request, "setResources", List.class, resources);
         return request;
@@ -257,5 +325,18 @@ class MemeEditRevisionSubmitTest {
         } catch (ClassNotFoundException ignored) {
             return null;
         }
+    }
+
+    private static void injectIfPresent(Object target, String fieldName, Object value) throws Exception {
+        java.lang.reflect.Field field = org.springframework.util.ReflectionUtils.findField(target.getClass(), fieldName);
+        if (field != null) {
+            org.springframework.test.util.ReflectionTestUtils.setField(target, fieldName, value);
+        }
+    }
+
+    private static Object getField(Object target, String fieldName) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(target);
     }
 }

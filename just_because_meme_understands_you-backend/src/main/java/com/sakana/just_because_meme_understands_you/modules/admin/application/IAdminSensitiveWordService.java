@@ -6,7 +6,8 @@ import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminSensitiveW
 
 public interface IAdminSensitiveWordService {
 
-    PageVO<AdminSensitiveWordVO> page(Integer page, Integer size, String keyword, String category, Integer status);
+    PageVO<AdminSensitiveWordVO> page(Integer page, Integer size, String keyword, String category, String level,
+                                      Integer status);
 
     AdminSensitiveWordVO create(Long adminUserId, AdminSensitiveWordSaveRequestDTO request);
 

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sakana.just_because_meme_understands_you.api.admin.vo.AdminMemeEditRevisionVO;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeEditRequestDTO;
 import com.sakana.just_because_meme_understands_you.api.user.dto.MemeResourceItemDTO;
@@ -26,7 +27,7 @@ import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.infrastructure.persistence.mapper.MemeTagRelationMapper;
 import com.sakana.just_because_meme_understands_you.modules.notification.application.NotificationPublisher;
-import com.sakana.just_because_meme_understands_you.modules.oss.application.OssObjectPromoteService;
+import com.sakana.just_because_meme_understands_you.modules.oss.application.FileAssetService;
 import com.sakana.just_because_meme_understands_you.modules.user.application.profile.IUserProfileService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +43,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -93,8 +93,9 @@ public class MemeEditRevisionReviewService {
     @Resource
     private NotificationPublisher notificationPublisher;
 
+    /** 中文注释：审核时将修改稿图片引用转移到正式梗和资源行。 */
     @Resource
-    private OssObjectPromoteService ossObjectPromoteService;
+    private FileAssetService fileAssetService;
 
     @Resource
     private IUserProfileService userProfileService;
@@ -167,16 +168,19 @@ public class MemeEditRevisionReviewService {
 
         MemeEditRequestDTO currentContent = buildCurrentSnapshot(official);
         String currentHash = sha256(serialize(currentContent));
-        if (!Objects.equals(revision.getBaseContentHash(), currentHash)) {
+        String legacyCurrentHash = legacySnapshotHash(currentContent);
+        MemeEditRequestDTO submitted = parseSubmittedContent(revision.getContentJson());
+        boolean legacyPendingRevision = submitted.getPrimaryTagId() == null;
+        if (!Objects.equals(revision.getBaseContentHash(), currentHash)
+                && !(legacyPendingRevision && Objects.equals(revision.getBaseContentHash(), legacyCurrentHash))) {
             throw new BizException(Result.CODE_CONFLICT, "正式内容已变化，请刷新审核详情后重新处理");
         }
 
-        MemeEditRequestDTO submitted = parseSubmittedContent(revision.getContentJson());
         validateSubmittedContent(submitted);
-        List<Integer> oldTagIds = currentContent.getTagIds();
-        List<Integer> newTagIds = submitted.getTagIds();
-        List<String> oldAssetKeys = collectAssetKeys(currentContent);
-        List<String> newAssetKeys = collectAssetKeys(submitted);
+        List<Integer> oldTagIds = allTagIds(currentContent);
+        List<Integer> newTagIds = allTagIds(submitted);
+        List<MemeResource> previousResources = memeResourceMapper.selectList(new LambdaQueryWrapper<MemeResource>()
+                .eq(MemeResource::getMemeId, official.getId()));
 
         LocalDateTime now = LocalDateTime.now();
         memeMapper.update(null, new UpdateWrapper<Meme>()
@@ -185,8 +189,15 @@ public class MemeEditRevisionReviewService {
                 .set("introduction", submitted.getIntroduction())
                 .set("image", submitted.getImage())
                 .set("update_time", now));
-        replaceTagRelations(official.getId(), newTagIds);
-        replaceResources(official.getId(), submitted, now);
+        if (submitted.getImage() == null) {
+            fileAssetService.releaseReference("MEME", official.getId(), "COVER", "MEME_REVISION_APPROVED");
+        } else {
+            fileAssetService.replaceReference(submitted.getImage(), "MEME", official.getId(), "COVER",
+                    "MEME_REVISION_APPROVED");
+        }
+        replaceTagRelations(official.getId(), submitted);
+        replaceResources(official.getId(), submitted, now, previousResources);
+        releaseRevisionAssetReferences(revision.getId(), submitted, "MEME_REVISION_APPROVED");
         updateTagCounters(official.getStatus(), oldTagIds, newTagIds);
 
         revision.setStatus(APPROVED);
@@ -197,8 +208,7 @@ public class MemeEditRevisionReviewService {
         notificationPublisher.publishMemeEditReview(revision.getEditorUserId(), adminUserId,
                 revision.getId(), official.getId(), submitted.getName(), submitted.getImage(), APPROVED, null);
         memeIndexEventPort.requestUpsert(official.getId());
-        scheduleAfterCommitEffects(official.getUserId(), official.getId(),
-                differenceStrings(oldAssetKeys, newAssetKeys));
+        scheduleAfterCommitEffects(official.getUserId(), official.getId());
         official.setName(submitted.getName())
                 .setIntroduction(submitted.getIntroduction())
                 .setImage(submitted.getImage())
@@ -228,12 +238,11 @@ public class MemeEditRevisionReviewService {
         revision.setReviewedAt(now);
         revision.setReviewNote(normalizedNote);
         memeEditRevisionMapper.updateById(revision);
+        releaseRevisionAssetReferences(revision.getId(), submitted, "MEME_REVISION_REJECTED");
         notificationPublisher.publishMemeEditReview(revision.getEditorUserId(), adminUserId,
                 revision.getId(), revision.getMemeId(), official == null ? null : official.getName(),
                 official == null ? null : official.getImage(), REJECTED, normalizedNote);
-        scheduleAfterCommitEffects(revision.getEditorUserId(), revision.getMemeId(),
-                differenceStrings(collectAssetKeys(submitted), official == null
-                        ? List.of() : collectAssetKeys(buildCurrentSnapshot(official))));
+        scheduleAfterCommitEffects(revision.getEditorUserId(), revision.getMemeId());
         return toView(revision, official, true, submitted);
     }
 
@@ -280,34 +289,73 @@ public class MemeEditRevisionReviewService {
                 revision.getId(), revision.getMemeId(), official == null ? null : official.getName(),
                 official == null ? null : official.getImage(), CANCELED, note);
         MemeEditRequestDTO submitted = parseSubmittedContent(revision.getContentJson());
-        scheduleAfterCommitEffects(revision.getEditorUserId(), revision.getMemeId(),
-                differenceStrings(collectAssetKeys(submitted), official == null
-                        ? List.of() : collectAssetKeys(buildCurrentSnapshot(official))));
+        releaseRevisionAssetReferences(revision.getId(), submitted, "MEME_REVISION_CANCELED");
+        scheduleAfterCommitEffects(revision.getEditorUserId(), revision.getMemeId());
         return toView(revision, official, true, submitted);
     }
 
-    private void replaceTagRelations(Long memeId, List<Integer> tagIds) {
+    private void replaceTagRelations(Long memeId, MemeEditRequestDTO content) {
         memeTagRelationMapper.delete(new LambdaQueryWrapper<MemeTagRelation>()
                 .eq(MemeTagRelation::getMemeId, memeId));
-        for (Integer tagId : tagIds) {
-            memeTagRelationMapper.insert(new MemeTagRelation().setMemeId(memeId).setMemeTagId(tagId));
+        for (Integer tagId : allTagIds(content)) {
+            boolean isPrimary = Objects.equals(tagId, content.getPrimaryTagId());
+            memeTagRelationMapper.insert(new MemeTagRelation().setMemeId(memeId).setMemeTagId(tagId)
+                    .setIsPrimary(isPrimary ? 1 : 0)
+                    .setPrimaryMemeId(isPrimary ? memeId : null));
         }
     }
 
-    private void replaceResources(Long memeId, MemeEditRequestDTO content, LocalDateTime now) {
+    private void replaceResources(Long memeId, MemeEditRequestDTO content, LocalDateTime now,
+                                  List<MemeResource> previousResources) {
         memeResourceMapper.update(null, new UpdateWrapper<MemeResource>()
                 .eq("meme_id", memeId)
                 .set("status", RESOURCE_REPLACED));
         int order = 0;
         for (String url : content.getResourceUrls()) {
-            memeResourceMapper.insert(new MemeResource().setMemeId(memeId).setResourceUrl(url)
+            MemeResource resource = new MemeResource().setMemeId(memeId).setResourceUrl(url)
                     .setResourceType(MemeResourceType.MEDIA.getCode()).setTitle(null)
-                    .setSortOrder(order++).setStatus(RESOURCE_ACTIVE).setCreateTime(now));
+                    .setSortOrder(order++).setStatus(RESOURCE_ACTIVE).setCreateTime(now);
+            insertAndTrackResource(resource, "MEME_REVISION_APPROVED");
         }
         for (MemeResourceItemDTO link : content.getResources()) {
-            memeResourceMapper.insert(new MemeResource().setMemeId(memeId).setResourceUrl(link.getUrl())
+            MemeResource resource = new MemeResource().setMemeId(memeId).setResourceUrl(link.getUrl())
                     .setResourceType(MemeResourceType.fromApiType(link.getType()).getCode())
-                    .setTitle(link.getTitle()).setSortOrder(order++).setStatus(RESOURCE_ACTIVE).setCreateTime(now));
+                    .setTitle(link.getTitle()).setSortOrder(order++).setStatus(RESOURCE_ACTIVE).setCreateTime(now);
+            insertAndTrackResource(resource, "MEME_REVISION_APPROVED");
+        }
+        if (previousResources != null) {
+            for (MemeResource previous : previousResources) {
+                if (previous != null && previous.getId() != null) {
+                    fileAssetService.releaseReference("MEME_RESOURCE", previous.getId(), "URL",
+                            "MEME_RESOURCES_REPLACED");
+                }
+            }
+        }
+    }
+
+    /** 中文注释：保存正式资源行后使用数据库生成的主键绑定资源图片。 */
+    private void insertAndTrackResource(MemeResource resource, String reason) {
+        if (memeResourceMapper.insert(resource) != 1 || resource.getId() == null) {
+            throw new BizException(Result.CODE_ERROR, "保存梗资源失败，请重试");
+        }
+        fileAssetService.replaceReference(resource.getResourceUrl(), "MEME_RESOURCE", resource.getId(), "URL", reason);
+    }
+
+    /** 中文注释：正式内容接管后释放编辑稿封面、媒体和站内结构化链接的引用。 */
+    private void releaseRevisionAssetReferences(Long revisionId, MemeEditRequestDTO content, String reason) {
+        if (content == null) {
+            return;
+        }
+        if (StringUtils.hasText(content.getImage())) {
+            fileAssetService.releaseReference("MEME_REVISION", revisionId, "COVER", reason);
+        }
+        List<String> mediaUrls = content.getResourceUrls();
+        for (int index = 0; mediaUrls != null && index < mediaUrls.size(); index++) {
+            fileAssetService.releaseReference("MEME_REVISION", revisionId, "RESOURCE:" + index, reason);
+        }
+        List<MemeResourceItemDTO> links = content.getResources();
+        for (int index = 0; links != null && index < links.size(); index++) {
+            fileAssetService.releaseReference("MEME_REVISION", revisionId, "LINK:" + index, reason);
         }
     }
 
@@ -352,19 +400,40 @@ public class MemeEditRevisionReviewService {
         if (content.getResourceUrls().size() > 6 || content.getResources().size() > 10) {
             throw new BizException(Result.CODE_BAD_REQUEST, "修改稿资源数量超出限制");
         }
-        Set<Integer> tagIds = new TreeSet<>();
+        Set<Integer> submittedTagIds = new TreeSet<>();
         for (Integer tagId : content.getTagIds()) {
             if (tagId == null || tagId <= 0) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "修改稿标签不合法");
             }
-            tagIds.add(tagId);
+            submittedTagIds.add(tagId);
         }
-        List<MemeTag> tags = tagIds.isEmpty() ? List.of() : memeTagMapper.selectBatchIds(tagIds);
+        if (content.getPrimaryTagId() != null) {
+            if (content.getPrimaryTagId() <= 0 || submittedTagIds.contains(content.getPrimaryTagId())) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "修改稿主标签不合法或重复");
+            }
+            submittedTagIds.add(content.getPrimaryTagId());
+        }
+        List<MemeTag> tags = submittedTagIds.isEmpty() ? List.of() : memeTagMapper.selectBatchIds(submittedTagIds);
         Set<Integer> existingIds = tags == null ? Set.of()
                 : tags.stream().filter(Objects::nonNull).map(MemeTag::getId).filter(Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
-        if (!existingIds.containsAll(tagIds)) {
+        if (!existingIds.containsAll(submittedTagIds)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "修改稿包含已失效标签");
+        }
+        if (content.getPrimaryTagId() == null && !submittedTagIds.isEmpty()) {
+            // 中文注释：旧待审稿把所有标签保存在 tagIds；沿用迁移规则，将最小 ID 设为主标签。
+            content.setPrimaryTagId(submittedTagIds.iterator().next());
+            submittedTagIds.remove(content.getPrimaryTagId());
+            content.setTagIds(List.copyOf(submittedTagIds));
+        } else if (content.getPrimaryTagId() != null) {
+            if (content.getTagIds().size() < 3 || content.getTagIds().size() > 7) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "普通标签需选择 3～7 个");
+            }
+            content.setTagIds(List.copyOf(submittedTagIds.stream()
+                    .filter(id -> !Objects.equals(id, content.getPrimaryTagId())).toList()));
+        } else {
+            // 中文注释：空标签的旧待审稿保持原样，避免升级后无法完成既有审核。
+            content.setTagIds(List.of());
         }
         String image = StringUtils.hasText(content.getImage()) ? content.getImage().trim() : null;
         content.setImage(image);
@@ -384,7 +453,6 @@ public class MemeEditRevisionReviewService {
             }
             assertSafeExternalUrl(link.getUrl());
         }
-        content.setTagIds(List.copyOf(tagIds));
     }
 
     private void assertSafeExternalUrl(String url) {
@@ -413,9 +481,16 @@ public class MemeEditRevisionReviewService {
         List<MemeTagRelation> relations = memeTagRelationMapper.selectList(new LambdaQueryWrapper<MemeTagRelation>()
                 .eq(MemeTagRelation::getMemeId, official.getId())
                 .orderByAsc(MemeTagRelation::getMemeTagId));
-        List<Integer> tagIds = relations == null ? List.of() : relations.stream()
-                .map(MemeTagRelation::getMemeTagId).filter(Objects::nonNull).distinct().sorted().toList();
-        snapshot.setTagIds(tagIds);
+        List<MemeTagRelation> validRelations = relations == null ? List.of() : relations.stream()
+                .filter(Objects::nonNull).filter(relation -> relation.getMemeTagId() != null).toList();
+        Integer primaryTagId = validRelations.stream()
+                .filter(relation -> Objects.equals(relation.getIsPrimary(), 1))
+                .map(MemeTagRelation::getMemeTagId).findFirst()
+                .orElseGet(() -> validRelations.stream().map(MemeTagRelation::getMemeTagId)
+                        .min(Integer::compareTo).orElse(null));
+        snapshot.setPrimaryTagId(primaryTagId);
+        snapshot.setTagIds(validRelations.stream().map(MemeTagRelation::getMemeTagId)
+                .filter(id -> !Objects.equals(id, primaryTagId)).distinct().sorted().toList());
         int resourceStatus = Objects.equals(official.getStatus(), MemeVisibilitySupport.STATUS_OFFLINE)
                 ? RESOURCE_INACTIVE : RESOURCE_ACTIVE;
         List<MemeResource> resources = memeResourceMapper.selectList(new LambdaQueryWrapper<MemeResource>()
@@ -471,40 +546,40 @@ public class MemeEditRevisionReviewService {
         return view;
     }
 
-    private List<String> collectAssetKeys(MemeEditRequestDTO content) {
-        Set<String> keys = new LinkedHashSet<>();
-        if (content != null) {
-            addManagedMemeKey(keys, content.getImage());
-            if (content.getResourceUrls() != null) {
-                content.getResourceUrls().forEach(url -> addManagedMemeKey(keys, url));
-            }
-        }
-        return List.copyOf(keys);
-    }
-
-    private void addManagedMemeKey(Set<String> target, String value) {
-        if (!StringUtils.hasText(value)) {
-            return;
-        }
-        String normalized = value.trim();
-        if (normalized.startsWith("memes/") && !normalized.contains("..")) {
-            target.add(normalized);
-        }
-    }
-
-    private List<String> differenceStrings(Collection<String> left, Collection<String> right) {
-        Set<String> rightSet = right == null ? Set.of() : new HashSet<>(right);
-        return left == null ? List.of() : left.stream().filter(Objects::nonNull)
-                .filter(value -> !rightSet.contains(value)).distinct().toList();
-    }
-
     private List<Integer> differenceTagIds(Collection<Integer> left, Collection<Integer> right) {
         Set<Integer> rightSet = right == null ? Set.of() : new HashSet<>(right);
         return left == null ? List.of() : left.stream().filter(Objects::nonNull)
                 .filter(value -> !rightSet.contains(value)).distinct().toList();
     }
 
-    private void scheduleAfterCommitEffects(Long userId, Long memeId, List<String> obsoleteAssetKeys) {
+    /** 中文注释：计算请求、快照中实际关联的全部标签 ID。 */
+    private List<Integer> allTagIds(MemeEditRequestDTO content) {
+        if (content == null) {
+            return List.of();
+        }
+        Set<Integer> ids = new TreeSet<>();
+        if (content.getPrimaryTagId() != null) {
+            ids.add(content.getPrimaryTagId());
+        }
+        if (content.getTagIds() != null) {
+            content.getTagIds().stream().filter(Objects::nonNull).forEach(ids::add);
+        }
+        return List.copyOf(ids);
+    }
+
+    /** 中文注释：使用旧版快照字段布局计算摘要，以便升级前已提交的修改稿继续通过基线校验。 */
+    private String legacySnapshotHash(MemeEditRequestDTO content) {
+        try {
+            ObjectNode legacy = objectMapper.valueToTree(content);
+            legacy.remove("primaryTagId");
+            legacy.set("tagIds", objectMapper.valueToTree(allTagIds(content)));
+            return sha256(objectMapper.writeValueAsString(legacy));
+        } catch (Exception exception) {
+            throw new BizException(Result.CODE_ERROR, "正式内容读取失败");
+        }
+    }
+
+    private void scheduleAfterCommitEffects(Long userId, Long memeId) {
         afterCommitExecutor.execute(() -> {
             try {
                 if (memeId != null) {
@@ -520,32 +595,7 @@ public class MemeEditRevisionReviewService {
             } catch (Exception exception) {
                 log.warn("清理用户梗缓存失败 userId={}", userId, exception);
             }
-            cleanupUnusedAssetKeys(obsoleteAssetKeys);
         });
-    }
-
-    private void cleanupUnusedAssetKeys(List<String> keys) {
-        if (keys == null || keys.isEmpty()) {
-            return;
-        }
-        List<String> unused = new ArrayList<>();
-        for (String key : keys) {
-            Long memeReferences = memeMapper.selectCount(new LambdaQueryWrapper<Meme>()
-                    .eq(Meme::getImage, key));
-            Long resourceReferences = memeResourceMapper.selectCount(new LambdaQueryWrapper<MemeResource>()
-                    .eq(MemeResource::getResourceUrl, key)
-                    .in(MemeResource::getStatus, RESOURCE_ACTIVE, RESOURCE_INACTIVE));
-            Long pendingRevisionReferences = memeEditRevisionMapper.selectCount(
-                    new LambdaQueryWrapper<MemeEditRevision>()
-                            .eq(MemeEditRevision::getStatus, PENDING)
-                            .apply("JSON_SEARCH(content_json, 'one', {0}, NULL, '$.image', '$.resourceUrls[*]') IS NOT NULL", key));
-            if ((memeReferences == null || memeReferences == 0)
-                    && (resourceReferences == null || resourceReferences == 0)
-                    && (pendingRevisionReferences == null || pendingRevisionReferences == 0)) {
-                unused.add(key);
-            }
-        }
-        ossObjectPromoteService.deleteMemeObjectsAfterCommit(unused);
     }
 
     private void requireAdminId(Long adminUserId) {

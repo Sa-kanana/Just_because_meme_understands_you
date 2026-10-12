@@ -20,6 +20,12 @@ public class MemeTagBindDTO {
     /** 标签名 */
     private String name;
 
+    /** 中文注释：标签分类代码。 */
+    private String category;
+
+    /** 中文注释：该标签是否为所属梗的主分类标签。 */
+    private Boolean isPrimary;
+
     /** 相关梗数量（数据库字段为 INT） */
     private Integer relatedQuantity;
 }

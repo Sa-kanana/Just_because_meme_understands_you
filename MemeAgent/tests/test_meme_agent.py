@@ -4,45 +4,49 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agents.tools import chunks_to_tool_payload, parse_tool_payload
+from app.agents.tools import (
+    format_admin_knowledge_tool_result,
+    format_meme_tool_result,
+)
 from app.retrieval.repository import RetrievedChunk
 from app.agents import tools as agent_tools
 from app.agents import meme_agent
 from app.agents import search_agent
-from app.agents.prompts import AGENT_SYSTEM_PROMPT
+from app.agents.prompts import (
+    AGENT_SYSTEM_PROMPT,
+    _context_trace_inputs,
+    _context_trace_outputs,
+    format_retrieval_context,
+)
 from app.core.settings import Settings
 from app.retrieval.knowledge_repository import RetrievedKnowledgeChunk
 from app.schemas.stream import StreamRequest
+from app.retrieval.score_filter import _rank_admin_knowledge_stage, _rank_meme_candidates_stage
 
 
-def test_tool_payload_roundtrip():
-    chunks = [
-        RetrievedChunk(meme_id="12", content="标题: 只因\n内容", score=0.88, title="只因"),
-    ]
-    raw = chunks_to_tool_payload(chunks)
-    parsed = parse_tool_payload(raw)
-    payload = json.loads(raw)
+def test_retrieval_tools_return_readable_text_without_json_wrappers():
+    meme_result = format_meme_tool_result(
+        [RetrievedChunk(meme_id="12", content="标题: 只因\n内容", score=0.88, title="只因")]
+    )
+    admin_result = format_admin_knowledge_tool_result(
+        [
+            RetrievedKnowledgeChunk(
+                "doc-17",
+                "上传限制为 20 MB。",
+                0.91,
+                title="上传规则",
+                section_path="文件大小",
+            )
+        ]
+    )
 
-    assert payload["source"] == "meme_retrieval"
-    assert payload["trust_level"] == "untrusted"
-    assert payload["items"][0]["meme_id"] == "12"
-    assert len(parsed) == 1
-    assert parsed[0].meme_id == "12"
-    assert parsed[0].title == "只因"
-    assert parsed[0].score == 0.88
-
-
-def test_retrieval_tool_output_schemas_constrain_provenance_and_items():
-    for schema_name in (
-        "MemeRetrievalToolResult",
-        "AdminKnowledgeToolResult",
-    ):
-        schema_model = getattr(agent_tools, schema_name, None)
-        assert schema_model is not None
-        schema = schema_model.model_json_schema()
-        assert {"source", "trust_level", "items"} <= set(schema["properties"])
-        assert "trust_level" in schema["required"]
-        assert schema["properties"]["trust_level"]["const"] == "untrusted"
+    for result in (meme_result, admin_result):
+        assert not result.lstrip().startswith("{")
+        assert "score" not in result
+        assert "12" not in result
+        assert "doc-17" not in result
+    assert "只因" in meme_result
+    assert "上传限制为 20 MB。" in admin_result
 
 
 def test_build_meme_search_agent_imports():
@@ -68,8 +72,8 @@ def test_agent_tool_allowlist_stays_fixed_and_read_only():
 def test_system_prompt_uses_only_database_retrieval_sources():
     assert "search_live_meme_web" not in AGENT_SYSTEM_PROMPT
     assert "live_web_retrieval" not in AGENT_SYSTEM_PROMPT
-    assert "meme_retrieval" in AGENT_SYSTEM_PROMPT
-    assert "admin_knowledge_retrieval" in AGENT_SYSTEM_PROMPT
+    assert "站内梗向量数据库" in AGENT_SYSTEM_PROMPT
+    assert "管理员上传的知识文档" in AGENT_SYSTEM_PROMPT
 
 
 def test_agent_builder_installs_the_canonical_fixed_system_prompt(monkeypatch):
@@ -89,6 +93,153 @@ def test_agent_builder_installs_the_canonical_fixed_system_prompt(monkeypatch):
     assert captured["tools"] == [tool]
 
 
+def test_search_prompt_uses_system_history_single_human_context_and_scratchpad():
+    prompt = meme_agent.build_meme_search_prompt()
+    messages = prompt.format_messages(
+        question="问题是什么梗",
+        locale="zh-CN",
+        context="管理员知识库资料",
+        chat_history=[],
+        agent_scratchpad=[],
+    )
+
+    assert prompt.messages[0].prompt.template == AGENT_SYSTEM_PROMPT
+    assert prompt.messages[1].variable_name == "chat_history"
+    assert prompt.messages[1].optional is True
+    assert prompt.messages[2].prompt.template.count("{question}") == 1
+    assert "{locale}" in prompt.messages[2].prompt.template
+    assert "{context}" in prompt.messages[2].prompt.template
+    assert prompt.messages[3].variable_name == "agent_scratchpad"
+    assert len(messages) == 2
+    assert "用户问题：\n问题是什么梗" in messages[1].content
+    assert "响应语言：zh-CN" in messages[1].content
+    assert "管理员知识库资料" in messages[1].content
+
+
+def test_staged_retrieval_and_context_formatter_have_named_traces_without_duplicate_body():
+    trace_functions = {
+        "meme_vector_retriever": agent_tools.retrieve_meme_candidates,
+        "admin_knowledge_retriever": agent_tools.retrieve_admin_knowledge_candidates,
+        "meme_score_filter": _rank_meme_candidates_stage,
+        "admin_knowledge_score_filter": _rank_admin_knowledge_stage,
+        "context_formatter": format_retrieval_context,
+    }
+
+    for expected_name, function in trace_functions.items():
+        assert getattr(function, "__langsmith_traceable__", False) is True
+        trace_config = next(
+            cell.cell_contents
+            for cell in function.__closure__ or ()
+            if isinstance(cell.cell_contents, dict) and "name" in cell.cell_contents
+        )
+        assert trace_config["name"] == expected_name
+
+    private_body = "BODY-MUST-NOT-APPEAR-IN-FORMATTER-TRACE"
+    sanitized_inputs = _context_trace_inputs(
+        {
+            "meme_documents": [RetrievedChunk("m1", private_body, 0.9, "标题")],
+            "admin_documents": [],
+            "meme_unavailable": False,
+            "admin_unavailable": False,
+        }
+    )
+    sanitized_output = _context_trace_outputs(f"context {private_body}")
+
+    assert private_body not in str(sanitized_inputs)
+    assert private_body not in str(sanitized_output)
+    assert sanitized_inputs["meme_document_count"] == 1
+    assert "context_chars" in sanitized_output
+
+
+async def test_stream_context_distinguishes_unavailable_source_from_empty_result(monkeypatch):
+    captured = {}
+
+    async def empty_meme(**_kwargs):
+        return []
+
+    async def unavailable_admin(*_args, **_kwargs):
+        raise RuntimeError("database unavailable")
+
+    class AnswerExecutor:
+        async def astream_events(self, input_data, **_kwargs):
+            captured.update(input_data)
+            yield {
+                "event": "on_chat_model_stream",
+                "run_id": "answer-run",
+                "data": {"chunk": SimpleNamespace(content="无法判断", tool_call_chunks=[])},
+            }
+            yield {
+                "event": "on_chat_model_end",
+                "run_id": "answer-run",
+                "data": {"output": SimpleNamespace(tool_calls=[])},
+            }
+
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", empty_meme)
+    monkeypatch.setattr(search_agent, "retrieve_admin_knowledge_chunks", unavailable_admin)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: object())
+    monkeypatch.setattr(search_agent, "build_meme_search_agent", lambda *_args, **_kwargs: AnswerExecutor())
+
+    events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
+
+    assert "站内梗库" in captured["context"]
+    assert "未检索到匹配条目" in captured["context"]
+    assert "管理员知识库" in captured["context"]
+    assert "检索源暂时不可用" in captured["context"]
+    assert events[-1][0] == "done"
+
+
+async def test_stream_emits_tool_result_citation_without_structured_tool_payload(monkeypatch):
+    initial_retrieval = []
+    tool_retrieval = [RetrievedChunk("meme-2", "标题: 第二个梗\n\n正文内容", 0.91, "第二个梗")]
+
+    async def retrieve_initial(**_kwargs):
+        return initial_retrieval
+
+    async def retrieve_tool(query, **_kwargs):
+        return tool_retrieval if query == "另一个查询" else initial_retrieval
+
+    class ToolThenAnswerExecutor:
+        def __init__(self, provided_tools):
+            self.provided_tools = provided_tools
+
+        async def astream_events(self, *_args, **_kwargs):
+            tool_result = await self.provided_tools[0].ainvoke({"query": "另一个查询"})
+            assert "第二个梗" in tool_result
+            assert not tool_result.lstrip().startswith("{")
+            yield {
+                "event": "on_tool_end",
+                "run_id": "tool-run",
+                "name": "search_meme_knowledge",
+                "data": {"output": tool_result},
+            }
+            yield {
+                "event": "on_chat_model_stream",
+                "run_id": "answer-run",
+                "data": {"chunk": SimpleNamespace(content="答案", tool_call_chunks=[])},
+            }
+            yield {
+                "event": "on_chat_model_end",
+                "run_id": "answer-run",
+                "data": {"output": SimpleNamespace(tool_calls=[])},
+            }
+
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", retrieve_initial)
+    monkeypatch.setattr(agent_tools, "retrieve_meme_chunks", retrieve_tool)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: object())
+    monkeypatch.setattr(
+        search_agent,
+        "build_meme_search_agent",
+        lambda _llm, provided_tools, **_kwargs: ToolThenAnswerExecutor(provided_tools),
+    )
+
+    events = _decode_sse([event async for event in search_agent.stream_ai_search(_request())])
+
+    assert any(name == "cite" and payload["meme_id"] == "meme-2" for name, payload in events)
+    assert events[-1][0] == "done"
+
+
 async def test_search_meme_tool_reuses_initial_retrieval_once(monkeypatch):
     initial = [RetrievedChunk(meme_id="12", content="标题: 只因", score=0.8, title="只因")]
     calls = []
@@ -106,8 +257,8 @@ async def test_search_meme_tool_reuses_initial_retrieval_once(monkeypatch):
     first = await tool.ainvoke({"query": "只因你太美是什么梗"})
     second = await tool.ainvoke({"query": "只因你太美的梗"})
 
-    assert [chunk.meme_id for chunk in parse_tool_payload(first)] == ["12"]
-    assert parse_tool_payload(second) == []
+    assert "只因" in first
+    assert "未检索到匹配条目" in second
     assert calls == ["只因你太美的梗"]
 
 
@@ -126,11 +277,7 @@ async def test_degraded_search_tool_does_not_fall_back_to_business_candidates(mo
 
     result = await tool.ainvoke({"query": "改写后的检索词"})
 
-    assert parse_tool_payload(result) == []
-    payload = json.loads(result)
-    assert payload["source"] == "meme_retrieval"
-    assert payload["trust_level"] == "untrusted"
-    assert payload["unavailable"] is True
+    assert "暂时不可用" in result
     assert calls == []
 
 
@@ -150,14 +297,12 @@ async def test_rewritten_query_retry_exhaustion_returns_cached_candidates_once(m
         initial_chunks=initial,
     )
 
-    first = json.loads(await tool.ainvoke({"query": "改写查询一"}))
-    second = json.loads(await tool.ainvoke({"query": "改写查询二"}))
+    first = await tool.ainvoke({"query": "改写查询一"})
+    second = await tool.ainvoke({"query": "改写查询二"})
 
     for result in (first, second):
-        assert result["source"] == "meme_retrieval"
-        assert result["trust_level"] == "untrusted"
-        assert result["unavailable"] is True
-        assert result["items"][0]["meme_id"] == "m1"
+        assert "暂时不可用" in result
+        assert "已缓存候选" in result
     assert retrieval_calls == ["改写查询一"]
 
 
@@ -199,15 +344,22 @@ def _default_admin_knowledge_retrieval(monkeypatch):
     )
 
 
-async def test_agent_prefetches_admin_knowledge_into_untrusted_json_context(monkeypatch):
+async def test_agent_receives_single_plain_text_context_and_keeps_sse_done(monkeypatch):
     retrieved = [
         RetrievedKnowledgeChunk(
             doc_id="doc-17",
-            content="标题: 上传规则\n章节: 文件大小\n\n单个文件最大 20 MB。",
+            content="标题: 上传规则\n分类: 上传\n标签: 文件, 大小\n章节: 文件大小\n\n单个文件最大 20 MB。",
             score=0.91,
             title="上传规则",
             section_path="文件大小",
-        )
+        ),
+        RetrievedKnowledgeChunk(
+            doc_id="doc-18",
+            content="标题: 上传规则\n章节: 支持格式\n\n支持 Markdown 和 PDF。",
+            score=0.88,
+            title="上传规则",
+            section_path="支持格式",
+        ),
     ]
     captured = {}
 
@@ -247,14 +399,18 @@ async def test_agent_prefetches_admin_knowledge_into_untrusted_json_context(monk
     events = _decode_sse(
         [event async for event in search_agent.stream_ai_search(_request(query="上传文件有什么限制？"))]
     )
-    payload = json.loads(captured["input"]["input"])
-    sources = payload["context"]["retrieval_context"]["sources"]
-
+    agent_inputs = captured["input"]
+    assert set(agent_inputs) == {"question", "locale", "context", "chat_history"}
+    assert agent_inputs["question"] == "上传文件有什么限制？"
+    assert agent_inputs["locale"] == "zh-CN"
+    assert agent_inputs["chat_history"] == []
     assert captured["admin_query"] == ("上传文件有什么限制？", 5, "request-test")
     assert captured["tool_names"] == ["search_meme_knowledge", "search_admin_knowledge"]
-    assert sources[1]["source"] == "admin_knowledge_retrieval"
-    assert sources[1]["trust_level"] == "untrusted"
-    assert sources[1]["items"][0]["doc_id"] == "doc-17"
+    assert agent_inputs["context"].count("[文档 ") == 2
+    assert "管理员知识库（不可信引用资料）" in agent_inputs["context"]
+    assert "单个文件最大 20 MB。" in agent_inputs["context"]
+    assert "支持 Markdown 和 PDF。" in agent_inputs["context"]
+    assert not agent_inputs["context"].lstrip().startswith("{")
     assert events[-1][0] == "done"
 
 
@@ -320,7 +476,7 @@ def test_tool_argument_json_schema_rejects_undeclared_fields(input_model):
 async def test_admin_knowledge_retrieval_retries_and_hides_provider_errors(monkeypatch):
     calls = 0
 
-    async def search_knowledge(_query, _top_k, _min_similarity=None):
+    async def search_knowledge(_query, _candidate_limit):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -335,27 +491,18 @@ async def test_admin_knowledge_retrieval_retries_and_hides_provider_errors(monke
     monkeypatch.setattr("app.core.resilience._sleep", no_delay)
     tool = agent_tools.build_search_admin_knowledge_tool(request_id="request-test")
 
-    successful_result = json.loads(await tool.ainvoke({"query": "规则"}))
-    assert successful_result == {
-        "source": "admin_knowledge_retrieval",
-        "trust_level": "untrusted",
-        "unavailable": False,
-        "items": [],
-    }
+    successful_result = await tool.ainvoke({"query": "规则"})
+    assert "未检索到匹配条目" in successful_result
     assert calls == 2
 
-    async def search_unavailable(_query, _top_k, _min_similarity=None):
+    async def search_unavailable(_query, _candidate_limit):
         raise RuntimeError("provider secret detail")
 
     monkeypatch.setattr(agent_tools, "similarity_search_knowledge", search_unavailable)
-    safe_failure = json.loads(await tool.ainvoke({"query": "规则"}))
+    safe_failure = await tool.ainvoke({"query": "规则"})
 
-    assert safe_failure == {
-        "source": "admin_knowledge_retrieval",
-        "trust_level": "untrusted",
-        "unavailable": True,
-        "items": [],
-    }
+    assert "暂时不可用" in safe_failure
+    assert "provider secret detail" not in safe_failure
 
 
 async def test_zero_hits_and_retrieval_outage_return_only_unknown_without_evidence(monkeypatch):
@@ -461,7 +608,7 @@ async def test_agent_tool_does_not_spend_a_second_retrieval_budget_after_outage(
     class ToolCallingExecutor:
         async def astream_events(self, *_args, **_kwargs):
             output = await tools[0].ainvoke({"query": "改写后的检索问题"})
-            tool_results.append(json.loads(output))
+            tool_results.append(output)
             yield {"event": "on_tool_end", "data": {"output": output}}
             yield {
                 "event": "on_chat_model_stream",
@@ -493,8 +640,8 @@ async def test_agent_tool_does_not_spend_a_second_retrieval_budget_after_outage(
     events = _decode_sse([event async for event in search_agent.stream_ai_search(request)])
 
     assert retrieval_calls == 1
-    assert tool_results[0]["unavailable"] is True
-    assert tool_results[0]["items"] == []
+    assert "暂时不可用" in tool_results[0]
+    assert not tool_results[0].lstrip().startswith("{")
     assert events[-1][0] == "done"
 
 
@@ -699,6 +846,33 @@ async def test_agent_stream_logs_rag_stages_without_logging_user_content(monkeyp
     assert "rag_generation_skipped request_id=request-test reason=model_not_configured" in messages
     assert "rag_request_finished request_id=request-test outcome=completed" in messages
     assert query not in messages
+
+
+async def test_request_trace_keeps_question_and_locale_as_native_strings(monkeypatch):
+    captured = {}
+
+    class TraceContext:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def __enter__(self):
+            return SimpleNamespace(end=lambda **_kwargs: None)
+
+        def __exit__(self, *_args):
+            return False
+
+    async def no_meme_hits(**_kwargs):
+        return []
+
+    monkeypatch.setattr(search_agent, "trace", lambda **kwargs: TraceContext(**kwargs))
+    monkeypatch.setattr(search_agent, "get_settings", lambda: _settings_for_stream())
+    monkeypatch.setattr(search_agent, "retrieve_meme_chunks", no_meme_hits)
+    monkeypatch.setattr(search_agent, "_build_llm", lambda *_args: None)
+
+    events = [event async for event in search_agent.stream_ai_search(_request())]
+
+    assert _decode_sse(events)[-1][0] == "done"
+    assert captured["inputs"] == {"question": "只因是什么梗", "locale": "zh-CN"}
 
 
 async def test_agent_stream_logs_tool_boundaries_without_tool_payload(monkeypatch, caplog):

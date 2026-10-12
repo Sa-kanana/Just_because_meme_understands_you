@@ -37,6 +37,18 @@ public class MemeTag implements Serializable {
     @TableField("name")
     private String name;
 
+    /** 中文注释：标签所属分类代码，用于管理筛选和用户端分组展示。 */
+    @TableField("category")
+    private String category;
+
+    /** 中文注释：标签在分类内的展示顺序，数值越小越靠前。 */
+    @TableField("sort_order")
+    private Integer sortOrder;
+
+    /** 中文注释：查询投影字段，表示该标签是否是当前梗的主标签，不映射到 meme_tag 表列。 */
+    @TableField(exist = false)
+    private Boolean isPrimary;
+
     /**
      * 相关梗的数量
      */

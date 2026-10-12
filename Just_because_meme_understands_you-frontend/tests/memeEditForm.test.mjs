@@ -7,7 +7,7 @@ test('maps an existing meme detail into editable fields without mixing media and
     name: '旧名称',
     introduction: '旧介绍',
     image: 'https://cdn.example/cover.png',
-    memeTag: [{ id: 2 }, { id: '5' }],
+    memeTag: [{ id: 2, isPrimary: true }, { id: '5', isPrimary: false }],
     links: [
       { type: 'media', url: 'https://cdn.example/one.gif', sortOrder: 0 },
       { type: 'article', title: '出处', url: 'https://example.com/source', sortOrder: 1 },
@@ -18,7 +18,8 @@ test('maps an existing meme detail into editable fields without mixing media and
     name: '旧名称',
     introduction: '旧介绍',
     image: 'https://cdn.example/cover.png',
-    tagIds: [2, '5'],
+    primaryTagId: 2,
+    tagIds: ['5'],
     resources: [{ type: 'article', title: '出处', url: 'https://example.com/source', sortOrder: 1 }],
     resourceUrls: ['https://cdn.example/one.gif'],
   })
@@ -29,6 +30,7 @@ test('builds the edit payload from current fields and normalizes link order', ()
     name: ' 新名称 ',
     introduction: ' 介绍 ',
     image: ' cover ',
+    primaryTagId: 3,
     tagIds: [4],
     resources: [
       { type: 'link', title: ' 链接 ', url: ' https://example.com ' },
@@ -41,6 +43,7 @@ test('builds the edit payload from current fields and normalizes link order', ()
     name: '新名称',
     introduction: '介绍',
     image: 'cover',
+    primaryTagId: 3,
     tagIds: [4],
     resources: [{ type: 'link', title: '链接', url: 'https://example.com', sortOrder: 0 }],
     resourceUrls: ['media'],

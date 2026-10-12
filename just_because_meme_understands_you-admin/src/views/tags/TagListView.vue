@@ -8,6 +8,9 @@
         style="width: 220px"
         @press-enter="reload"
       />
+      <a-select v-model="category" allow-clear placeholder="全部分类" style="width: 180px" @change="reload">
+        <a-option v-for="item in tagCategories" :key="item.value" :value="item.value">{{ item.label }}</a-option>
+      </a-select>
       <a-button type="primary" @click="reload">查询</a-button>
       <a-button @click="openCreate">新增标签</a-button>
     </div>
@@ -54,6 +57,14 @@
         <a-form-item label="标签名" required>
           <a-input v-model="form.name" maxlength="50" />
         </a-form-item>
+        <a-form-item label="标签分类" required>
+          <a-select v-model="form.category" placeholder="选择标签分类">
+            <a-option v-for="item in tagCategories" :key="item.value" :value="item.value">{{ item.label }}</a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="分类内排序">
+          <a-input-number v-model="form.sortOrder" :min="0" :max="9999" />
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
@@ -77,9 +88,22 @@ const list = ref([])
 const selectedKeys = ref([])
 const batching = ref(false)
 const keyword = ref('')
+const category = ref('')
 const modalVisible = ref(false)
 const editingId = ref('')
-const form = reactive({ name: '' })
+const form = reactive({ name: '', category: 'SOURCE', sortOrder: 0 })
+const tagCategories = [
+  { value: 'SOURCE', label: '来源' },
+  { value: 'FORMAT', label: '形式' },
+  { value: 'EMOTION', label: '情绪' },
+  { value: 'SCENARIO', label: '场景' },
+  { value: 'CONTENT', label: '内容' },
+  { value: 'ERA', label: '时代' },
+  { value: 'PROPAGATION', label: '传播特征' },
+  { value: 'TONE', label: '使用语气' },
+  { value: 'UNCATEGORIZED', label: '未分类' },
+]
+const categoryNames = Object.fromEntries(tagCategories.map(({ value, label }) => [value, label]))
 const pagination = reactive({
   current: 1,
   pageSize: 10,
@@ -97,6 +121,7 @@ const selectedRecords = computed(() => {
 const columns = [
   { title: 'ID', dataIndex: 'id', width: 90 },
   { title: '名称', dataIndex: 'name' },
+  { title: '分类', dataIndex: 'category', render: ({ record }) => categoryNames[record.category] || '未分类' },
   { title: '关联数量', dataIndex: 'relatedQuantity', width: 120 },
   { title: '操作', slotName: 'actions', width: 160 },
 ]
@@ -109,6 +134,7 @@ async function load() {
       page: pagination.current,
       size: pagination.pageSize,
       keyword: keyword.value,
+      category: category.value,
     })
     list.value = data.list
     pagination.total = data.total
@@ -138,12 +164,16 @@ function onPageSizeChange(size) {
 function openCreate() {
   editingId.value = ''
   form.name = ''
+  form.category = 'SOURCE'
+  form.sortOrder = 0
   modalVisible.value = true
 }
 
 function openEdit(record) {
   editingId.value = String(record.id)
   form.name = record.name || ''
+  form.category = record.category || 'UNCATEGORIZED'
+  form.sortOrder = Number(record.sortOrder) || 0
   modalVisible.value = true
 }
 
@@ -155,9 +185,17 @@ async function save() {
   saving.value = true
   try {
     if (editingId.value) {
-      await updateAdminTag(editingId.value, { name: form.name.trim() })
+      await updateAdminTag(editingId.value, {
+        name: form.name.trim(),
+        category: form.category,
+        sortOrder: Number(form.sortOrder) || 0,
+      })
     } else {
-      await createAdminTag({ name: form.name.trim() })
+      await createAdminTag({
+        name: form.name.trim(),
+        category: form.category,
+        sortOrder: Number(form.sortOrder) || 0,
+      })
     }
     toastSuccess('已保存')
     modalVisible.value = false
