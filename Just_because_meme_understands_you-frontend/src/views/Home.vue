@@ -22,6 +22,13 @@
       <vs-button type="flat" color="primary" @click="loadFollowedTags">重试同步</vs-button>
     </div>
 
+    <!-- 快捷入口放在梗图列表之前，方便快速进入常用功能 -->
+    <HomeQuickActions
+      v-if="quickActions.length"
+      :actions="quickActions"
+      @action="handleQuickAction"
+    />
+
     <div class="home-content" :class="{ 'home-content--single': !hotMemes.length }">
       <!-- Feed 列表 -->
       <section ref="feedSection" class="meme-section">
@@ -140,13 +147,6 @@
         <HomeHotMemeRail :memes="hotMemes" />
       </aside>
     </div>
-
-    <!-- 快捷入口放在梗列表之后，进入首页时优先展示梗内容 -->
-    <HomeQuickActions
-      v-if="quickActions.length"
-      :actions="quickActions"
-      @action="handleQuickAction"
-    />
 
   </div>
 </template>
