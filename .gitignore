@@ -15,24 +15,8 @@ out/
 deploy/.env
 deploy/meme-agent.env
 deploy/artifacts/
-docs/*
-# 数据库结构设计与只读核对文档纳入版本管理。
-!docs/architecture/
-docs/architecture/*
-!docs/architecture/database-design.md
-!docs/architecture/shared-user-rbac.md
-!docs/db/
-docs/db/*
-!docs/db/database_reconciliation.sql
-!docs/superpowers/
-!docs/superpowers/specs/
-docs/superpowers/specs/*
-!docs/superpowers/specs/2026-10-09-database-schema-clarity-design.md
-!docs/superpowers/specs/2026-10-11-oss-file-asset-management-design.md
-!docs/superpowers/plans/
-docs/superpowers/plans/*
-!docs/superpowers/plans/2026-10-09-database-schema-clarity.md
-!docs/superpowers/plans/2026-10-11-oss-file-asset-management.md
+# 忽略 docs 目录；已纳入版本管理的文件仍保持跟踪。
+/docs/
 
 # Log file
 *.log

@@ -174,8 +174,8 @@ SHOW TABLES;
 
 增量结构变更由 Flyway 在 Java 后端启动时自动执行，迁移文件位于 `just_because_meme_understands_you-backend/src/main/resources/db/migration/`，版本记录在 `flyway_schema_history`。
 
-- **全新数据库：** 先创建 `meme` 数据库并执行上面的 `mysql.sql` 初始化基础 schema，再启动 Java 后端。Flyway 会记录 `20261003` 基线并按版本执行后续迁移。
-- **已有数据库：** 先备份数据库，确认后端连接的是 `meme` 库且账号有建表/改表权限，再启动 Java 后端。首次接入时 Flyway 会记录当前 schema 基线并补齐尚未应用的增量迁移；旧功能迁移即使曾手动执行也可安全重试。
+- **全新数据库：** 先创建 `meme` 数据库并执行当前版本的 `mysql.sql` 初始化完整 schema 与系统标签，再启动 Java 后端。Flyway 会记录 `2026101205` 基线；后续新增迁移从 `V2026101206__描述.sql` 开始。
+- **已有数据库：** 先备份数据库，确认后端连接的是 `meme` 库且账号有建表/改表权限，再启动 Java 后端。已有 `flyway_schema_history` 的数据库会继续按原记录校验并应用未执行版本；不要删除或改写已应用的历史迁移文件。没有迁移历史但已有非空 schema 的数据库，Flyway 会按配置记录 `2026101205` 基线，因此需先确认其结构与当前 `mysql.sql` 一致。
 - 迁移成功后可检查记录：
 
 ```sql
@@ -184,7 +184,7 @@ FROM flyway_schema_history
 ORDER BY installed_rank;
 ```
 
-已执行的版本文件不要再修改；新增数据库变更时创建更大的 `V版本号__描述.sql` 文件。每个 DDL 列都要有中文 `COMMENT`，数据复制语句要逐字段注明来源和目标。
+已执行的版本文件不要再修改或删除；新增数据库变更时创建更大的 `V版本号__描述.sql` 文件。每个 DDL 列都要有中文 `COMMENT`，数据复制语句要逐字段注明来源和目标。历史迁移继续保留给已有数据库校验；当前初始化快照作为新数据库的 `2026101205` 基准。
 
 至少应能看到 `user`、`user_auth`、`meme`、`meme_comment`、`meme_resource`、`meme_tag`、`user_favorite`、`user_notification`、`admin_knowledge`、`ai_chat_session` 和 `ai_chat_message`。
 

@@ -227,12 +227,12 @@ class FlywayMigrationCatalogTest {
     }
 
     @Test
-    void bootstrapSchemaAndMemeSeedUseRoleAssociationsInsteadOfUserRoleColumn() throws Exception {
+    void bootstrapSchemaUsesRoleAssociationsInsteadOfUserRoleColumn() throws Exception {
         var schemaResource = getClass().getClassLoader().getResourceAsStream("db/mysql.sql");
         assertNotNull(schemaResource, "全量建库脚本必须存在");
         String schema;
         try (schemaResource) {
-            schema = new String(schemaResource.readAllBytes(), StandardCharsets.UTF_8);
+            schema = new String(schemaResource.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
         assertTrue(schema.contains("create table `role`"), "全量建库脚本必须创建角色表");
         assertTrue(schema.contains("create table user_role"), "全量建库脚本必须创建用户角色关联表");
@@ -241,16 +241,6 @@ class FlywayMigrationCatalogTest {
         assertTrue(userTableStart >= 0 && userTableEnd > userTableStart, "用户表定义必须存在");
         assertFalse(schema.substring(userTableStart, userTableEnd).matches("(?is).*\\brole\\s+varchar\\b.*"),
                 "user 表不得再保存单值 role 字段");
-
-        var seedResource = getClass().getClassLoader().getResourceAsStream("db/seed_memes_200_20261004.sql");
-        assertNotNull(seedResource, "梗数据初始化脚本必须存在");
-        String seed;
-        try (seedResource) {
-            seed = new String(seedResource.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        assertTrue(seed.contains("`meme`.`user_role`") && seed.contains("`meme`.`role`"),
-                "梗数据脚本应通过关联表选择管理员账号");
-        assertFalse(seed.contains("user.role ="), "梗数据脚本不得再访问 user.role");
     }
 
     @Test

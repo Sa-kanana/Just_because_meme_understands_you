@@ -2,7 +2,7 @@ USE `meme`;
 
 create table admin_knowledge
 (
-    id           bigint                             not null
+    id           bigint                             not null comment '知识文档主键'
         primary key,
     title        varchar(200)                       not null comment '标题',
     content      mediumtext                         not null comment '正文',
@@ -75,8 +75,8 @@ create table ai_chat_session
     user_id     bigint                                 not null comment '所属用户',
     title       varchar(128) default '新对话'          not null comment '会话标题',
     is_deleted  tinyint      default 0                 not null comment '0=未删 1=已删',
-    create_time datetime     default CURRENT_TIMESTAMP not null,
-    update_time datetime     default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP
+    create_time datetime     default CURRENT_TIMESTAMP not null comment '会话创建时间',
+    update_time datetime     default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '会话更新时间'
 )
     comment 'AI 搜索会话';
 
@@ -280,7 +280,11 @@ create table sensitive_word_dictionary_meta
 )
     comment '敏感词词库全局版本表' collate = utf8mb4_general_ci;
 
-insert into sensitive_word_dictionary_meta (id, version)
+-- 中文说明：以下种子值初始化词库单例元数据，版本号从0开始。
+insert into sensitive_word_dictionary_meta (
+    id,      -- 中文说明：元数据单例主键，目标字段 sensitive_word_dictionary_meta.id，固定值为1
+    version  -- 中文说明：全局词库版本，目标字段 sensitive_word_dictionary_meta.version，初始值为0
+)
 values (1, 0);
 
 create table user
@@ -316,7 +320,11 @@ create table `role`
 )
     comment '系统角色定义表';
 
-insert into `role` (code, name)
+-- 中文说明：来源为平台内置角色清单，分别写入角色代码和中文显示名称。
+insert into `role` (
+    code,  -- 中文说明：角色代码，目标字段 role.code
+    name   -- 中文说明：角色中文名称，目标字段 role.name
+)
 values ('USER', '普通用户'), ('ADMIN', '管理员'), ('SUPER_ADMIN', '超级管理员');
 
 create table user_role
@@ -362,13 +370,13 @@ create table user_auth
 
 create table user_comment_like
 (
-    id          bigint            not null
+    id          bigint            not null comment '评论点赞记录主键'
         primary key,
-    user_id     bigint            not null,
-    comment_id  bigint            not null,
-    is_deleted  tinyint default 0 not null,
-    create_time datetime          not null,
-    update_time datetime          not null,
+    user_id     bigint            not null comment '点赞用户ID',
+    comment_id  bigint            not null comment '被点赞评论ID',
+    is_deleted  tinyint default 0 not null comment '逻辑删除标记：0有效，1已取消',
+    create_time datetime          not null comment '点赞记录创建时间',
+    update_time datetime          not null comment '点赞记录更新时间',
     constraint uk_user_comment
         unique (user_id, comment_id)
 );
@@ -453,8 +461,8 @@ create table user_notification
     source_event_id bigint unsigned     null comment '来源 Outbox 事件 ID；为空表示非 Outbox 通知',
     is_read     tinyint      default 0  not null comment '0未读 1已读',
     is_deleted  tinyint      default 0  not null comment '0正常 1删除',
-    create_time datetime                not null,
-    update_time datetime                not null,
+    create_time datetime                not null comment '通知创建时间',
+    update_time datetime                not null comment '通知更新时间',
     unique key uk_user_notification_source_event (source_event_id)
 )
     comment '用户消息通知表';
@@ -495,7 +503,6 @@ create table user_stats
 (
     user_id        bigint        not null comment '关联user的id'
         primary key,
-    meme_count     int default 0 not null comment '发布梗数量（后续迁移清理的冗余字段）',
     like_received  int default 0 not null comment '获得的获赞总数',
     favorite_count int default 0 not null comment '收藏的梗数量',
     follow_count   int default 0 not null comment '关注人数',
@@ -524,9 +531,9 @@ create table user_stats_orphan_archive
 
 create table user_tag_follow
 (
-    user_id    bigint   not null,
-    tag_id     int      not null,
-    create_time datetime not null default CURRENT_TIMESTAMP,
+    user_id    bigint   not null comment '关注用户ID',
+    tag_id     int      not null comment '被关注的标签ID',
+    create_time datetime not null default CURRENT_TIMESTAMP comment '关注创建时间',
     primary key (user_id, tag_id),
     constraint fk_tag_follow_tag foreign key (tag_id) references meme_tag (id) on delete cascade,
     index idx_tag_follow_tag (tag_id, user_id)
@@ -610,3 +617,155 @@ create table meme_weekly_topic
     created_at        datetime     not null default current_timestamp comment '主题确定时间',
     primary key (iso_week_year, iso_week_number)
 ) engine=InnoDB default charset=utf8mb4 comment='每周热梗主题';
+
+-- 中文说明：以下结构构成 Flyway 2026101205 当前基准；历史版本迁移只供已有数据库校验与追溯。
+create table meme_edit_revision
+(
+    id                bigint auto_increment comment '修改稿记录ID'
+        primary key,
+    meme_id           bigint                                not null comment '被修改的梗ID',
+    editor_user_id    bigint                                not null comment '提交修改的作者用户ID',
+    base_content_hash char(64)                              not null comment '提交时正式内容的SHA-256摘要',
+    content_json      json                                  not null comment '梗名称、介绍、封面、标签和资源的修改内容快照',
+    status            varchar(16) default 'PENDING'         not null comment '审核状态：PENDING、APPROVED、REJECTED或CANCELED',
+    review_note       varchar(500)                          null comment '审核驳回或取消说明',
+    reviewed_by       bigint                                null comment '处理该修改稿的管理员用户ID',
+    created_at        datetime    default CURRENT_TIMESTAMP not null comment '修改稿提交时间',
+    reviewed_at       datetime                              null comment '修改稿审核完成时间',
+    key idx_meme_edit_revision_meme_status (meme_id, status),
+    key idx_meme_edit_revision_status_created (status, created_at, id)
+) engine=InnoDB default charset=utf8mb4 comment='梗内容修改审核记录';
+
+create table file_asset
+(
+    id                bigint auto_increment comment '文件资产主键'
+        primary key,
+    object_key        varchar(512)                          not null comment 'OSS对象键，不包含访问域名',
+    owner_id          bigint                                null comment '上传者用户ID，历史回填资产可为空',
+    scene             varchar(32)                           not null comment '上传业务场景，例如avatar、meme或comment',
+    original_filename varchar(255)                          null comment '客户端声明的原始文件名，仅用于展示和审计',
+    content_type      varchar(128)                          null comment '文件MIME类型，历史资产未知时为空',
+    file_size         bigint unsigned                       null comment '文件字节数，历史资产未知时为空',
+    status            varchar(24) default 'TEMP'             not null comment '资产状态：TEMP、ACTIVE、PENDING_DELETE、DELETING或DELETED',
+    uploaded_at       datetime                              null comment '服务端确认OSS上传成功的时间',
+    activated_at      datetime                              null comment '资产首次绑定业务引用的时间',
+    delete_after      datetime                              null comment '允许执行OSS删除的最早时间',
+    deleted_at        datetime                              null comment 'OSS对象确认删除的时间',
+    created_at        datetime    default CURRENT_TIMESTAMP not null comment '资产记录创建时间',
+    updated_at        datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '资产记录最后更新时间',
+    unique key uk_file_asset_object_key (object_key),
+    key idx_file_asset_status (status, delete_after, id),
+    key idx_file_asset_temp_created (status, created_at, id) comment '按资产状态和创建时间扫描过期TEMP对象'
+) engine=InnoDB default charset=utf8mb4 comment='OSS文件资产及其生命周期状态';
+
+create table file_asset_ref
+(
+    id         bigint auto_increment comment '文件资产引用主键'
+        primary key,
+    asset_id   bigint                                not null comment '被业务引用的文件资产ID',
+    biz_type   varchar(32)                           not null comment '引用方业务类型，例如USER、MEME或BANNER',
+    biz_id     bigint                                not null comment '引用方业务记录ID',
+    field_key  varchar(128)                          not null comment '业务字段位置，例如AVATAR、COVER或资源行ID',
+    created_at datetime    default CURRENT_TIMESTAMP not null comment '业务引用创建时间',
+    unique key uk_file_asset_ref_business_field (biz_type, biz_id, field_key),
+    key idx_file_asset_ref_asset (asset_id),
+    constraint fk_file_asset_ref_asset foreign key (asset_id) references file_asset (id) on delete restrict
+) engine=InnoDB default charset=utf8mb4 comment='文件资产到业务字段的多态引用';
+
+create table file_delete_task
+(
+    id              bigint auto_increment comment '文件删除任务主键'
+        primary key,
+    asset_id        bigint                                not null comment '待删除的文件资产ID',
+    object_key      varchar(512)                          not null comment '创建任务时的OSS对象键快照',
+    reason          varchar(64)                           not null comment '触发删除任务的业务原因',
+    status          varchar(16) default 'WAITING'          not null comment '任务状态：WAITING、PROCESSING、DONE、CANCELED或FAILED',
+    retry_count     tinyint unsigned default 0             not null comment '已执行的删除尝试次数',
+    next_attempt_at datetime                              not null comment '下一次允许执行任务的时间',
+    lease_owner     varchar(128)                          null comment '当前领取任务的应用实例标识',
+    lease_until     datetime                              null comment '当前任务租约过期时间',
+    started_at      datetime                              null comment '最近一次开始处理的时间',
+    finished_at     datetime                              null comment '任务完成、取消或终止的时间',
+    last_error      varchar(1000)                         null comment '最近一次删除失败的错误摘要',
+    created_at      datetime    default CURRENT_TIMESTAMP not null comment '任务创建时间',
+    updated_at      datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '任务最后更新时间',
+    key idx_file_delete_due (status, next_attempt_at, id),
+    key idx_file_delete_lease (status, lease_until, id),
+    key idx_file_delete_asset (asset_id),
+    constraint fk_file_delete_task_asset foreign key (asset_id) references file_asset (id) on delete restrict
+) engine=InnoDB default charset=utf8mb4 comment='事务内创建并由定时Worker处理的OSS删除任务';
+
+create table file_orphan_candidate
+(
+    id                bigint auto_increment comment 'OSS孤儿候选主键'
+        primary key,
+    object_key        varchar(512)                          not null comment 'OSS中发现但资产表未登记的对象键',
+    status            varchar(16) default 'DISCOVERED'      not null comment '候选状态：DISCOVERED、REFERENCED、QUEUED或SKIPPED',
+    first_seen_at     datetime                              not null comment '首次发现该对象的时间',
+    last_seen_at      datetime                              not null comment '最近一次仍发现该对象的时间',
+    confirmed_at      datetime                              null comment '满足最短复查间隔后的确认时间',
+    last_check_result varchar(500)                          null comment '最近一次对账检查结果摘要',
+    created_at        datetime    default CURRENT_TIMESTAMP not null comment '候选记录创建时间',
+    updated_at        datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '候选记录最后更新时间',
+    unique key uk_file_orphan_object_key (object_key),
+    key idx_file_orphan_review (status, first_seen_at, last_seen_at)
+) engine=InnoDB default charset=utf8mb4 comment='OSS与数据库对账发现的孤儿对象候选';
+
+create table file_asset_backfill_state
+(
+    backfill_key  varchar(64)                           not null comment '本次历史资产回填任务的唯一名称',
+    source_name   varchar(128)                          not null comment '当前扫描的数据源及业务字段名称',
+    last_source_id bigint                               null comment '当前数据源最近完成回填的主键游标',
+    status        varchar(16) default 'PENDING'          not null comment '回填状态：PENDING、RUNNING、COMPLETED或FAILED',
+    lease_owner   varchar(128)                          null comment '当前持有回填租约的应用实例标识',
+    lease_until   datetime                              null comment '回填租约过期时间',
+    started_at    datetime                              null comment '本次回填开始时间',
+    completed_at  datetime                              null comment '全部数据源回填完成时间',
+    last_error    varchar(1000)                         null comment '最近一次回填失败的错误摘要',
+    updated_at    datetime    default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '回填状态最后更新时间',
+    primary key (backfill_key, source_name),
+    key idx_file_backfill_status (status, lease_until, backfill_key)
+) engine=InnoDB default charset=utf8mb4 comment='历史文件资产回填检查点和多实例执行租约';
+
+create table meme_vector_reconciliation_job
+(
+    id               bigint auto_increment comment '校准任务主键'
+        primary key,
+    active_slot      tinyint                               null comment '活动任务唯一占位；活动任务为1，终态为空',
+    status           varchar(16) default 'PENDING'          not null comment '任务状态：PENDING、RUNNING、FAILED或COMPLETED',
+    phase            varchar(20) default 'SYNC_PUBLISHED'   not null comment '当前阶段：同步已发布梗或清理无效向量',
+    published_cursor bigint      default 0                  not null comment 'Java已发布梗扫描到的最后一个梗ID',
+    vector_cursor    varchar(64)                           null comment 'MemeAgent向量ID分页的下一页游标',
+    published_scanned bigint     default 0                  not null comment 'Java已扫描的已发布梗数量',
+    upsert_queued    bigint      default 0                  not null comment '已写入outbox的梗索引更新事件数量',
+    vector_scanned   bigint      default 0                  not null comment '已扫描的向量库梗ID数量',
+    removal_queued   bigint      default 0                  not null comment '已写入outbox的无效向量删除事件数量',
+    created_by       bigint                                not null comment '发起校准任务的管理员用户ID',
+    lease_owner      varchar(64)                           null comment '当前处理任务的worker实例标识',
+    lease_until      datetime(3)                           null comment '当前worker租约到期时间',
+    failure_stage    varchar(64)                           null comment '失败时保留的安全阶段标识',
+    created_at       datetime(3) default CURRENT_TIMESTAMP(3) not null comment '任务创建时间',
+    updated_at       datetime(3) default CURRENT_TIMESTAMP(3) not null on update CURRENT_TIMESTAMP(3) comment '任务最后更新时间',
+    started_at       datetime(3)                           null comment '任务首次开始处理时间',
+    finished_at      datetime(3)                           null comment '任务失败或完成时间',
+    unique key uq_mvrj_active_slot (active_slot),
+    key idx_mvrj_status_lease (status, lease_until, id)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_0900_ai_ci comment='管理员手动触发的梗向量库双向校准任务';
+
+-- 中文说明：新库跳过历史标签迁移，因此在当前基准中直接初始化标准标签目录。
+-- 中文说明：来源为平台维护的标准标签清单；各目标列逐项注释，相关梗数量均从0开始。
+insert into meme_tag (
+    name,             -- 中文说明：标准标签名称，目标字段 meme_tag.name
+    category,         -- 中文说明：标签分类代码，目标字段 meme_tag.category
+    sort_order,       -- 中文说明：分类内展示顺序，目标字段 meme_tag.sort_order
+    related_quantity  -- 中文说明：标签关联梗数量，目标字段 meme_tag.related_quantity，初始值为0
+)
+values
+    ('B站', 'SOURCE', 1, 0), ('抖音', 'SOURCE', 2, 0), ('微博', 'SOURCE', 3, 0), ('贴吧', 'SOURCE', 4, 0), ('知乎', 'SOURCE', 5, 0), ('小红书', 'SOURCE', 6, 0), ('游戏', 'SOURCE', 7, 0), ('动漫', 'SOURCE', 8, 0), ('影视', 'SOURCE', 9, 0),
+    ('谐音', 'FORMAT', 1, 0), ('空耳', 'FORMAT', 2, 0), ('缩写', 'FORMAT', 3, 0), ('表情包', 'FORMAT', 4, 0), ('名场面', 'FORMAT', 5, 0), ('句式梗', 'FORMAT', 6, 0), ('热词', 'FORMAT', 7, 0), ('弹幕', 'FORMAT', 8, 0), ('鬼畜', 'FORMAT', 9, 0), ('二创', 'FORMAT', 10, 0), ('口头禅', 'FORMAT', 11, 0), ('梗图', 'FORMAT', 12, 0),
+    ('搞笑', 'EMOTION', 1, 0), ('抽象', 'EMOTION', 2, 0), ('无语', 'EMOTION', 3, 0), ('震惊', 'EMOTION', 4, 0), ('破防', 'EMOTION', 5, 0), ('治愈', 'EMOTION', 6, 0), ('怀旧', 'EMOTION', 7, 0), ('阴阳', 'EMOTION', 8, 0), ('尴尬', 'EMOTION', 9, 0), ('悲伤', 'EMOTION', 10, 0), ('热血', 'EMOTION', 11, 0), ('可爱', 'EMOTION', 12, 0), ('自嘲', 'EMOTION', 13, 0),
+    ('聊天', 'SCENARIO', 1, 0), ('评论区', 'SCENARIO', 2, 0), ('校园', 'SCENARIO', 3, 0), ('职场', 'SCENARIO', 4, 0), ('恋爱', 'SCENARIO', 5, 0), ('友情', 'SCENARIO', 6, 0), ('追星', 'SCENARIO', 7, 0), ('消费', 'SCENARIO', 8, 0), ('旅游', 'SCENARIO', 9, 0), ('考试', 'SCENARIO', 10, 0), ('加班', 'SCENARIO', 11, 0), ('社交', 'SCENARIO', 12, 0),
+    ('人物', 'CONTENT', 1, 0), ('明星', 'CONTENT', 2, 0), ('动物', 'CONTENT', 3, 0), ('猫', 'CONTENT', 4, 0), ('二次元', 'CONTENT', 5, 0), ('游戏角色', 'CONTENT', 6, 0), ('生活', 'CONTENT', 7, 0), ('社会热点', 'CONTENT', 8, 0),
+    ('经典老梗', 'ERA', 1, 0), ('00年代', 'ERA', 2, 0), ('2010-2015', 'ERA', 3, 0), ('2016-2020', 'ERA', 4, 0), ('2021-2023', 'ERA', 5, 0), ('2024', 'ERA', 6, 0), ('2025', 'ERA', 7, 0), ('2026', 'ERA', 8, 0),
+    ('全网爆火', 'PROPAGATION', 1, 0), ('B站热门', 'PROPAGATION', 2, 0), ('短视频热门', 'PROPAGATION', 3, 0), ('年度热词', 'PROPAGATION', 4, 0), ('弹幕梗', 'PROPAGATION', 5, 0), ('地域梗', 'PROPAGATION', 6, 0), ('方言梗', 'PROPAGATION', 7, 0), ('圈内梗', 'PROPAGATION', 8, 0), ('过气梗', 'PROPAGATION', 9, 0),
+    ('夸赞', 'TONE', 1, 0), ('吐槽', 'TONE', 2, 0), ('反讽', 'TONE', 3, 0), ('调侃', 'TONE', 4, 0), ('鼓励', 'TONE', 5, 0), ('拒绝', 'TONE', 6, 0), ('惊讶', 'TONE', 7, 0), ('抱怨', 'TONE', 8, 0), ('嘲讽', 'TONE', 9, 0);

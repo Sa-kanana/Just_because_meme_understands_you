@@ -1,0 +1,14 @@
+# 部署脚本必须使用 LF，避免 Windows 提交后在 Linux 出现 bash\r 等错误。
+deploy/*.sh text eol=lf
+# Docker 与 Compose 配置统一使用 LF，保持跨系统构建一致。
+.dockerignore text eol=lf
+deploy/.gitignore text eol=lf
+deploy/Dockerfile.* text eol=lf
+deploy/*.yml text eol=lf
+deploy/*.example text eol=lf
+# Nginx 配置和 GitHub Actions 内嵌 Bash 脚本统一使用 LF。
+deploy/nginx/**/*.conf text eol=lf
+.github/workflows/*.yml text eol=lf
+# 部署文档和验证脚本也使用 LF，便于直接在服务器复制和执行。
+deploy/*.md text eol=lf
+tests/deployment/*.py text eol=lf

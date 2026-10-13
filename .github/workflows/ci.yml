@@ -12,6 +12,40 @@ permissions:
   contents: read # 拉取源码与锁文件
 
 jobs:
+  deployment:
+    name: 部署配置与失败保护检查 # 检查交付到 Linux 服务器的部署文件
+    runs-on: ubuntu-latest # Bash 与 Docker Compose 已由 Runner 提供
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v7 # 拉取当前提交的部署脚本和测试
+      - name: 配置 Python
+        uses: actions/setup-python@v6 # 使用标准库 unittest，无需安装第三方依赖
+        with:
+          python-version: "3.11" # 与 MemeAgent 使用的最低 Python 版本一致
+      - name: 验证部署脚本语法与失败保护
+        run: | # 测试不读取生产密钥、不连接数据库、不部署到服务器
+          bash -n deploy/deploy.sh
+          python -m unittest discover -s tests/deployment -v
+      - name: 校验 Compose 服务与模板
+        env:
+          MYSQL_ROOT_PASSWORD: ci-deploy-root # 满足必填项的一次性测试值
+          MYSQL_APP_PASSWORD: ci-deploy-app # 测试 MySQL 应用密码
+          REDIS_PASSWORD: ci-deploy-redis # 测试 Redis 密码
+          POSTGRES_PASSWORD: 0123456789abcdef0123456789abcdef # URL 安全的测试 PostgreSQL 密码
+          MEME_AGENT_API_KEY: ci-deploy-internal # 测试服务间鉴权密钥
+          JWT_SECRET: ci-deploy-jwt-key-with-at-least-32-bytes # 测试 JWT 密钥
+          OSS_ACCESS_KEY_ID: ci-deploy-oss-id # 测试 OSS AccessKey ID
+          OSS_ACCESS_KEY_SECRET: ci-deploy-oss-secret # 测试 OSS AccessKey Secret
+          OSS_BUCKET_NAME: ci-deploy-bucket # 测试 OSS Bucket 名称
+          OPENAI_API_KEY: ci-deploy-model # 测试模型服务密钥
+        run: docker compose --env-file deploy/env.production.example -f deploy/docker-compose.yml config --quiet # 只校验，不输出实际配置或启动服务
+      - name: 使用实际 Nginx 镜像验证配置
+        run: | # 仅创建一次性语法检查容器，不启动网站或数据库、不发布端口
+          docker run --rm --network none \
+            --volume "$PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            --volume "$PWD/deploy/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:stable-alpine nginx -t
+
   backend:
     name: Java 后端测试与迁移 # 后端检查任务名称
     runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux runner

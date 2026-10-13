@@ -1,5 +1,4 @@
 # 本地密钥与构建产物，勿提交
 .env
-meme-agent.env
-artifacts/
-!artifacts/.gitkeep
+# 历史运维命令可能在部署目录创建备份；备份不提交，避免数据泄露或阻止 Actions 更新。
+backups/

@@ -8,6 +8,12 @@
 **/.idea
 **/.vscode
 tmp-apifox
+# 排除仅用于本地或 CI 验证的前端复制目录，避免上传重复依赖和静态产物。
+.ci-validation-*
+# 排除 Superpowers 会话缓存，不将计划和过程文件放入构建上下文。
+.superpowers
+# 本地数据库备份不进入镜像构建上下文。
+deploy/backups
 
 # 排除本地依赖与已有构建产物；容器构建会在镜像内重新安装和编译。
 **/node_modules
@@ -15,7 +21,10 @@ tmp-apifox
 **/dist
 **/build
 **/out
-deploy/artifacts
+# 排除 Python 虚拟环境和测试覆盖率输出；依赖在镜像内安装。
+**/.venv
+**/venv
+**/htmlcov
 
 # 排除所有本地密钥文件，只保留不含真实凭据的示例模板。
 .env
@@ -23,7 +32,6 @@ deploy/artifacts
 **/.env.*
 !**/.env.example
 MemeAgent/.env
-deploy/meme-agent.env
 **/application-dev.yml
 **/application-local.yml
 

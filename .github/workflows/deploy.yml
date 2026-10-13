@@ -23,7 +23,7 @@ jobs:
   deploy:
     name: 通过 SSH 部署到服务器 # 部署任务在运行列表显示的名称
     runs-on: ubuntu-latest # 使用 GitHub 托管的 Linux Runner
-    timeout-minutes: 30 # 限制 SSH、镜像构建和服务健康检查的最长时间
+    timeout-minutes: 90 # 小内存服务器首次串行构建和网络下载可能较慢
     steps:
       - name: 校验 SSH 配置并运行服务器部署脚本
         env:
@@ -55,6 +55,9 @@ jobs:
             echo '部署分支名包含不支持的字符。' >&2
             exit 1
           fi
+
+          # 用 Git 自身规则进一步拒绝 ..、重复斜杠和其他无效分支名。
+          git check-ref-format --branch "$DEPLOY_REF" >/dev/null
 
           # 创建仅当前 Runner 可读的 SSH 私钥和主机校验文件。
           install -m 700 -d "$HOME/.ssh"
@@ -93,7 +96,8 @@ jobs:
           fi
 
           # 从 origin 获取目标版本，并在服务器上快进更新专用部署工作区。
-          git -C "$deployment_path" fetch --prune origin "$deployment_ref"
+          # 显式更新远程跟踪引用，确保首次部署新分支时 origin/分支 已存在。
+          git -C "$deployment_path" fetch origin "+refs/heads/$deployment_ref:refs/remotes/origin/$deployment_ref"
           if git -C "$deployment_path" show-ref --verify --quiet "refs/heads/$deployment_ref"; then
             git -C "$deployment_path" switch "$deployment_ref"
           else
@@ -107,6 +111,6 @@ jobs:
             echo '服务器 deploy/.env 不存在，请先复制模板并填写生产密钥。' >&2
             exit 1
           fi
-          chmod +x deploy.sh
-          ./deploy.sh
+          # 直接通过 Bash 执行，避免 chmod 使 Git 工作区变脏并阻止下一次部署。
+          bash ./deploy.sh
           REMOTE_SCRIPT

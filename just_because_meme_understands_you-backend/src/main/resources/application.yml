@@ -84,8 +84,8 @@ spring:
     enabled: true
     # 首次接入已有非空 schema 时自动记录初始基线
     baseline-on-migrate: true
-    # mysql.sql 代表的既有 schema 基线；后续版本号必须大于该值
-    baseline-version: "20261003"
+    # mysql.sql 代表的当前 schema 基线；后续版本号必须大于该值
+    baseline-version: "2026101205"
     # 仅扫描专用迁移目录，避免把 mysql.sql 和种子数据当成版本迁移
     locations: classpath:db/migration
     # 启动时校验历史迁移文件校验和

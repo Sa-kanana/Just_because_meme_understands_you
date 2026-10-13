@@ -4,6 +4,7 @@ import {
   markAuthErrorHandled,
   isAuthErrorHandled,
 } from '@/utils/authSession'
+import { handleAuthErrorIfExpired } from './requestBusinessError.mjs'
 
 const configuredBaseUrl = process.env.VUE_APP_API_BASE_URL || '/api'
 const normalizedBaseUrl = configuredBaseUrl.replace(/\/+$/, '')
@@ -69,13 +70,12 @@ function rejectBusinessError(response, payload) {
   err.code = resData.code != null ? Number(resData.code) : undefined
   err.data = resData
   err.status = response.status
-  if (
-    isAuthExpiredError(err) &&
-    typeof authLifecycle.handleFinalLogout === 'function'
-  ) {
-    authLifecycle.handleFinalLogout(err)
-  }
-  return Promise.reject(markAuthErrorHandled(err))
+  const handledError = handleAuthErrorIfExpired(err, {
+    isAuthExpiredError,
+    handleFinalLogout: authLifecycle.handleFinalLogout,
+    markAuthErrorHandled,
+  })
+  return Promise.reject(handledError)
 }
 
 function normalizeResponse(response) {

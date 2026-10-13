@@ -1,12 +1,14 @@
 # Docker Compose 单机部署
 
+**针对你的 Alibaba Cloud Linux 4、2 核 / 2 GiB、公网 IP `8.148.12.121` 的逐步操作，见 [服务器部署流程](SERVER_DEPLOYMENT.md)。** 包含安装、Swap、本地 `.env` 上传、数据导入、管理员初始化、验收、备份和 PostgreSQL 大版本升级。
+
 本目录将项目运行所需服务统一编排到一台 Linux 服务器：MySQL、Redis、PostgreSQL/pgvector、Spring Boot、FastAPI MemeAgent、用户端 Vue、管理端 Vue 和 Nginx。外部只开放 Nginx 的 HTTP 端口；数据库、Java 和 FastAPI 均不映射到宿主机端口。
 
 用户端 Vue 与管理端 Vue 在镜像构建时从源码编译，由 Nginx 分别托管在 `/` 和 `/admin/`。Nginx 将 `/api/` 转发至 Spring Boot，并关闭 SSE 响应缓冲。
 
 ## 服务器要求
 
-- Linux 服务器，建议 4 核 CPU、8 GB 内存或以上；Java 默认堆上限为 1 GiB，可在 `.env` 中调节 `JAVA_OPTS`。
+- Linux 服务器。默认参数面向 2 核 / 2 GiB 的低流量试运行，需额外配置 4 GiB Swap；长期运行建议至少 4 GiB 内存。默认 Java 堆上限为 320 MiB，容器总内存上限为 640 MiB；大文件解析、大量向量入库或并发请求需要扩容并调整 `.env`。
 - Docker Engine 与 Docker Compose v2（需支持 `docker compose up --wait`）。
 - 防火墙只开放你配置的 `HTTP_PORT`；不要开放 MySQL 3306、Redis 6379、PostgreSQL 5432、Java 8080 或 FastAPI 8000。
 - 外部模型服务和阿里云 OSS 的 API 凭据。
@@ -32,11 +34,10 @@ chmod 600 .env
 启动并等待所有容器通过健康检查：
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh
+bash ./deploy.sh
 ```
 
-脚本会先检查必填项、安静校验 Compose 配置，再构建 Java、MemeAgent、用户端和管理端镜像，最后启动全部服务。访问 `http://服务器地址/`，管理端访问 `http://服务器地址/admin/`。如将 `HTTP_PORT` 改成 `8081`，访问地址相应改为 `http://服务器地址:8081/`。
+脚本会先检查必填项、安静校验 Compose 配置，再串行构建 Java、MemeAgent、用户端和管理端镜像并验证 Nginx 语法，最后启动全部服务。访问 `http://服务器地址/`，管理端访问 `http://服务器地址/admin/`。如将 `HTTP_PORT` 改成 `8081`，访问地址相应改为 `http://服务器地址:8081/`。
 
 ## 服务和数据
 
@@ -47,7 +48,7 @@ chmod +x deploy.sh
 | MemeAgent | FastAPI 检索、生成与向量入库 | 无 | PostgreSQL |
 | MySQL 8.4 | 项目业务库 `meme` | 无 | `mysql-data` |
 | Redis 7 | 限流、缓存与任务状态 | 无 | `redis-data` |
-| PostgreSQL 16 + pgvector | HNSW 梗向量与知识向量 | 无 | `postgres-data` |
+| PostgreSQL 17 + pgvector | HNSW 梗向量与知识向量 | 无 | `postgres-data` |
 
 首次创建 MySQL 数据卷时，容器会导入后端的 `mysql.sql` 基线结构；Spring Boot 随后通过 Flyway 应用未执行迁移。MySQL 基线脚本只会在空数据卷初始化时运行。MemeAgent 首次启动会创建所需的 pgvector 扩展、表和索引。
 
@@ -63,9 +64,10 @@ docker compose up -d
 示例备份命令：
 
 ```bash
-mkdir -p backups
-docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction meme' > backups/meme-$(date +%F).sql
-docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/memeagent-vector-$(date +%F).sql
+mkdir -p /var/backups/meme
+chmod 700 /var/backups/meme
+docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF meme' > /var/backups/meme/meme-$(date +%F).sql
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" --no-owner --no-acl "$POSTGRES_DB"' > /var/backups/meme/memeagent-vector-$(date +%F).sql
 ```
 
 此部署会创建全新的数据库卷，不会自动搬运你电脑上已有的 MySQL 业务数据或 PostgreSQL 向量数据。若要带历史数据上线，先为当前数据库做备份，再按当前代码版本制定恢复步骤；向量索引可在数据恢复后重新回填。
@@ -81,7 +83,7 @@ docker compose logs -f backend meme-agent nginx mysql redis postgres
 
 # 拉取代码后重新构建并更新容器
 git pull
-./deploy.sh
+bash ./deploy.sh
 
 # 停止服务但保留数据卷
 docker compose down

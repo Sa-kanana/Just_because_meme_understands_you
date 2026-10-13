@@ -1,11 +1,38 @@
 # 单机生产部署拓扑：数据库、Java、FastAPI 与 Nginx 均由本文件统一启动。
 name: just-because-meme
 
+# 所有服务使用有容量上限的日志文件，避免 40 GiB 系统盘被日志持续写满。
+x-runtime-defaults: &runtime-defaults
+  # 由 Docker 的轻量 init 回收子进程并转发停止信号。
+  init: true
+  # Docker 日志轮转策略。
+  logging:
+    # 使用 Docker 内置 JSON 日志驱动。
+    driver: json-file
+    # 日志文件的轮转容量和数量。
+    options:
+      # 每个日志文件最多 10 MiB。
+      max-size: "10m"
+      # 每个容器最多保留三份日志。
+      max-file: "3"
+
 services:
   # 业务数据库；首次初始化时导入项目当前基线结构，后续结构变化由 Flyway 管理。
   mysql:
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
     image: mysql:8.4
     restart: unless-stopped
+    # 小内存试运行上限；正式环境可在 .env 中提高。
+    mem_limit: ${MYSQL_MEMORY_LIMIT:-384m}
+    # 控制数据库缓冲池、连接数量和性能采集开销。
+    command:
+      # InnoDB 数据缓冲池大小。
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}
+      # MySQL 连接总数上限。
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-60}
+      # 小内存试运行关闭性能采集；扩容后可改为 ON。
+      - --performance-schema=${MYSQL_PERFORMANCE_SCHEMA:-OFF}
     environment:
       # 初始化业务库名称；mysql.sql 基线也固定使用 meme。
       MYSQL_DATABASE: meme
@@ -39,12 +66,17 @@ services:
 
   # 限流与缓存使用的 Redis，启用 AOF 并设置访问密码。
   redis:
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
     image: redis:7-alpine
     restart: unless-stopped
+    # Redis 容器上限需大于数据上限，为连接缓冲和 AOF 留出空间。
+    mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
     environment:
       # Redis 密码由 deploy/.env 提供，不写入镜像或 Compose 文件。
       REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 deploy/.env 中设置 REDIS_PASSWORD}
-    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    # 达到内存上限时拒绝写入，不静默淘汰任务和登录状态。
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY:-80mb} --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
     volumes:
       # 持久化 Redis AOF 文件，容器重建后保留缓存数据。
       - redis-data:/data
@@ -65,8 +97,25 @@ services:
 
   # MemeAgent 的独立向量数据库，镜像内预装 pgvector 扩展。
   postgres:
-    image: pgvector/pgvector:pg16
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
+    # 应用连接参数使用 transaction_timeout，要求 PostgreSQL 17 或以上。
+    image: pgvector/pgvector:pg17
     restart: unless-stopped
+    # 大量向量入库前应提高服务器内存及该上限。
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-256m}
+    # 控制共享缓冲区和连接数量，适配小内存试运行环境。
+    command:
+      # PostgreSQL 服务主进程。
+      - postgres
+      # 后续参数设置共享缓冲区容量。
+      - -c
+      # 共享缓冲区容量。
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-48MB}
+      # 后续参数设置连接总数。
+      - -c
+      # 连接上限必须大于 MemeAgent 连接池上限。
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-30}
     environment:
       # PostgreSQL 业务账号；仅供 MemeAgent 内部连接。
       POSTGRES_USER: ${POSTGRES_USER:-memeagent}
@@ -96,12 +145,16 @@ services:
 
   # Python FastAPI 检索与生成服务。
   meme-agent:
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
     build:
       # 以仓库根目录为构建上下文，读取 MemeAgent 源码。
       context: ..
       # 使用 Python 3.11 多阶段运行镜像。
       dockerfile: deploy/Dockerfile.agent
     restart: unless-stopped
+    # FastAPI 单进程内存上限；大规模知识索引时应提高。
+    mem_limit: ${MEME_AGENT_MEMORY_LIMIT:-384m}
     environment:
       # 运行环境关闭开发文档页面。
       APP_ENV: prod
@@ -118,13 +171,13 @@ services:
       # 构造 PostgreSQL 内网连接地址；密码请使用 openssl rand -hex 生成。
       VECTOR_DATABASE_URL: postgresql://${POSTGRES_USER:-memeagent}:${POSTGRES_PASSWORD:?请在 deploy/.env 中设置 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-memeagent_vector}
       # 向量维度必须与当前 embedding 模型输出一致。
-      VECTOR_EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-1024}
+      VECTOR_EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-1536}
       # 梗向量检索的最低余弦相似度。
       VECTOR_MIN_SIMILARITY: ${VECTOR_MIN_SIMILARITY:-0.6322177756757377}
       # 每个服务进程的 PostgreSQL 最小连接数。
       VECTOR_POOL_MIN_SIZE: ${VECTOR_POOL_MIN_SIZE:-1}
       # 每个服务进程的 PostgreSQL 最大连接数。
-      VECTOR_POOL_MAX_SIZE: ${VECTOR_POOL_MAX_SIZE:-10}
+      VECTOR_POOL_MAX_SIZE: ${VECTOR_POOL_MAX_SIZE:-5}
       # 获取 PostgreSQL 连接的最长等待秒数。
       VECTOR_POOL_ACQUIRE_TIMEOUT_SECONDS: ${VECTOR_POOL_ACQUIRE_TIMEOUT_SECONDS:-5}
       # 单条 PostgreSQL 命令超时秒数。
@@ -140,13 +193,15 @@ services:
       # 对话模型名称。
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
       # 向量 embedding 模型名称。
-      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-qwen3.7-text-embedding-flash}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       # 单次模型请求超时秒数。
       LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-35}
       # 模型调用失败后额外重试次数。
       LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
       # 是否请求流式 token 使用量统计。
       LLM_STREAM_USAGE: ${LLM_STREAM_USAGE:-false}
+      # FastAPI 未收到单次请求上限时的回答 Token 上限，与 Java 侧保持一致。
+      MAX_OUTPUT_TOKENS: ${MEME_AI_MAX_OUTPUT_TOKENS:-512}
       # 是否启用 LangSmith 追踪。
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
       # LangSmith 追踪 API 密钥。
@@ -170,7 +225,7 @@ services:
       # 单份知识正文最大字符数。
       KNOWLEDGE_MAX_CONTENT_CHARS: ${KNOWLEDGE_MAX_CONTENT_CHARS:-1000000}
       # 知识向量 embedding 并行批次数。
-      KNOWLEDGE_EMBEDDING_BATCH_CONCURRENCY: ${KNOWLEDGE_EMBEDDING_BATCH_CONCURRENCY:-2}
+      KNOWLEDGE_EMBEDDING_BATCH_CONCURRENCY: ${KNOWLEDGE_EMBEDDING_BATCH_CONCURRENCY:-1}
       # 未完成知识索引检查点保留天数。
       KNOWLEDGE_EMBEDDING_CHECKPOINT_TTL_DAYS: ${KNOWLEDGE_EMBEDDING_CHECKPOINT_TTL_DAYS:-7}
       # 搜索 Agent 整体请求最长秒数。
@@ -201,7 +256,7 @@ services:
         condition: service_healthy
     healthcheck:
       # 使用 Python 标准库检查公开健康端点及向量数据库连接状态。
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import json,urllib.request; body=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)); assert body.get('status') == 'ok' and body.get('vector_db') is True"]
       # FastAPI 每 15 秒检查一次。
       interval: 15s
       # 单次探活最多等待 8 秒。
@@ -218,31 +273,41 @@ services:
 
   # Spring Boot 单实例；结构迁移由 Spring 启动时的 Flyway 自动执行。
   backend:
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
     build:
       # 以仓库根目录为构建上下文，读取 Java 模块源码。
       context: ..
       # 使用 Java 17 多阶段构建 Dockerfile。
       dockerfile: deploy/Dockerfile.backend
     restart: unless-stopped
+    # JVM 堆之外还需要线程栈、元空间与直接内存，容器上限高于 JAVA_OPTS 堆上限。
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-640m}
     environment:
       # 激活生产配置文件。
       SPRING_PROFILES_ACTIVE: prod
       # 限定 Java 堆内存，避免单实例在无容器内存限制时占满整台服务器。
-      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx1024m -XX:+UseContainerSupport}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms128m -Xmx320m -XX:+UseContainerSupport}
       # Spring Boot 容器监听端口。
       SERVER_PORT: "8080"
       # 业务 MySQL JDBC 连接地址，固定连接项目库 meme。
-      DB_URL: "jdbc:mysql://mysql:3306/meme?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true"
+      DB_URL: "jdbc:mysql://mysql:3306/meme?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true"
       # Spring Boot 的 MySQL 专用账号。
       DB_USERNAME: ${MYSQL_APP_USER:-meme_app}
       # Spring Boot 的 MySQL 专用密码。
       DB_PASSWORD: ${MYSQL_APP_PASSWORD:?请在 deploy/.env 中设置 MYSQL_APP_PASSWORD}
+      # 小内存服务器限制数据库连接池规模，避免每条连接占用过多数据库内存。
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_POOL_MAX_SIZE:-5}
+      # 连接池初始空闲连接数，不应超过上方连接池上限。
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${DB_POOL_MIN_IDLE:-1}
       # Redis 容器服务名。
       REDIS_HOST: redis
       # Redis 容器内端口。
       REDIS_PORT: "6379"
       # Redis 访问密码。
       REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 deploy/.env 中设置 REDIS_PASSWORD}
+      # Spring Redis/Redisson 自动配置读取此标准属性；仅设置 REDIS_PASSWORD 不会绑定密码。
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 deploy/.env 中设置 REDIS_PASSWORD}
       # SMTP 邮件服务器域名。
       MAIL_HOST: ${MAIL_HOST:-smtp.qq.com}
       # SMTP SSL 端口。
@@ -314,7 +379,7 @@ services:
       # Java 等待上游连接的最长毫秒数。
       MEME_AGENT_PENDING_ACQUIRE_TIMEOUT_MS: ${MEME_AGENT_PENDING_ACQUIRE_TIMEOUT_MS:-10000}
       # 向量知识索引并发任务数。
-      MEME_AGENT_KNOWLEDGE_INDEX_CONCURRENCY: ${MEME_AGENT_KNOWLEDGE_INDEX_CONCURRENCY:-2}
+      MEME_AGENT_KNOWLEDGE_INDEX_CONCURRENCY: ${MEME_AGENT_KNOWLEDGE_INDEX_CONCURRENCY:-1}
       # AI 对话上下文最大 token 估算值。
       MEME_AI_MAX_HISTORY_TOKENS: ${MEME_AI_MAX_HISTORY_TOKENS:-3000}
       # AI 回答最大 token 数。
@@ -334,7 +399,7 @@ services:
       # 管理端知识正文最大字符数。
       KNOWLEDGE_UPLOAD_MAX_CONTENT_CHARS: ${KNOWLEDGE_UPLOAD_MAX_CONTENT_CHARS:-1000000}
       # 知识文件同时解析的请求数上限。
-      KNOWLEDGE_UPLOAD_MAX_CONCURRENT_REQUESTS: ${KNOWLEDGE_UPLOAD_MAX_CONCURRENT_REQUESTS:-2}
+      KNOWLEDGE_UPLOAD_MAX_CONCURRENT_REQUESTS: ${KNOWLEDGE_UPLOAD_MAX_CONCURRENT_REQUESTS:-1}
       # 知识文件上传等待并发槽位的最长毫秒数。
       KNOWLEDGE_UPLOAD_ADMISSION_WAIT_MS: ${KNOWLEDGE_UPLOAD_ADMISSION_WAIT_MS:-30000}
       # OSS 临时文件生命周期清理开关。
@@ -400,8 +465,8 @@ services:
       meme-agent:
         condition: service_healthy
     healthcheck:
-      # 检查 Spring Boot 是否已返回 HTTP 响应；404 也表示 HTTP 服务已就绪。
-      test: ["CMD-SHELL", "curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/ | grep -Eq '^[1-5][0-9][0-9]$'"]
+      # 请求公开标签 API；HTTP 成功且业务 code=1 才算就绪，避免把错误包装响应当成健康。
+      test: ["CMD-SHELL", "body=$$(curl --fail --silent --show-error --max-time 8 http://127.0.0.1:8080/v1/tags) && printf '%s' \"$$body\" | grep -Eq '\"code\"[[:space:]]*:[[:space:]]*1[[:space:]]*[,}]'"]
       # Spring Boot 每 15 秒探活一次。
       interval: 15s
       # 单次探活最多等待 10 秒。
@@ -421,12 +486,16 @@ services:
 
   # Nginx 是唯一映射到服务器端口的容器，同时托管用户端和管理端 Vue 页面。
   nginx:
+    # 复用 init 和日志轮转配置。
+    <<: *runtime-defaults
     build:
       # 以仓库根目录为构建上下文，读取两个 Vue 模块和 Nginx 配置。
       context: ..
       # 使用 Node 多阶段构建前端，再复制到 Nginx 镜像。
       dockerfile: deploy/Dockerfile.nginx
     restart: unless-stopped
+    # 静态资源和 API 转发的容器内存上限。
+    mem_limit: ${NGINX_MEMORY_LIMIT:-64m}
     ports:
       # 唯一公开入口；可在 deploy/.env 中设置 HTTP_PORT 改变宿主机端口。
       - "${HTTP_PORT:-80}:80"
@@ -457,6 +526,8 @@ volumes:
   redis-data:
   # PostgreSQL/pgvector 数据卷。
   postgres-data:
+    # 大版本升级时指定新卷名，保留旧数据卷用于恢复；常规更新不改该值。
+    name: ${POSTGRES_VOLUME_NAME:-just-because-meme_postgres-data}
 
 # 网络分层限制 Nginx 只访问 Java，数据库不发布宿主机端口。
 networks:

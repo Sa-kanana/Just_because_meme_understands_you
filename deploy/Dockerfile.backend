@@ -4,12 +4,15 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 # Maven 项目在仓库根目录下的独立后端模块中构建。
 WORKDIR /workspace
 
+# 限制 Maven 构建堆内存，避免与服务器上已有业务容器争抢全部内存。
+ENV MAVEN_OPTS="-Xmx512m"
+
 # 先复制依赖描述文件，使源码变化时仍可复用 Maven 依赖缓存。
 COPY just_because_meme_understands_you-backend/pom.xml ./pom.xml
 
 # 复制 Spring Boot 源码并生成可执行 Jar；镜像构建阶段不运行测试。
 COPY just_because_meme_understands_you-backend/src ./src
-RUN mvn --batch-mode --no-transfer-progress -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 mvn --batch-mode --no-transfer-progress -DskipTests package
 
 # 运行阶段只保留 Java 17 JRE 与构建产物。
 FROM eclipse-temurin:17-jre-jammy AS runtime
