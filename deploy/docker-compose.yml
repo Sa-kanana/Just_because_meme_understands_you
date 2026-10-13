@@ -152,6 +152,9 @@ services:
       context: ..
       # 使用 Python 3.11 多阶段运行镜像。
       dockerfile: deploy/Dockerfile.agent
+      # 通过服务器 .env 指定可访问的 pip 源；未配置时使用阿里云 PyPI 镜像。
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
     restart: unless-stopped
     # FastAPI 单进程内存上限；大规模知识索引时应提高。
     mem_limit: ${MEME_AGENT_MEMORY_LIMIT:-384m}

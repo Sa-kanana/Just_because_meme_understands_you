@@ -14,9 +14,12 @@ COPY MemeAgent/pyproject.toml MemeAgent/README.md ./
 COPY MemeAgent/app ./app
 COPY MemeAgent/scripts ./scripts
 
+# 支持按服务器网络环境替换 Python 包源；默认使用阿里云 PyPI 镜像。
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
 # 安装项目声明的运行依赖。
-RUN pip install --upgrade pip \
-    && pip install . \
+RUN python -m pip install --index-url "${PIP_INDEX_URL}" --upgrade pip \
+    && python -m pip install --index-url "${PIP_INDEX_URL}" . \
     && groupadd --system app \
     && useradd --system --gid app --home-dir /app app \
     && chown -R app:app /app
