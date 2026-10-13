@@ -2,15 +2,10 @@
   <div class="page search-page">
     <!-- 排序筛选栏：参考 B 站式横向 tab -->
     <div class="search-toolbar">
-      <label class="tag-filter">
+      <div class="tag-filter">
         <span>按标签筛选</span>
-        <select v-model="selectedTagId" @change="changeTag">
-          <option value="">全部标签</option>
-          <option v-for="tag in tags" :key="tag.id" :value="String(tag.id)">
-            {{ tagCategoryLabel(tag.category) }} · {{ tag.name }}
-          </option>
-        </select>
-      </label>
+        <TagFilter v-model="selectedTagId" :tags="tags" @change="changeTag" />
+      </div>
       <div class="sort-tabs">
         <button
           v-for="tab in sortTabs"
@@ -88,6 +83,7 @@
 import { searchMeme } from '@/api/search'
 import { getMemeTags } from '@/api/meme'
 import MemeCard from '@/components/meme/MemeCard.vue'
+import TagFilter from '@/components/meme/TagFilter.vue'
 import { buildMemeDetailLocation } from '@/utils/pageBreadcrumb'
 
 const SORT_TABS = [
@@ -103,6 +99,7 @@ export default {
   name: 'SearchPage',
   components: {
     MemeCard,
+    TagFilter,
   },
   data() {
     return {
@@ -196,14 +193,6 @@ export default {
         this.tags = []
       }
     },
-    tagCategoryLabel(category) {
-      const labels = {
-        SOURCE: '来源', FORMAT: '形式', EMOTION: '情绪', SCENARIO: '场景',
-        CONTENT: '内容', ERA: '时代', PROPAGATION: '传播特征', TONE: '使用语气',
-        UNCATEGORIZED: '待归类',
-      }
-      return labels[category] || labels.UNCATEGORIZED
-    },
     async fetchList() {
       if (!this.keyword) {
         this.list = []
@@ -276,17 +265,6 @@ export default {
   gap: 10px;
   color: var(--meme-text-secondary);
   font-size: 14px;
-}
-
-.tag-filter select {
-  max-width: min(360px, 70vw);
-  min-height: 38px;
-  padding: 6px 12px;
-  border: 1px solid var(--meme-border-accent);
-  border-radius: 10px;
-  background: var(--meme-bg-card);
-  color: var(--meme-text);
-  outline-color: var(--meme-primary);
 }
 
 .sort-tabs {
@@ -419,6 +397,7 @@ export default {
 }
 
 @media (max-width: 520px) {
+  .tag-filter { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
   .meme-grid {
     gap: 10px;
   }
