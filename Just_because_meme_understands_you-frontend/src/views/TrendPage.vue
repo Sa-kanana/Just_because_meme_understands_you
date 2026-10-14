@@ -130,40 +130,40 @@ onMounted(load)
 </script>
 
 <style scoped>
-.trend-page { max-width: 1180px; margin: 0 auto; padding: 12px 18px 48px; color: #19243a; }
+.trend-page { max-width: 1180px; margin: 0 auto; padding: 12px 18px 48px; color: var(--meme-text); }
 .trend-heading { margin: 16px 0 24px; }
-.trend-kicker { margin: 0 0 7px; color: #3772e8; font-size: 12px; font-weight: 800; letter-spacing: .16em; }
+.trend-kicker { margin: 0 0 7px; color: var(--meme-primary); font-size: 12px; font-weight: 800; letter-spacing: .16em; }
 .trend-heading h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); }
-.trend-heading > p:last-child { color: #77839a; }
-.weekly-topic, .trend-panel { border: 1px solid #e8edf6; border-radius: 22px; background: #fff; box-shadow: 0 12px 35px rgba(43, 69, 112, .06); }
-.weekly-topic { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; padding: 24px 28px; background: linear-gradient(115deg, #edf5ff, #f8f4ff 70%, #fff); }
-.topic-label { color: #5574b7; font-size: 13px; font-weight: 700; }
-.weekly-topic h2 { margin: 8px 0 4px; color: #245fda; font-size: 28px; }
-.weekly-topic p { margin: 0; color: #71809a; }
+.trend-heading > p:last-child { color: var(--meme-text-secondary); }
+.weekly-topic, .trend-panel { border: 1px solid var(--meme-border); border-radius: 22px; background: var(--meme-bg-card); box-shadow: var(--meme-shadow-card); }
+.weekly-topic { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; padding: 24px 28px; background: var(--meme-gradient-hero); }
+.topic-label { color: var(--meme-text-secondary); font-size: 13px; font-weight: 700; }
+.weekly-topic h2 { margin: 8px 0 4px; color: var(--meme-primary); font-size: 28px; }
+.weekly-topic p { margin: 0; color: var(--meme-text-secondary); }
 .trend-panel { margin-bottom: 18px; padding: 22px 24px; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .panel-heading h2 { margin: 0; font-size: 20px; }
-.panel-heading p { margin: 5px 0 0; color: #8791a5; font-size: 13px; }
-.range-switch { display: flex; padding: 4px; border-radius: 12px; background: #f2f5fa; }
-.range-switch button { padding: 8px 13px; border: 0; border-radius: 9px; color: #6e7b90; background: transparent; cursor: pointer; }
-.range-switch button.active { color: #2364df; background: #fff; box-shadow: 0 2px 8px #203d6818; }
-.history-note { padding: 16px; border-radius: 12px; color: #758198; background: #f7f9fc; text-align: center; }
+.panel-heading p { margin: 5px 0 0; color: var(--meme-text-secondary); font-size: 13px; }
+.range-switch { display: flex; padding: 4px; border-radius: 12px; background: var(--meme-bg-muted); }
+.range-switch button { padding: 8px 13px; border: 0; border-radius: 9px; color: var(--meme-text-secondary); background: transparent; cursor: pointer; }
+.range-switch button.active { color: var(--meme-primary); background: var(--meme-bg-elevated); box-shadow: var(--meme-shadow-soft); }
+.history-note { padding: 16px; border-radius: 12px; color: var(--meme-text-secondary); background: var(--meme-bg-muted); text-align: center; }
 .daily-bars { display: flex; align-items: end; gap: 8px; min-height: 190px; overflow-x: auto; padding: 12px 0 0; }
-.daily-bar-item { display: flex; flex: 1 0 28px; flex-direction: column; align-items: center; gap: 6px; min-width: 28px; color: #7e8aa0; font-size: 11px; }
-.bar-track { display: flex; align-items: end; width: min(28px, 80%); height: 126px; border-radius: 8px; background: #f2f5fb; overflow: hidden; }
-.bar-track span { width: 100%; min-height: 2px; border-radius: 8px 8px 0 0; background: linear-gradient(180deg, #6fa5ff, #2868e7); }
-.daily-bar-item strong { color: #53617a; font-size: 10px; }
+.daily-bar-item { display: flex; flex: 1 0 28px; flex-direction: column; align-items: center; gap: 6px; min-width: 28px; color: var(--meme-text-secondary); font-size: 11px; }
+.bar-track { display: flex; align-items: end; width: min(28px, 80%); height: 126px; border-radius: 8px; background: var(--meme-bg-muted); overflow: hidden; }
+.bar-track span { width: 100%; min-height: 2px; border-radius: 8px 8px 0 0; background: linear-gradient(180deg, var(--meme-primary), var(--meme-primary-dark)); }
+.daily-bar-item strong { color: var(--meme-text); font-size: 10px; }
 .trend-list { display: grid; gap: 8px; }
 .trend-item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px; border: 0; border-radius: 14px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
-.trend-item:hover { background: #f5f8fd; }
-.trend-rank { width: 28px; color: #8390a8; font-size: 13px; font-weight: 800; }
-.trend-cover { flex: 0 0 58px; width: 58px; height: 58px; border-radius: 11px; background: #eff2f7; }
+.trend-item:hover { background: var(--meme-bg-muted); }
+.trend-rank { width: 28px; color: var(--meme-text-muted); font-size: 13px; font-weight: 800; }
+.trend-cover { flex: 0 0 58px; width: 58px; height: 58px; border-radius: 11px; background: var(--meme-bg-cover); }
 .trend-copy { display: grid; flex: 1; gap: 5px; min-width: 0; }
 .trend-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trend-copy small { overflow: hidden; color: #8a95a8; text-overflow: ellipsis; white-space: nowrap; }
-.trend-score { color: #2768e7; font-size: 17px; font-weight: 800; text-align: right; }
-.trend-score small { display: block; color: #98a2b2; font-size: 11px; font-weight: 500; }
-.trend-loading, .trend-error { padding: 18px; color: #7d899b; text-align: center; }
-.trend-error { color: #ca5050; }
+.trend-copy small { overflow: hidden; color: var(--meme-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.trend-score { color: var(--meme-primary); font-size: 17px; font-weight: 800; text-align: right; }
+.trend-score small { display: block; color: var(--meme-text-muted); font-size: 11px; font-weight: 500; }
+.trend-loading, .trend-error { padding: 18px; color: var(--meme-text-secondary); text-align: center; }
+.trend-error { color: var(--meme-danger); }
 @media (max-width: 560px) { .trend-page { padding: 8px 14px 32px; } .weekly-topic { align-items: flex-start; flex-direction: column; padding: 20px; } .trend-panel { padding: 18px 14px; border-radius: 17px; } .panel-heading { align-items: flex-start; flex-direction: column; } .trend-score { font-size: 14px; } }
 </style>
