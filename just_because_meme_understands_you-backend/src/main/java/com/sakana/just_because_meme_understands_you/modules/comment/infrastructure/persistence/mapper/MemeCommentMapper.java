@@ -23,4 +23,12 @@ public interface MemeCommentMapper extends BaseMapper<MemeComment> {
     @Update("UPDATE meme_comment SET is_deleted = 1, update_time = NOW() " +
             "WHERE id = #{commentId} AND is_deleted = 0")
     int hideById(@Param("commentId") Long commentId);
+
+    @Update("UPDATE meme_comment SET is_deleted = 1, update_time = NOW() " +
+            "WHERE root_id = #{rootId} AND is_deleted = 0")
+    int hideRepliesByRootId(@Param("rootId") Long rootId);
+
+    @Update("UPDATE meme_comment SET reply_count = GREATEST(IFNULL(reply_count, 0) - 1, 0), " +
+            "update_time = NOW() WHERE id = #{rootId} AND is_deleted = 0")
+    int decrementReplyCount(@Param("rootId") Long rootId);
 }

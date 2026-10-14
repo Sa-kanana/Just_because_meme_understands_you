@@ -14,6 +14,7 @@ import com.sakana.just_because_meme_understands_you.modules.comment.infrastructu
 import com.sakana.just_because_meme_understands_you.modules.comment.application.IMemeCommentService;
 import com.sakana.just_because_meme_understands_you.modules.comment.application.IUserCommentLikeService;
 import com.sakana.just_because_meme_understands_you.modules.comment.application.MemeCommentAsyncHandler;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentModerationPort;
 import com.sakana.just_because_meme_understands_you.modules.moderation.application.SensitiveWordFilterService;
 import com.sakana.just_because_meme_understands_you.common.pagination.PageParamNormalizer;
 import com.sakana.just_because_meme_understands_you.modules.comment.application.support.MemeCommentSupport;
@@ -52,6 +53,9 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
 
     @Resource
     private MemeCommentMapper memeCommentMapper;
+
+    @Resource
+    private CommentModerationPort commentModerationPort;
 
     @Resource
     private IMemeService memeService;
@@ -285,7 +289,7 @@ public class MemeCommentServiceImpl implements IMemeCommentService {
         if (!Objects.equals(comment.getUserId(), userId)) {
             throw new BizException(Result.CODE_FORBIDDEN, "只能删除自己的评论");
         }
-        if (memeCommentMapper.hideById(commentId) != 1) {
+        if (commentModerationPort.hideComment(commentId) < 1) {
             throw new BizException(Result.CODE_NOT_FOUND, "评论不存在或已删除");
         }
     }

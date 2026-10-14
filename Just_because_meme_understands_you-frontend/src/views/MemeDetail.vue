@@ -238,7 +238,7 @@
                 {{ ownerPreview ? '评论区（预览未开放）' : '评论区' }}
               </h2>
               <span class="detail-section-sub">
-                {{ ownerPreview ? '审核通过后将开放互动' : `共 ${formatNum(commentTotal)} 条评论` }}
+                {{ ownerPreview ? '审核通过后将开放互动' : `共 ${formatNum(commentTotal)} 条主评论` }}
               </span>
             </div>
             <div
@@ -288,19 +288,17 @@
                 @click="goCurrentUserProfile"
               />
               <div class="comment-editor-main">
-                <div class="comment-editor-input-wrap">
-                  <vs-input
+                <div class="comment-editor-input-wrap" @keydown="handleRootCommentKeydown">
+                  <textarea
                     v-model="commentDraft"
-                    type="textarea"
                     maxlength="2000"
                     class="comment-editor-input"
                     placeholder="只是一直在等你而已，才不是想被评论呢～"
-                    block
+                    rows="3"
+                    aria-label="发表评论"
                     @focus="commentEditorFocused = true"
                     @blur="onCommentEditorBlur"
-                    @keydown.ctrl.enter.prevent="submitRootComment"
-                    @keydown.meta.enter.prevent="submitRootComment"
-                  />
+                  ></textarea>
                 </div>
                 <div
                   v-if="commentImages.length"
@@ -526,18 +524,17 @@
                       class="reply-editor-avatar"
                     />
                     <div class="reply-editor-main">
-                      <vs-input
+                      <textarea
                         v-model="replyDraft"
-                        type="textarea"
                         maxlength="2000"
                         class="reply-editor-input"
                         :placeholder="`回复 ${replyToName || 'TA'}…`"
-                        block
-                        @keydown.ctrl.enter.prevent="submitReply()"
-                        @keydown.meta.enter.prevent="submitReply()"
-                      />
+                        rows="2"
+                        aria-label="回复评论"
+                        @keydown="handleReplyKeydown"
+                      ></textarea>
                       <div class="reply-editor-actions">
-                        <span class="comment-editor-hint">Ctrl + Enter 发送</span>
+                        <span class="comment-editor-hint">Ctrl / ⌘ + Enter 发送</span>
                         <div class="reply-editor-btns">
                           <vs-button size="small" @click="cancelReply">取消</vs-button>
                           <vs-button
@@ -825,6 +822,7 @@ import MemeReportButton from '@/components/meme/MemeReportButton.vue'
 import ContentReportButton from '@/components/meme/ContentReportButton.vue'
 import FollowButton from '@/components/user/FollowButton.vue'
 import { sanitizeExternalUrl } from '@/utils/safeUrl'
+import { isCommentSubmitShortcut } from '@/utils/commentShortcut.mjs'
 import { watch, computed, ref, onUnmounted, reactive, nextTick } from 'vue'
 import { toast, confirmBox } from '@/utils/uiFeedback'
 import { useBreadcrumbStore } from '@/stores/breadcrumb'
@@ -1546,6 +1544,18 @@ async function onCommentImageChange(event) {
 
 function removeCommentImage(idx) {
   commentImages.value.splice(idx, 1)
+}
+
+function handleRootCommentKeydown(event) {
+  if (!isCommentSubmitShortcut(event)) return
+  event.preventDefault()
+  submitRootComment()
+}
+
+function handleReplyKeydown(event) {
+  if (!isCommentSubmitShortcut(event)) return
+  event.preventDefault()
+  submitReply()
 }
 
 async function submitRootComment() {
@@ -2589,23 +2599,29 @@ function goSearchByTag(tag) {
   min-width: 0;
 }
 
-.comment-editor-input :deep(textarea) {
+.comment-editor-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 72px;
   padding: 12px 14px;
   line-height: 1.6;
+  color: var(--meme-text);
   border: 1px solid var(--meme-border-strong);
   border-radius: 12px;
   box-shadow: none;
   resize: none;
   background: var(--meme-bg-card);
+  font: inherit;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.comment-editor-input :deep(textarea::placeholder) {
+.comment-editor-input::placeholder {
   color: var(--meme-text-muted);
 }
 
-.comment-editor-input :deep(textarea:focus) {
+.comment-editor-input:focus {
+  outline: none;
   border-color: var(--meme-primary);
   box-shadow: 0 0 0 3px var(--meme-focus-ring);
 }
@@ -2993,17 +3009,28 @@ function goSearchByTag(tag) {
   gap: 10px;
 }
 
-.reply-editor-input :deep(textarea) {
+.reply-editor-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
   padding: 10px 12px;
   line-height: 1.55;
+  color: var(--meme-text);
   border: 1px solid var(--meme-border-strong);
   border-radius: 10px;
   background: var(--meme-bg-muted);
   resize: none;
   box-shadow: none;
+  font: inherit;
 }
 
-.reply-editor-input :deep(textarea:focus) {
+.reply-editor-input::placeholder {
+  color: var(--meme-text-muted);
+}
+
+.reply-editor-input:focus {
+  outline: none;
   border-color: var(--meme-primary);
   box-shadow: 0 0 0 3px var(--meme-focus-ring);
   background: var(--meme-bg-card);

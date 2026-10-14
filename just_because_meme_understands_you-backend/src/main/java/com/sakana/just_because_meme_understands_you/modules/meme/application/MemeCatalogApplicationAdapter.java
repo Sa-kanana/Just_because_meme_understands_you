@@ -344,6 +344,11 @@ public class MemeCatalogApplicationAdapter implements MemeCatalogPort {
         return memeId > 0 && memeMapper.incrementComments(memeId) == 1;
     }
 
+    @Override
+    public boolean decrementCommentCount(long memeId, int count) {
+        return memeId > 0 && count > 0 && memeMapper.decrementComments(memeId, count) == 1;
+    }
+
     private long countByStatus(long userId, List<Integer> statuses) {
         return memeMapper.selectCount(new LambdaQueryWrapper<Meme>()
                 .eq(Meme::getUserId, userId)

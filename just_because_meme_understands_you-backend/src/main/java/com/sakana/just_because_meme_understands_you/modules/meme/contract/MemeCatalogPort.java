@@ -75,6 +75,9 @@ public interface MemeCatalogPort {
     /** 在当前事务中原子递增累计评论数；找不到梗时返回 false。 */
     boolean incrementCommentCount(long memeId);
 
+    /** 在当前事务中原子扣减累计评论数；扣减数量必须大于 0，找不到梗时返回 false。 */
+    boolean decrementCommentCount(long memeId, int count);
+
     /** 梗图模块跨模块返回的安全摘要。 */
     record MemeCard(
             Long id,

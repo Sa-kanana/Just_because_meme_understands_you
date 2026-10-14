@@ -9,6 +9,7 @@ import com.sakana.just_because_meme_understands_you.common.pagination.PageVO;
 import com.sakana.just_because_meme_understands_you.common.response.Result;
 import com.sakana.just_because_meme_understands_you.modules.admin.application.IAdminMemeService;
 import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeComment;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentModerationPort;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
 import com.sakana.just_because_meme_understands_you.modules.meme.application.support.MemeVisibilitySupport;
 import com.sakana.just_because_meme_understands_you.modules.meme.domain.entity.Meme;
@@ -41,6 +42,7 @@ public class MemeReportService {
 
     @Resource private MemeMapper memeMapper;
     @Resource private MemeCommentMapper commentMapper;
+    @Resource private CommentModerationPort commentModerationPort;
     @Resource private CommunityReportMapper communityReportMapper;
     @Resource private AdminReportViewMapper adminReportViewMapper;
     @Resource private UserMapper userMapper;
@@ -122,7 +124,7 @@ public class MemeReportService {
             adminMemeService.offline(row.getMemeId());
         } else if (TARGET_COMMENT.equals(row.getTargetType()) && "COMMENT_HIDDEN".equals(result)) {
             Long commentId = row.getCommentId() != null ? row.getCommentId() : row.getTargetId();
-            if (commentMapper.hideById(commentId) != 1) {
+            if (commentModerationPort.hideComment(commentId) < 1) {
                 MemeComment existing = commentMapper.selectById(commentId);
                 if (existing == null || !Objects.equals(existing.getIsDeleted(), 1)) {
                     throw new BizException(Result.CODE_BAD_REQUEST, "评论已删除或无法隐藏");

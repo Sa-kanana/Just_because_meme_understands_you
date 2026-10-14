@@ -25,7 +25,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 热梗采集：Agent（B站理解 + Firecrawl 细节）→ MySQL 入库（SSOT）→ 异步灌 pgvector。
+ * 热梗采集：Agent（B站理解 + Firecrawl 细节）→ MySQL 入库（SSOT）→ 布隆过滤器热更新 → 异步灌 pgvector。
  */
 @Slf4j
 @Service
@@ -49,6 +49,9 @@ public class MemeCrawlService {
 
     @Resource
     private MemeMapper memeMapper;
+
+    @Resource
+    private MemeBloomFilterService memeBloomFilterService;
 
     @Resource
     private MemeResourceMapper memeResourceMapper;
@@ -102,9 +105,15 @@ public class MemeCrawlService {
         int failed = 0;
         for (MemeCandidateSource.Candidate candidate : candidates) {
             try {
-                Boolean inserted = transactionTemplate.execute(status -> persistCandidate(candidate, publisherUserId));
-                if (Boolean.TRUE.equals(inserted)) {
+                Long memeId = transactionTemplate.execute(status -> persistCandidate(candidate, publisherUserId));
+                if (memeId != null) {
                     created++;
+                    // TransactionTemplate 返回时事务已提交，此时再更新本机内存过滤器，避免回滚数据留在过滤器中。
+                    try {
+                        memeBloomFilterService.add(memeId);
+                    } catch (Exception e) {
+                        log.warn("采集梗已入库，但加入布隆过滤器失败 memeId={}", memeId, e);
+                    }
                 } else {
                     skipped++;
                 }
@@ -153,24 +162,24 @@ public class MemeCrawlService {
         return "BV" + matcher.group(1).substring(2);
     }
 
-    private boolean persistCandidate(MemeCandidateSource.Candidate candidate, long publisherUserId) {
+    private Long persistCandidate(MemeCandidateSource.Candidate candidate, long publisherUserId) {
         if (candidate == null) {
-            return false;
+            return null;
         }
         String sourceUrl = truncate(candidate.sourceUrl(), MAX_URL);
         String title = truncate(candidate.title(), MAX_NAME);
         if (!StringUtils.hasText(sourceUrl) || !StringUtils.hasText(title)) {
-            return false;
+            return null;
         }
         if (!sourceUrl.startsWith("http://") && !sourceUrl.startsWith("https://")) {
-            return false;
+            return null;
         }
 
         Long exists = memeResourceMapper.selectCount(new LambdaQueryWrapper<MemeResource>()
                 .eq(MemeResource::getResourceUrl, sourceUrl)
                 .eq(MemeResource::getStatus, RESOURCE_STATUS_ACTIVE));
         if (exists != null && exists > 0) {
-            return false;
+            return null;
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -226,7 +235,7 @@ public class MemeCrawlService {
         }
 
         memeIndexEventPort.requestUpsert(meme.getId());
-        return true;
+        return meme.getId();
     }
 
     private static String truncate(String value, int max) {

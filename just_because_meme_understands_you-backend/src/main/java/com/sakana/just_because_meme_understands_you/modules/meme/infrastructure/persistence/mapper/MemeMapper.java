@@ -57,6 +57,11 @@ public interface MemeMapper extends BaseMapper<Meme> {
     @Update("UPDATE meme SET comments = IFNULL(comments, 0) + 1 WHERE id = #{memeId}")
     int incrementComments(@Param("memeId") long memeId);
 
+    /** 原子扣减梗图评论总数，并确保计数不低于 0。 */
+    @Update("UPDATE meme SET comments = GREATEST(IFNULL(comments, 0) - #{count}, 0) " +
+            "WHERE id = #{memeId}")
+    int decrementComments(@Param("memeId") long memeId, @Param("count") int count);
+
     @Update("UPDATE meme SET page_views = IFNULL(page_views, 0) + 1 WHERE id = #{memeId} AND status = 1")
     int incrementPageViews(@Param("memeId") long memeId);
 }

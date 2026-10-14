@@ -23,6 +23,9 @@ services:
     <<: *runtime-defaults
     image: mysql:8.4
     restart: unless-stopped
+    ports:
+      # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
+      - "127.0.0.1:3306:3306"
     # 小内存试运行上限；正式环境可在 .env 中提高。
     mem_limit: ${MYSQL_MEMORY_LIMIT:-384m}
     # 控制数据库缓冲池、连接数量和性能采集开销。
@@ -70,6 +73,9 @@ services:
     <<: *runtime-defaults
     image: redis:7-alpine
     restart: unless-stopped
+    ports:
+      # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
+      - "127.0.0.1:6379:6379"
     # Redis 容器上限需大于数据上限，为连接缓冲和 AOF 留出空间。
     mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
     environment:
@@ -102,6 +108,9 @@ services:
     # 应用连接参数使用 transaction_timeout，要求 PostgreSQL 17 或以上。
     image: pgvector/pgvector:pg17
     restart: unless-stopped
+    ports:
+      # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
+      - "127.0.0.1:5432:5432"
     # 大量向量入库前应提高服务器内存及该上限。
     mem_limit: ${POSTGRES_MEMORY_LIMIT:-256m}
     # 控制共享缓冲区和连接数量，适配小内存试运行环境。
@@ -532,7 +541,7 @@ volumes:
     # 大版本升级时指定新卷名，保留旧数据卷用于恢复；常规更新不改该值。
     name: ${POSTGRES_VOLUME_NAME:-just-because-meme_postgres-data}
 
-# 网络分层限制 Nginx 只访问 Java，数据库不发布宿主机端口。
+# 网络分层限制 Nginx 只访问 Java；数据库宿主机端口仅绑定回环地址，供 SSH 隧道访问。
 networks:
   # Web 接入网络，仅 Nginx 和 Spring Boot 使用。
   edge-net:

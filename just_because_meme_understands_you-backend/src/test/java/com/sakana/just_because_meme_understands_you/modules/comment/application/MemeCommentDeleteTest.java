@@ -2,6 +2,7 @@ package com.sakana.just_because_meme_understands_you.modules.comment.application
 
 import com.sakana.just_because_meme_understands_you.common.exception.BizException;
 import com.sakana.just_because_meme_understands_you.modules.comment.application.impl.MemeCommentServiceImpl;
+import com.sakana.just_because_meme_understands_you.modules.comment.contract.CommentModerationPort;
 import com.sakana.just_because_meme_understands_you.modules.comment.application.support.MemeCommentSupport;
 import com.sakana.just_because_meme_understands_you.modules.comment.domain.entity.MemeComment;
 import com.sakana.just_because_meme_understands_you.modules.comment.infrastructure.persistence.mapper.MemeCommentMapper;
@@ -19,13 +20,16 @@ import static org.mockito.Mockito.when;
 class MemeCommentDeleteTest {
 
     private MemeCommentMapper comments;
+    private CommentModerationPort moderation;
     private MemeCommentServiceImpl service;
 
     @BeforeEach
     void setUp() {
         comments = mock(MemeCommentMapper.class);
+        moderation = mock(CommentModerationPort.class);
         service = new MemeCommentServiceImpl();
         ReflectionTestUtils.setField(service, "memeCommentMapper", comments);
+        ReflectionTestUtils.setField(service, "commentModerationPort", moderation);
         ReflectionTestUtils.setField(service, "commentSupport", mock(MemeCommentSupport.class));
     }
 
@@ -36,11 +40,11 @@ class MemeCommentDeleteTest {
         comment.setUserId(7L);
         comment.setIsDeleted(MemeCommentSupport.NOT_DELETED);
         when(comments.selectById(21L)).thenReturn(comment);
-        when(comments.hideById(21L)).thenReturn(1);
+        when(moderation.hideComment(21L)).thenReturn(1);
 
         service.deleteComment(7L, 21L);
 
-        verify(comments).hideById(21L);
+        verify(moderation).hideComment(21L);
     }
 
     @Test
@@ -52,7 +56,7 @@ class MemeCommentDeleteTest {
         when(comments.selectById(21L)).thenReturn(comment);
 
         assertEquals(403, assertThrows(BizException.class, () -> service.deleteComment(7L, 21L)).getCode());
-        verify(comments, never()).hideById(21L);
+        verify(moderation, never()).hideComment(21L);
     }
 
     @Test
@@ -60,6 +64,6 @@ class MemeCommentDeleteTest {
         when(comments.selectById(21L)).thenReturn(null);
 
         assertEquals(404, assertThrows(BizException.class, () -> service.deleteComment(7L, 21L)).getCode());
-        verify(comments, never()).hideById(21L);
+        verify(moderation, never()).hideComment(21L);
     }
 }
