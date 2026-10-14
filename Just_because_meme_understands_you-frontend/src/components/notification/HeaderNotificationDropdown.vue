@@ -25,7 +25,7 @@
           <span>消息中心</span>
         </ui-dropdown-item>
         <ui-dropdown-item command="unread">
-          <i class="ri-mail-unread-line notification-dropdown-icon" />
+          <i class="ri-mail-line notification-dropdown-icon" aria-hidden="true" />
           <span>未读消息</span>
           <ui-badge
             v-if="unreadTotal > 0"
