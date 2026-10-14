@@ -37,7 +37,7 @@ chmod 600 .env
 bash ./deploy.sh
 ```
 
-脚本会先检查必填项、安静校验 Compose 配置，再串行构建 Java、MemeAgent、用户端和管理端镜像并验证 Nginx 语法，最后启动全部服务。访问 `http://服务器地址/`，管理端访问 `http://服务器地址/admin/`。如将 `HTTP_PORT` 改成 `8081`，访问地址相应改为 `http://服务器地址:8081/`。
+脚本会先检查必填项、安静校验 Compose 配置，再串行构建 Java、MemeAgent、用户端和管理端镜像并验证 Nginx 语法，最后启动全部服务。默认 `HTTP_BIND_ADDRESS=0.0.0.0`，Nginx 会监听所有服务器网卡；访问 `http://服务器地址/`，管理端访问 `http://服务器地址/admin/`。如将 `HTTP_PORT` 改成 `8081`，访问地址相应改为 `http://服务器地址:8081/`，并需在云安全组及系统防火墙放行 TCP 8081。若前面已有同机 HTTPS 反向代理，可将 `HTTP_BIND_ADDRESS` 设为 `127.0.0.1`，避免直接暴露 Nginx 入口。
 
 ## 服务和数据
 
@@ -63,7 +63,7 @@ docker compose up -d
 
 ## 通过 SSH 隧道访问数据库
 
-数据库只监听服务器本机回环地址。先在本地 PowerShell 建立 SSH 隧道，保持该终端窗口运行；将 `SSH_USER` 和 `SERVER_IP` 替换为实际 SSH 用户名和服务器地址：
+数据库只监听服务器本机回环地址（`DATABASE_BIND_ADDRESS=127.0.0.1`），无需在云安全组开放数据库端口。先在本地 PowerShell 建立 SSH 隧道，保持该终端窗口运行；将 `SSH_USER` 和 `SERVER_IP` 替换为实际 SSH 用户名和服务器地址：
 
 ```powershell
 ssh -N -L 13306:127.0.0.1:3306 -L 16379:127.0.0.1:6379 -L 15432:127.0.0.1:5432 SSH_USER@SERVER_IP
@@ -71,12 +71,14 @@ ssh -N -L 13306:127.0.0.1:3306 -L 16379:127.0.0.1:6379 -L 15432:127.0.0.1:5432 S
 
 然后在 DataGrip 或数据库客户端连接本地地址：MySQL 使用 `127.0.0.1:13306`，Redis 使用 `127.0.0.1:16379`，PostgreSQL 使用 `127.0.0.1:15432`；认证仍使用 `.env` 中对应的数据库用户名和密码。关闭 SSH 窗口会终止隧道。安全组无需开放三个数据库端口，只需按需允许 SSH 端口，并限制可信来源。
 
+在 DataGrip 中连接项目 MySQL：新增 MySQL 数据源，主机填写 `127.0.0.1`、端口填写 `13306`、用户填写 `.env` 中的 `MYSQL_APP_USER`（默认 `meme_app`）、密码填写 `MYSQL_APP_PASSWORD`，数据库填写 `meme`，然后点击 **Test Connection**。SSH 隧道命令必须保持运行。Redis 和 PostgreSQL 使用同一条隧道命令中的本地端口 `16379`、`15432`；PostgreSQL 默认数据库和账号分别为 `memeagent_vector`、`memeagent`。如果在 `.env` 改了 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT` 或 `POSTGRES_HOST_PORT`，SSH 命令中的远端目标端口也要同步修改；本地转发端口可以另选未占用的端口。
+
 示例备份命令：
 
 ```bash
 mkdir -p /var/backups/meme
 chmod 700 /var/backups/meme
-docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF meme' > /var/backups/meme/meme-$(date +%F).sql
+docker compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump --default-character-set=utf8mb4 -uroot --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF meme' > /var/backups/meme/meme-$(date +%F).sql
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" --no-owner --no-acl "$POSTGRES_DB"' > /var/backups/meme/memeagent-vector-$(date +%F).sql
 ```
 

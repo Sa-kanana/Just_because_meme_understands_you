@@ -158,14 +158,21 @@ AUTH_BOOTSTRAP_SUPER_ADMIN_EMAIL=
 
 **空库上线：** 直接跳到第 7 步。MySQL 首次创建数据卷时导入仓库 `mysql.sql`，然后后端通过 Flyway 执行增量迁移。你电脑里的业务数据不会自动上传。
 
-**保留电脑里的数据：** 在启动后端前，准备完整 MySQL 备份，包含表结构、数据和 `flyway_schema_history`。不能只导出 INSERT，也不要手工清空迁移历史。可在具有 MySQL 客户端的源环境中执行：
+**保留电脑里的数据：** 在启动后端前，准备完整 MySQL 备份，包含表结构、数据和 `flyway_schema_history`。不能只导出 INSERT，也不要手工清空迁移历史。在本地 Windows PowerShell 导出时，使用 `mysqldump.exe --result-file` 让 MySQL 客户端直接写入 UTF-8 字节；不要使用 `>`、`Out-File` 或 `Set-Content` 写 dump，否则 PowerShell 可能改写文件编码：
 
-```bash
-# SOURCE_HOST 是源 MySQL 的可连接地址；密码通过 -p 交互输入。
-# --databases meme 保留库选择，--single-transaction 获取 InnoDB 一致性快照。
-mysqldump -h SOURCE_HOST -P 3306 -u SOURCE_USER -p \
-  --single-transaction --routines --triggers --hex-blob \
-  --no-tablespaces --set-gtid-purged=OFF --databases meme > meme-full.sql
+```powershell
+# 备份文件直接保存到当前用户目录，避免写入项目并误提交到 Git。
+$dumpFile = Join-Path $env:USERPROFILE 'meme-full.sql'
+# -h、-P、-u 分别填写源 MySQL 地址、端口和账号；密码通过 -p 交互输入，不写进命令。
+# 将 SOURCE_HOST 和 SOURCE_USER 替换成你本机数据库的实际连接信息。
+# --default-character-set 固定客户端和连接使用 utf8mb4。
+# --single-transaction 导出 InnoDB 一致性快照，并保留例程、触发器、二进制内容和数据库名。
+# --result-file 由 mysqldump 直接写字节，避免 PowerShell 文本重定向转换编码。
+mysqldump.exe -h SOURCE_HOST -P 3306 -u SOURCE_USER -p --default-character-set=utf8mb4 --single-transaction --routines --triggers --hex-blob --no-tablespaces --set-gtid-purged=OFF --databases meme --result-file="$dumpFile"
+# 导出命令失败时停止，不要上传不完整备份。
+if ($LASTEXITCODE -ne 0) { throw 'mysqldump 导出失败，请检查客户端输出。' }
+# 通过 SCP 原样上传 SQL 文件；SCP 不会转换文件内容编码。
+scp.exe $dumpFile root@8.148.12.121:/root/meme-full.sql
 ```
 
 将备份上传到服务器 `/root/meme-full.sql` 后执行以下服务器命令。**恢复仅用于新的空生产库；完整备份通常含 DROP TABLE，会替换目标库内容。**
@@ -180,7 +187,7 @@ docker compose pull mysql redis postgres
 docker compose up -d --wait --wait-timeout 300 mysql redis postgres
 # 从服务器本地备份文件恢复业务库；不会在命令行显示数据库密码。
 docker compose exec -T mysql sh -c \
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot meme' < /root/meme-full.sql
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --default-character-set=utf8mb4 -uroot meme' < /root/meme-full.sql
 # 验证业务库迁移历史；旧迁移记录应全部 success=1。
 docker compose exec -T mysql sh -c \
   'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot meme -e "SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;"'
@@ -271,7 +278,7 @@ umask 077
 mkdir -p /var/backups/meme
 # 分别保存业务库、迁移历史及向量库；确认命令成功后再更新。
 docker compose exec -T mysql sh -c \
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --routines --triggers --hex-blob --no-tablespaces --set-gtid-purged=OFF --databases meme' \
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump --default-character-set=utf8mb4 -uroot --single-transaction --routines --triggers --hex-blob --no-tablespaces --set-gtid-purged=OFF --databases meme' \
   > /var/backups/meme/mysql-$(date +%Y%m%d-%H%M%S).sql
 docker compose exec -T postgres sh -c \
   'exec pg_dump -U "$POSTGRES_USER" --no-owner --no-acl "$POSTGRES_DB"' \

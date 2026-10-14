@@ -2,11 +2,14 @@ package com.sakana.just_because_meme_understands_you.db;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.util.HashSet;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,7 +43,8 @@ class FlywayMigrationCatalogTest {
             "V2026101202__sensitive_word_moderation_architecture.sql",
             "V2026101203__meme_vector_reconciliation_jobs.sql",
             "V2026101204__user_public_uuid.sql",
-            "V2026101205__remove_untracked_user_public_uuid.sql"
+            "V2026101205__remove_untracked_user_public_uuid.sql",
+            "V2026101401__reconcile_active_meme_comment_counts.sql"
     );
 
     /** 中文注释：将动态 SQL 字符串中的双单引号还原为实际执行 SQL，避免断言依赖转义写法。 */
@@ -61,6 +65,33 @@ class FlywayMigrationCatalogTest {
     void keepsAllIncrementalFeaturesInVersionedMigrationResources() {
         for (String migration : MIGRATIONS) {
             assertNotNull(getClass().getClassLoader().getResource("db/migration/" + migration), migration);
+        }
+    }
+
+    /** 中文注释：MySQL 与 Flyway SQL 必须保持无 BOM 的 UTF-8，防止中文注释和种子数据被错误解码。 */
+    @Test
+    void keepsBaselineAndFlywayMigrationSqlAsUtf8WithoutBom() throws Exception {
+        var resources = new java.util.ArrayList<String>();
+        resources.add("db/mysql.sql");
+        MIGRATIONS.forEach(migration -> resources.add("db/migration/" + migration));
+
+        for (String resource : resources) {
+            var input = getClass().getClassLoader().getResourceAsStream(resource);
+            assertNotNull(input, resource);
+            byte[] bytes;
+            try (input) {
+                bytes = input.readAllBytes();
+            }
+
+            assertFalse(bytes.length >= 3
+                            && (bytes[0] & 0xFF) == 0xEF
+                            && (bytes[1] & 0xFF) == 0xBB
+                            && (bytes[2] & 0xFF) == 0xBF,
+                    resource + " must not contain a UTF-8 BOM");
+            assertDoesNotThrow(() -> StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes)), resource + " must be valid UTF-8");
         }
     }
 

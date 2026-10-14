@@ -82,6 +82,8 @@ spring:
   flyway:
     # 启动时校验并应用尚未执行的数据库版本迁移
     enabled: true
+    # Flyway 以 UTF-8 解码基线与增量 SQL，避免中文注释或数据在迁移时乱码。
+    encoding: UTF-8
     # 首次接入已有非空 schema 时自动记录初始基线
     baseline-on-migrate: true
     # mysql.sql 代表的当前 schema 基线；后续版本号必须大于该值

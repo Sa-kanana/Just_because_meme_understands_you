@@ -150,16 +150,28 @@ CREATE DATABASE IF NOT EXISTS meme
 执行完整建表脚本：
 
 ```bash
-mysql -u root -p meme < just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql
+mysql --default-character-set=utf8mb4 -u root -p meme < just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql
 ```
 
-PowerShell 可以使用管道导入：
+PowerShell 不要用 `Get-Content | mysql.exe` 导入 SQL：文本管道会先解码再编码，可能按系统代码页转换中文。可让 `cmd.exe` 直接把原始文件字节交给 MySQL：
 
 ```powershell
-Get-Content .\just_because_meme_understands_you-backend\src\main\resources\db\mysql.sql | mysql.exe -u root -p meme
+# 获取基线 SQL 文件的绝对路径，避免命令从其他目录运行时找不到文件。
+$sqlFile = (Resolve-Path '.\just_because_meme_understands_you-backend\src\main\resources\db\mysql.sql').Path
+# 由 CMD 进行字节级重定向，PowerShell 不会把 UTF-8 SQL 转成系统默认编码。
+$mysqlCommand = 'mysql.exe --default-character-set=utf8mb4 -u root -p meme < "' + $sqlFile + '"'
+cmd.exe /d /c $mysqlCommand
+# MySQL 返回非零退出码时立即报告导入失败。
+if ($LASTEXITCODE -ne 0) { throw 'MySQL 基线 SQL 导入失败，请检查客户端输出。' }
 ```
 
-Windows PowerShell 也可以先进入 MySQL 客户端，再执行：
+Windows PowerShell 也可以先用 UTF-8 客户端连接，再执行 `SOURCE` 命令；这样文件由 MySQL 客户端读取，不经过 PowerShell 文本管道：
+
+```powershell
+mysql.exe --default-character-set=utf8mb4 -u root -p meme
+```
+
+进入 `mysql>` 提示符后执行：
 
 ```sql
 SOURCE just_because_meme_understands_you-backend/src/main/resources/db/mysql.sql;

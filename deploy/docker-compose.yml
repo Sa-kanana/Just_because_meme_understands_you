@@ -25,11 +25,21 @@ services:
     restart: unless-stopped
     ports:
       # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
-      - "127.0.0.1:3306:3306"
+      - target: 3306
+        # MySQL 容器内服务端口。
+        published: "${MYSQL_HOST_PORT:-3306}"
+        # 数据库默认只绑定服务器回环地址，不暴露到公网网卡。
+        host_ip: ${DATABASE_BIND_ADDRESS:-127.0.0.1}
+        # MySQL 使用 TCP 协议。
+        protocol: tcp
     # 小内存试运行上限；正式环境可在 .env 中提高。
     mem_limit: ${MYSQL_MEMORY_LIMIT:-384m}
     # 控制数据库缓冲池、连接数量和性能采集开销。
     command:
+      # MySQL 服务端默认字符集，确保新建数据库和连接默认支持完整 Unicode。
+      - --character-set-server=utf8mb4
+      # MySQL 服务端默认排序规则，与项目使用的 utf8mb4 字符集匹配。
+      - --collation-server=utf8mb4_unicode_ci
       # InnoDB 数据缓冲池大小。
       - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}
       # MySQL 连接总数上限。
@@ -75,7 +85,13 @@ services:
     restart: unless-stopped
     ports:
       # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
-      - "127.0.0.1:6379:6379"
+      - target: 6379
+        # Redis 容器内服务端口。
+        published: "${REDIS_HOST_PORT:-6379}"
+        # 数据库默认只绑定服务器回环地址，不暴露到公网网卡。
+        host_ip: ${DATABASE_BIND_ADDRESS:-127.0.0.1}
+        # Redis 使用 TCP 协议。
+        protocol: tcp
     # Redis 容器上限需大于数据上限，为连接缓冲和 AOF 留出空间。
     mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
     environment:
@@ -110,7 +126,13 @@ services:
     restart: unless-stopped
     ports:
       # 仅监听服务器本机回环地址，远程管理需通过 SSH 本地端口转发。
-      - "127.0.0.1:5432:5432"
+      - target: 5432
+        # PostgreSQL 容器内服务端口。
+        published: "${POSTGRES_HOST_PORT:-5432}"
+        # 数据库默认只绑定服务器回环地址，不暴露到公网网卡。
+        host_ip: ${DATABASE_BIND_ADDRESS:-127.0.0.1}
+        # PostgreSQL 使用 TCP 协议。
+        protocol: tcp
     # 大量向量入库前应提高服务器内存及该上限。
     mem_limit: ${POSTGRES_MEMORY_LIMIT:-256m}
     # 控制共享缓冲区和连接数量，适配小内存试运行环境。
@@ -302,8 +324,8 @@ services:
       JAVA_OPTS: ${JAVA_OPTS:--Xms128m -Xmx320m -XX:+UseContainerSupport}
       # Spring Boot 容器监听端口。
       SERVER_PORT: "8080"
-      # 业务 MySQL JDBC 连接地址，固定连接项目库 meme。
-      DB_URL: "jdbc:mysql://mysql:3306/meme?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true"
+      # 业务 MySQL JDBC 连接地址，固定连接 meme 库并显式使用 UTF-8。
+      DB_URL: "jdbc:mysql://mysql:3306/meme?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true&characterEncoding=UTF-8"
       # Spring Boot 的 MySQL 专用账号。
       DB_USERNAME: ${MYSQL_APP_USER:-meme_app}
       # Spring Boot 的 MySQL 专用密码。
@@ -509,8 +531,14 @@ services:
     # 静态资源和 API 转发的容器内存上限。
     mem_limit: ${NGINX_MEMORY_LIMIT:-64m}
     ports:
-      # 唯一公开入口；可在 deploy/.env 中设置 HTTP_PORT 改变宿主机端口。
-      - "${HTTP_PORT:-80}:80"
+      # Nginx 容器内固定监听 80，宿主机监听地址与端口由 deploy/.env 配置。
+      - target: 80
+        # 宿主机对外提供 HTTP 服务的端口。
+        published: "${HTTP_PORT:-80}"
+        # 默认监听所有网卡；仅由本机反向代理访问时可设置为 127.0.0.1。
+        host_ip: ${HTTP_BIND_ADDRESS:-0.0.0.0}
+        # 网站入口使用 TCP 协议。
+        protocol: tcp
     depends_on:
       # 等待 Spring Boot 健康后再接收页面 API 请求。
       backend:
