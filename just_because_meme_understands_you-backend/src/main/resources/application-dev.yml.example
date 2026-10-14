@@ -19,7 +19,8 @@ spring:
   datasource:
     username: root
     password: # 请自行填写：数据库密码
-    url: jdbc:mysql://127.0.0.1:3306/meme?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    # JDBC 驱动与应用一致使用东八区，避免时间类型在数据库读写时发生偏移。
+    url: jdbc:mysql://127.0.0.1:3306/meme?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
 
   # ---------- Redis ----------
   data:

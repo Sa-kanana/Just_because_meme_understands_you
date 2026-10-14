@@ -37,5 +37,5 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 # 声明 Spring Boot 默认监听端口；Compose 不会把该端口映射到宿主机。
 EXPOSE 8080
 
-# 使用 exec 让 Java 直接接收 Docker 的停止信号。
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
+# 强制 JVM 使用东八区，并用 exec 让 Java 直接接收 Docker 的停止信号。
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -Duser.timezone=Asia/Shanghai -jar /app/app.jar"]

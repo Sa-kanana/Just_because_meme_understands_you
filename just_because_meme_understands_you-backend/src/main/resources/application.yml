@@ -20,6 +20,9 @@ server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
 spring:
+  jackson:
+    # Java Date、Calendar 等带时区类型的 JSON 输出统一使用东八区；LocalDateTime 由 JVM 时区决定生成值。
+    time-zone: Asia/Shanghai
   config:
     # 支持从后端模块目录或仓库根目录启动；系统环境变量仍可覆盖 .env。
     import:

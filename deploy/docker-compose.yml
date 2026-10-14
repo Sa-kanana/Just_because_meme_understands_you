@@ -320,7 +320,9 @@ services:
     environment:
       # 激活生产配置文件。
       SPRING_PROFILES_ACTIVE: prod
-      # 限定 Java 堆内存，避免单实例在无容器内存限制时占满整台服务器。
+      # 后端容器和 JVM 均使用东八区，确保 LocalDateTime.now() 与数据库 DATETIME 一致。
+      TZ: Asia/Shanghai
+      # 限定 Java 堆内存；镜像入口会额外强制 JVM 使用东八区。
       JAVA_OPTS: ${JAVA_OPTS:--Xms128m -Xmx320m -XX:+UseContainerSupport}
       # Spring Boot 容器监听端口。
       SERVER_PORT: "8080"
