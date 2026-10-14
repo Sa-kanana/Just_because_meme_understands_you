@@ -400,15 +400,21 @@ public class MemeEditRevisionReviewService {
         if (content.getResourceUrls().size() > 6 || content.getResources().size() > 10) {
             throw new BizException(Result.CODE_BAD_REQUEST, "修改稿资源数量超出限制");
         }
-        Set<Integer> submittedTagIds = new TreeSet<>();
+        if (content.getTagIds().size() > 7) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "修改稿普通标签最多选择 7 个");
+        }
+        Set<Integer> secondaryTagIds = new TreeSet<>();
         for (Integer tagId : content.getTagIds()) {
             if (tagId == null || tagId <= 0) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "修改稿标签不合法");
             }
-            submittedTagIds.add(tagId);
+            if (!secondaryTagIds.add(tagId)) {
+                throw new BizException(Result.CODE_BAD_REQUEST, "修改稿标签不能重复");
+            }
         }
+        Set<Integer> submittedTagIds = new TreeSet<>(secondaryTagIds);
         if (content.getPrimaryTagId() != null) {
-            if (content.getPrimaryTagId() <= 0 || submittedTagIds.contains(content.getPrimaryTagId())) {
+            if (content.getPrimaryTagId() <= 0 || secondaryTagIds.contains(content.getPrimaryTagId())) {
                 throw new BizException(Result.CODE_BAD_REQUEST, "修改稿主标签不合法或重复");
             }
             submittedTagIds.add(content.getPrimaryTagId());
@@ -420,21 +426,12 @@ public class MemeEditRevisionReviewService {
         if (!existingIds.containsAll(submittedTagIds)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "修改稿包含已失效标签");
         }
-        if (content.getPrimaryTagId() == null && !submittedTagIds.isEmpty()) {
-            // 中文注释：旧待审稿把所有标签保存在 tagIds；沿用迁移规则，将最小 ID 设为主标签。
-            content.setPrimaryTagId(submittedTagIds.iterator().next());
-            submittedTagIds.remove(content.getPrimaryTagId());
-            content.setTagIds(List.copyOf(submittedTagIds));
-        } else if (content.getPrimaryTagId() != null) {
-            if (content.getTagIds().size() < 3 || content.getTagIds().size() > 7) {
-                throw new BizException(Result.CODE_BAD_REQUEST, "普通标签需选择 3～7 个");
-            }
-            content.setTagIds(List.copyOf(submittedTagIds.stream()
-                    .filter(id -> !Objects.equals(id, content.getPrimaryTagId())).toList()));
-        } else {
-            // 中文注释：空标签的旧待审稿保持原样，避免升级后无法完成既有审核。
-            content.setTagIds(List.of());
+        if (content.getPrimaryTagId() == null && !secondaryTagIds.isEmpty()) {
+            // 中文注释：兼容旧版待审稿，其全部标签都存放在 tagIds 中，审核时取最小 ID 作为主标签。
+            content.setPrimaryTagId(secondaryTagIds.iterator().next());
+            secondaryTagIds.remove(content.getPrimaryTagId());
         }
+        content.setTagIds(List.copyOf(secondaryTagIds));
         String image = StringUtils.hasText(content.getImage()) ? content.getImage().trim() : null;
         content.setImage(image);
         if (image != null && (image.length() > MAX_URL_LENGTH || isHttpUrl(image))) {
@@ -485,9 +482,7 @@ public class MemeEditRevisionReviewService {
                 .filter(Objects::nonNull).filter(relation -> relation.getMemeTagId() != null).toList();
         Integer primaryTagId = validRelations.stream()
                 .filter(relation -> Objects.equals(relation.getIsPrimary(), 1))
-                .map(MemeTagRelation::getMemeTagId).findFirst()
-                .orElseGet(() -> validRelations.stream().map(MemeTagRelation::getMemeTagId)
-                        .min(Integer::compareTo).orElse(null));
+                .map(MemeTagRelation::getMemeTagId).findFirst().orElse(null);
         snapshot.setPrimaryTagId(primaryTagId);
         snapshot.setTagIds(validRelations.stream().map(MemeTagRelation::getMemeTagId)
                 .filter(id -> !Objects.equals(id, primaryTagId)).distinct().sorted().toList());

@@ -96,6 +96,34 @@ class MemePublishServiceTest {
     }
 
     @Test
+    void publishingWithOnlyNameAndIntroductionAllowsAllOptionalFieldsToBeEmpty() {
+        when(memeMapper.insert(any(Meme.class))).thenAnswer(invocation -> {
+            ((Meme) invocation.getArgument(0)).setId(504L);
+            return 1;
+        });
+        MemeCreateRequestDTO request = new MemeCreateRequestDTO();
+        request.setName("只填必填信息");
+        request.setIntroduction("这是必填介绍");
+
+        assertNotNull(service.publish(21L, request));
+
+        verify(memeMapper).insert(any(Meme.class));
+        verify(tagRelationMapper, never()).insert(any(MemeTagRelation.class));
+        verify(memeResourceMapper, never()).insert(any(MemeResource.class));
+    }
+
+    @Test
+    void publishingRequiresNonBlankIntroduction() {
+        MemeCreateRequestDTO request = new MemeCreateRequestDTO();
+        request.setName("缺少介绍");
+        request.setIntroduction("  ");
+
+        assertThrows(BizException.class, () -> service.publish(21L, request));
+
+        verify(memeMapper, never()).insert(any(Meme.class));
+    }
+
+    @Test
     void blockLevelMemeTitleIsRejectedBeforeAnyPersistenceOrOssPromotion() {
         MemeCreateRequestDTO request = new MemeCreateRequestDTO();
         request.setName("违规名称");
@@ -191,6 +219,7 @@ class MemePublishServiceTest {
     }
 
     private void addTags(MemeCreateRequestDTO request) {
+        request.setIntroduction("测试梗介绍");
         request.setPrimaryTagId(1);
         request.setTagIds(List.of(2, 3, 4));
     }

@@ -15,7 +15,8 @@ public class MemeEditRequestDTO {
     @Size(max = 50)
     private String name;
 
-    /** 中文注释：梗介绍，最多255个字符。 */
+    /** 中文注释：梗介绍，修改时必填，最多255个字符。 */
+    @NotBlank
     @Size(max = 255)
     private String introduction;
 
@@ -26,8 +27,8 @@ public class MemeEditRequestDTO {
     /** 中文注释：代表梗主要分类的标签 ID。 */
     private Integer primaryTagId;
 
-    /** 中文注释：梗关联的普通标签 ID，提交新修改稿时要求选择 3～7 个。 */
-    @Size(max = 64)
+    /** 中文注释：梗关联的普通标签 ID，选填，最多7个。 */
+    @Size(max = 7)
     private List<Integer> tagIds;
 
     /** 中文注释：梗相关图片、视频或 GIF 的地址列表，最多6个。 */

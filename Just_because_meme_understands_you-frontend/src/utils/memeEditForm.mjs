@@ -49,3 +49,36 @@ export function buildMemeEditPayload(form = {}) {
       : [], // 中文注释：媒体资源地址列表。
   }
 }
+
+const MAX_SECONDARY_TAGS = 7 // 中文注释：发布或修改梗时允许选择的补充标签上限。
+
+function normalizeTagId(value) {
+  const tagId = Number(value)
+  return Number.isInteger(tagId) && tagId > 0 ? tagId : null
+}
+
+/**
+ * 中文注释：返回梗表单不可提交的原因；名称和介绍必填，其余字段选填。
+ * @param {Object} form 梗表单字段，名称和介绍必填，标签及资源选填。
+ * @param {Object} options 配置项；coverUploading 表示封面是否仍在上传。
+ */
+export function getMemeFormBlockReason(form, options = {}) {
+  if (!String(form?.name || '').trim()) return '请先填写梗名称'
+  if (!String(form?.introduction || '').trim()) return '请先填写梗介绍'
+
+  const rawPrimaryTagId = form?.primaryTagId
+  const hasPrimaryTag = rawPrimaryTagId != null && String(rawPrimaryTagId).trim() !== ''
+  const primaryTagId = hasPrimaryTag ? normalizeTagId(rawPrimaryTagId) : null
+  if (hasPrimaryTag && primaryTagId == null) return '主标签选择无效，请重新选择'
+
+  const rawTagIds = Array.isArray(form?.tagIds) ? form.tagIds : []
+  const tagIds = rawTagIds.map(normalizeTagId)
+  if (tagIds.some((tagId) => tagId == null)) return '补充标签选择无效，请重新选择'
+  if (primaryTagId != null && tagIds.includes(primaryTagId)) return '主标签不能重复作为补充标签'
+  if (new Set(tagIds).size !== tagIds.length) return '补充标签不能重复'
+  if (tagIds.length > MAX_SECONDARY_TAGS) {
+    return `补充标签最多选择 ${MAX_SECONDARY_TAGS} 个，请移除 ${tagIds.length - MAX_SECONDARY_TAGS} 个`
+  }
+  if (options.coverUploading) return '封面正在上传，请稍候'
+  return ''
+}

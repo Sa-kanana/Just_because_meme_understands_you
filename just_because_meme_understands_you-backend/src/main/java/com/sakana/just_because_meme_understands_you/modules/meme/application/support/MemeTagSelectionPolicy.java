@@ -9,32 +9,29 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 中文注释：统一验证一个主标签和三至七个普通标签，并生成持久化所需的标签列表。 */
+/** 中文注释：验证可选主标签和普通标签，并生成持久化所需的标签列表。 */
 public final class MemeTagSelectionPolicy {
 
-    /** 中文注释：每条新梗至少需要的普通标签数量。 */
-    public static final int MIN_SECONDARY_TAGS = 3;
     /** 中文注释：每条新梗最多允许的普通标签数量。 */
     public static final int MAX_SECONDARY_TAGS = 7;
 
     private MemeTagSelectionPolicy() {
     }
 
-    /** 中文注释：验证主标签、普通标签数量、重复选择以及所有标签的存在性。 */
+    /** 中文注释：验证可选标签数量、重复选择以及所有已选标签的存在性。 */
     public static Selection normalizeAndValidate(Integer primaryTagId,
                                                  List<Integer> secondaryTagIds,
                                                  Collection<Integer> existingTagIds) {
-        if (primaryTagId == null || primaryTagId <= 0) {
-            throw badRequest("请选择一个主分类标签");
+        if (primaryTagId != null && primaryTagId <= 0) {
+            throw badRequest("主标签 ID 不合法");
         }
-        if (secondaryTagIds == null
-                || secondaryTagIds.size() < MIN_SECONDARY_TAGS
-                || secondaryTagIds.size() > MAX_SECONDARY_TAGS) {
-            throw badRequest("普通标签需选择 " + MIN_SECONDARY_TAGS + "～" + MAX_SECONDARY_TAGS + " 个");
+        List<Integer> selectedSecondaryTagIds = secondaryTagIds == null ? List.of() : secondaryTagIds;
+        if (selectedSecondaryTagIds.size() > MAX_SECONDARY_TAGS) {
+            throw badRequest("普通标签最多选择 " + MAX_SECONDARY_TAGS + " 个");
         }
 
         Set<Integer> uniqueSecondaryIds = new HashSet<>();
-        for (Integer tagId : secondaryTagIds) {
+        for (Integer tagId : selectedSecondaryTagIds) {
             if (tagId == null || tagId <= 0) {
                 throw badRequest("标签 ID 不合法");
             }
@@ -47,20 +44,22 @@ public final class MemeTagSelectionPolicy {
         }
 
         Set<Integer> existing = existingTagIds == null ? Set.of() : new HashSet<>(existingTagIds);
-        List<Integer> allTagIds = new ArrayList<>(secondaryTagIds.size() + 1);
-        allTagIds.add(primaryTagId);
-        allTagIds.addAll(secondaryTagIds);
+        List<Integer> allTagIds = new ArrayList<>(selectedSecondaryTagIds.size() + (primaryTagId == null ? 0 : 1));
+        if (primaryTagId != null) {
+            allTagIds.add(primaryTagId);
+        }
+        allTagIds.addAll(selectedSecondaryTagIds);
         if (!existing.containsAll(allTagIds)) {
             throw badRequest("所选标签不存在或已失效");
         }
-        return new Selection(primaryTagId, List.copyOf(secondaryTagIds), List.copyOf(allTagIds));
+        return new Selection(primaryTagId, List.copyOf(selectedSecondaryTagIds), List.copyOf(allTagIds));
     }
 
     private static BizException badRequest(String message) {
         return new BizException(Result.CODE_BAD_REQUEST, message);
     }
 
-    /** 中文注释：通过规则校验后的主标签、普通标签和完整标签 ID 集合。 */
+    /** 中文注释：通过规则校验后的可选主标签、普通标签和完整标签 ID 集合。 */
     public record Selection(Integer primaryTagId, List<Integer> secondaryTagIds, List<Integer> allTagIds) {
     }
 }

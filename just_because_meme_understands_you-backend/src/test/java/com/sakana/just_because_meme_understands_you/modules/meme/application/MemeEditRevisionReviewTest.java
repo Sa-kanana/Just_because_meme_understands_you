@@ -106,7 +106,7 @@ class MemeEditRevisionReviewTest {
     @Test
     void approvalReplacesOnlyEditableContentAndPreservesMemeStateAndCounters() throws Exception {
         prepareRevision(1, PENDING, false);
-        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(2), tag(3)));
+        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(1), tag(2), tag(3)));
         when(memeMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(resourceMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
@@ -148,7 +148,7 @@ class MemeEditRevisionReviewTest {
     @Test
     void approvalKeepsOfflineMemeOffline() throws Exception {
         prepareRevision(3, PENDING, false);
-        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(2), tag(3)));
+        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(1), tag(2), tag(3)));
         when(memeMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(resourceMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
@@ -170,7 +170,7 @@ class MemeEditRevisionReviewTest {
     void approvalAllowsRevisionWithoutCover() throws Exception {
         prepareRevision(1, PENDING, false);
         revision.setContentJson(submittedSnapshotWithoutCover());
-        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(2), tag(3)));
+        when(tagMapper.selectBatchIds(anyCollection())).thenReturn(List.of(tag(1), tag(2), tag(3)));
         when(memeMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(resourceMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 

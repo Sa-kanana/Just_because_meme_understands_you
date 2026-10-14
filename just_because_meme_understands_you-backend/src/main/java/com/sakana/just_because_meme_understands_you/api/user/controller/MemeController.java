@@ -67,7 +67,7 @@ public class MemeController {
      * 再调用 /v1/uploads/{assetId}/confirm 确认上传，最后随发布表单提交资源地址。
      */
     @PostMapping("/memes")
-    public Result<MemeCreateResponseVO> publish(@RequestBody MemeCreateRequestDTO request,
+    public Result<MemeCreateResponseVO> publish(@Valid @RequestBody MemeCreateRequestDTO request,
                                                  HttpServletRequest httpServletRequest) {
         Long userId = AuthContext.requireCurrentUserId(httpServletRequest);
         return Result.success(memePublishService.publish(userId, request));

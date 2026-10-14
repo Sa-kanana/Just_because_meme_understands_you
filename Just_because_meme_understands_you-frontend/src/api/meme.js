@@ -617,7 +617,7 @@ export function getMemeTags() {
 /**
  * 发布梗
  * POST /memes
- * @param {Object} payload { name, introduction, image, tagIds:number[], resourceUrls:string[], resources:Array<{type,url,title,sortOrder}> }
+ * @param {Object} payload { name, introduction, image, primaryTagId:number, tagIds:number[], resourceUrls:string[], resources:Array<{type,url,title,sortOrder}> }
  */
 export function publishMeme(payload = {}) {
   const resources = Array.isArray(payload.resources)
@@ -635,6 +635,7 @@ export function publishMeme(payload = {}) {
     name: String(payload.name || '').trim(),
     introduction: String(payload.introduction || '').trim(),
     image: String(payload.image || '').trim(),
+    primaryTagId: payload.primaryTagId != null ? Number(payload.primaryTagId) : null, // 中文注释：将必填主标签 ID 发给后端。
     tagIds: Array.isArray(payload.tagIds) ? payload.tagIds : [],
     resourceUrls: Array.isArray(payload.resourceUrls) ? payload.resourceUrls : [],
     resources,

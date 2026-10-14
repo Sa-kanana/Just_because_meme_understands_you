@@ -40,7 +40,7 @@
               />
             </ui-form-item>
 
-            <ui-form-item label="梗介绍">
+            <ui-form-item label="梗介绍" required>
               <vs-input
                 v-model="form.introduction"
                 type="textarea"
@@ -104,12 +104,12 @@
               </div>
             </ui-form-item>
 
-            <ui-form-item label="主分类标签" required>
+            <ui-form-item label="主标签（选填）">
               <vs-select
                 v-model="form.primaryTagId"
                 filter
                 block
-                placeholder="选择最能代表这个梗的主标签"
+                placeholder="选择一个主标签（选填）"
                 class="tag-select"
               >
                 <vs-option
@@ -121,16 +121,17 @@
                   {{ tagOptionLabel(tag) }}
                 </vs-option>
               </vs-select>
-              <p class="section-hint">主标签用于归类与推荐；再选 3～7 个补充标签。</p>
+              <p class="section-hint">主标签用于归类与推荐，可不选。</p>
             </ui-form-item>
 
-            <ui-form-item label="补充标签" required>
+            <ui-form-item label="补充标签（选填）">
               <vs-select
                 v-model="form.tagIds"
                 multiple
+                :multiple-limit="7"
                 filter
                 block
-                placeholder="选择 3～7 个普通标签"
+                placeholder="选择补充标签（最多 7 个）"
                 class="tag-select"
               >
                 <vs-option
@@ -142,7 +143,7 @@
                   {{ tagOptionLabel(tag) }}
                 </vs-option>
               </vs-select>
-              <p class="section-hint">已选 {{ form.tagIds.length }} 个；主标签不会重复计入。</p>
+              <p class="section-hint">已选 {{ form.tagIds.length }} 个，最多 7 个；也可以不选。</p>
             </ui-form-item>
           </section>
 
@@ -272,6 +273,15 @@
           </section>
 
           <footer class="publish-footer">
+            <p
+              v-if="publishBlockReason && !submitting"
+              class="publish-validation-hint"
+              role="status"
+              aria-live="polite"
+            >
+              <i class="ri-information-line" aria-hidden="true" />
+              {{ publishBlockReason }}
+            </p>
             <p class="publish-footer-hint">
               <i class="ri-shield-check-line" aria-hidden="true" />
               {{ isEditMode
@@ -353,7 +363,7 @@ import { uploadToOss } from '@/api/oss'
 import { useAuthStore } from '@/stores/auth'
 import { isAuthErrorHandled } from '@/utils/authSession'
 import { readPublishDraft, savePublishDraft, clearPublishDraft } from '@/utils/publishDraft.mjs'
-import { buildMemeEditPayload, mapMemeDetailToEditForm } from '@/utils/memeEditForm.mjs'
+import { buildMemeEditPayload, getMemeFormBlockReason, mapMemeDetailToEditForm } from '@/utils/memeEditForm.mjs'
 
 const route = useRoute()
 const router = useRouter()
@@ -376,7 +386,7 @@ function emptyForm() {
     introduction: '',
     image: '',
     primaryTagId: null, // 中文注释：代表梗主要类别的标签。
-    tagIds: [], // 中文注释：3～7 个补充标签。
+    tagIds: [], // 中文注释：用户选填的补充标签 ID，最多7个。
     resources: [],
     resourceUrls: [],
   }
@@ -449,11 +459,10 @@ function discardDraft() {
   draftReady.value = true
 }
 
-const canSubmit = computed(
-  () =>
-    form.name.trim() && form.primaryTagId && form.tagIds.length >= 3 && form.tagIds.length <= 7 &&
-    !coverUploading.value
-)
+const publishBlockReason = computed(() => getMemeFormBlockReason(form, {
+  coverUploading: coverUploading.value, // 中文注释：避免封面上传尚未完成时提交不完整图片地址。
+}))
+const canSubmit = computed(() => publishBlockReason.value === '')
 
 function openImagePreview(url) {
   const src = String(url || '').trim()
@@ -474,9 +483,13 @@ onMounted(async () => {
   }
   try {
     tags.value = await getMemeTags()
+  } catch (e) {
+    toast.warning(e.message || '加载标签失败；仍可填写名称和介绍后发布')
+  }
+  try {
     await loadEditContent()
   } catch (e) {
-    toast.error(e.message || '加载标签失败')
+    toast.error(e.message || '加载梗内容失败')
   }
 })
 
@@ -599,7 +612,10 @@ function removeResource(idx) {
 }
 
 async function handleSubmit() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value) {
+    if (publishBlockReason.value) toast.warning(publishBlockReason.value)
+    return
+  }
   if (!validateLinks()) return
   submitting.value = true
   try {
@@ -1114,6 +1130,18 @@ function goBack() {
   gap: 6px;
   font-size: 12px;
   color: var(--meme-text-muted);
+}
+
+.publish-validation-hint {
+  flex: 0 0 100%;
+  margin: -4px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--meme-warning, #b56b00);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .publish-actions {

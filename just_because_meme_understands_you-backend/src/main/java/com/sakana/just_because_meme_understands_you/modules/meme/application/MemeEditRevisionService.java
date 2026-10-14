@@ -163,6 +163,9 @@ public class MemeEditRevisionService {
         if (!StringUtils.hasText(name)) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称不能为空");
         }
+        if (!StringUtils.hasText(request.getIntroduction())) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "梗介绍不能为空");
+        }
         if (name.length() > MAX_NAME_LENGTH) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称最多 " + MAX_NAME_LENGTH + " 个字符");
         }

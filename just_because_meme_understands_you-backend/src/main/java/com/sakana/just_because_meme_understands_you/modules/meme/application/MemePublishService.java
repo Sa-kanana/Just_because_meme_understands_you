@@ -183,6 +183,9 @@ public class MemePublishService {
         if (!StringUtils.hasText(request.getName())) {
             throw new BizException(Result.CODE_BAD_REQUEST, "梗名称不能为空");
         }
+        if (!StringUtils.hasText(request.getIntroduction())) {
+            throw new BizException(Result.CODE_BAD_REQUEST, "梗介绍不能为空");
+        }
     }
 
     /** 中文注释：将主标签和普通标签合并查询，统一执行数量、唯一性及标签存在性校验。 */
