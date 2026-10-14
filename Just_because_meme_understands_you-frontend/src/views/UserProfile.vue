@@ -1048,7 +1048,7 @@
       </template>
       <div v-if="purgePublishedTarget" class="delete-published-body">
         <p class="delete-published-lead">
-          确定要彻底删除「<strong>{{ purgePublishedTarget.name || '未命名梗图' }}</strong>」吗？
+          确定要彻底删除「<strong>{{ purgePublishedMemeName }}</strong>」吗？
         </p>
         <ul class="delete-published-notes purge-published-notes">
           <li>删除后无法恢复，「我的发布」里也不会再出现</li>
@@ -1058,9 +1058,17 @@
         <vs-input
           v-model="purgeConfirmName"
           maxlength="50"
-          placeholder="输入梗名称以确认"
+          :placeholder="'输入“' + purgePublishedMemeName + '”以确认'"
           class="purge-confirm-input"
         />
+        <p
+          class="purge-confirm-hint"
+          :class="{ 'purge-confirm-hint--matched': purgeConfirmMatched }"
+          role="status"
+        >
+          <span v-if="purgeConfirmMatched">梗名已匹配，可以确认删除。</span>
+          <span v-else>请输入上方完整梗名后，才可彻底删除。</span>
+        </p>
       </div>
       <template #footer>
         <div class="delete-published-dialog__actions">
@@ -1075,6 +1083,7 @@
           <button
             type="button"
             class="profile-dlg-btn profile-dlg-btn--danger"
+            :class="{ 'profile-dlg-btn--loading': purgePublishedSubmitting }"
             :disabled="purgePublishedSubmitting || !purgeConfirmMatched"
             @click="confirmPurgePublished"
           >
@@ -1083,7 +1092,7 @@
               class="ri-loader-4-line profile-dlg-btn__spin"
               aria-hidden="true"
             />
-            {{ purgePublishedSubmitting ? '删除中…' : '确认彻底删除' }}
+            {{ purgePublishedSubmitting ? '删除中…' : (purgeConfirmMatched ? '确认彻底删除' : '请先输入梗名') }}
           </button>
         </div>
       </template>
@@ -1467,10 +1476,14 @@ export default {
     restoreDialogIsAppeal() {
       return Number(this.restorePublishedTarget?.status) === 5
     },
+    purgePublishedMemeName() {
+      // 中文注释：历史梗名称为空或全空白时，用占位名称作为明确的确认文本。
+      return String(this.purgePublishedTarget?.name || '').trim() || '未命名梗图'
+    },
     purgeConfirmMatched() {
       if (!this.purgePublishedTarget) return false
-      const expected = String(this.purgePublishedTarget.name || '未命名梗图').trim()
-      return String(this.purgeConfirmName || '').trim() === expected
+      const input = String(this.purgeConfirmName || '').trim()
+      return Boolean(input) && input === this.purgePublishedMemeName
     },
     favoriteList() {
       return Array.isArray(this.profile.favorites) ? this.profile.favorites : []
@@ -3602,6 +3615,17 @@ export default {
   margin-top: 2px;
 }
 
+.purge-confirm-hint {
+  margin: 8px 2px 0;
+  color: var(--meme-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.purge-confirm-hint--matched {
+  color: var(--meme-primary);
+}
+
 .meme-status-tag {
   position: absolute;
   top: 8px;
@@ -5052,8 +5076,8 @@ html.dark .folder-card-loading {
 }
 
 .profile-dlg-btn:disabled {
-  opacity: 0.65;
-  cursor: wait;
+  opacity: 0.8;
+  cursor: not-allowed;
 }
 
 .profile-dlg-btn--ghost {
@@ -5089,6 +5113,19 @@ html.dark .folder-card-loading {
 
 .profile-dlg-btn--danger:hover:not(:disabled) {
   filter: brightness(1.04);
+}
+
+.profile-dlg-btn--danger:disabled:not(.profile-dlg-btn--loading) {
+  color: var(--meme-text-muted);
+  background: var(--meme-bg-muted);
+  border-color: var(--meme-border);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.profile-dlg-btn--loading:disabled {
+  cursor: wait;
+  opacity: 0.9;
 }
 
 .profile-dlg-btn__spin {

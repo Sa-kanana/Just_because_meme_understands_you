@@ -1411,7 +1411,8 @@ const purgeMemeName = computed(() => {
 })
 
 const purgeConfirmMatched = computed(() => {
-  return String(purgeConfirmName.value || '').trim() === purgeMemeName.value
+  const input = String(purgeConfirmName.value || '').trim()
+  return Boolean(input) && input === purgeMemeName.value
 })
 
 function openPurgeDialog() {
