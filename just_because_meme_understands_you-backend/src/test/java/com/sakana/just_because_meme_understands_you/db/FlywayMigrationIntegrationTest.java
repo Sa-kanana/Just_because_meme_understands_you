@@ -33,7 +33,7 @@ class FlywayMigrationIntegrationTest {
                         System.getenv().getOrDefault("MIGRATION_TEST_MYSQL_PASSWORD", ""))
                 .locations("classpath:db/migration")
                 .baselineOnMigrate(true)
-                .baselineVersion("20261003")
+                .baselineVersion("2026101205")
                 .load();
 
         MigrateResult firstRun = flyway.migrate();
