@@ -55,6 +55,7 @@ export function hasNextFeedPage(data, batchSize, pageSize, page) {
  * @param {boolean} state.feedSwitching 是否正在切换列表
  * @param {string} state.feedError 当前加载错误信息
  * @param {number} state.itemCount 当前已展示的梗图数量
+ * @param {boolean} state.observerActive 是否已经存在有效的哨兵观察器
  * @returns {boolean} 当前状态是否允许继续懒加载
  */
 export function shouldReobserveFeedSentinel({
@@ -63,12 +64,14 @@ export function shouldReobserveFeedSentinel({
   feedSwitching,
   feedError,
   itemCount,
+  observerActive,
 } = {}) {
   return Boolean(
     feedHasMore
     && !feedLoading
     && !feedSwitching
     && !feedError
+    && !observerActive
     && Number(itemCount) > 0,
   )
 }

@@ -55,4 +55,8 @@ test('does not reobserve the feed sentinel while loading, on error, or after the
   assert.equal(shouldReobserveFeedSentinel({ ...state, feedError: '网络异常' }), false)
   assert.equal(shouldReobserveFeedSentinel({ ...state, feedHasMore: false }), false)
   assert.equal(shouldReobserveFeedSentinel({ ...state, itemCount: 0 }), false)
+  assert.equal(shouldReobserveFeedSentinel({
+    ...state,
+    observerActive: true, // 已存在有效观察器时不重复创建。
+  }), false)
 })

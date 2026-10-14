@@ -265,7 +265,6 @@ export default {
     },
   },
   mounted() {
-    this.observeFeedSentinel()
     this.loadBootstrap()
     if (this.isLoggedIn) this.loadFollowedTags()
   },
@@ -362,6 +361,10 @@ export default {
       }
     },
     async reloadFeed({ preserveList = false, page = 1 } = {}) {
+      if (this.feedObserver) {
+        this.feedObserver.disconnect()
+        this.feedObserver = null
+      }
       if ((this.feedSort === 'following' || this.feedSort === 'tags') && !this.isLoggedIn) {
         this.memeList = []
         this.feedPage = 1
@@ -438,6 +441,7 @@ export default {
           feedSwitching: this.feedSwitching,
           feedError: this.feedError,
           itemCount: this.memeList.length,
+          observerActive: Boolean(this.feedObserver),
         })) return
 
         this.observeFeedSentinel()
@@ -447,7 +451,8 @@ export default {
       if (!this.feedObserverAvailable) return
       const sentinel = this.$refs.feedSentinel
       if (!sentinel) return
-      if (this.feedObserver) this.feedObserver.disconnect()
+      // 已观察的哨兵保持连接，避免每页结束时重新观察并连续触发加载。
+      if (this.feedObserver) return
       this.feedObserver = new IntersectionObserver((entries) => {
         if (!this.feedError && entries.some((entry) => entry.isIntersecting)) {
           this.loadNextFeedPage()
@@ -705,6 +710,8 @@ export default {
 .meme-grid__item {
   flex: 0 0 calc((100% - 42px) / 4);
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 312px;
 }
 
 .meme-loading,
@@ -929,6 +936,7 @@ export default {
 
   .meme-grid__item {
     flex-basis: calc((100% - 10px) / 2);
+    contain-intrinsic-size: auto 200px;
   }
 
   .tag-follow-error {
